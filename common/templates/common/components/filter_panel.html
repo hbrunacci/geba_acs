@@ -1,0 +1,71 @@
+<div class="filters">
+  <form class="filters__form" method="get">
+    <div class="filters__row">
+      <div class="filters__group">
+        <label class="filters__label" for="q">Buscar</label>
+        <div class="filters__control">
+          <input
+            id="q"
+            name="q"
+            class="filters__input"
+            type="search"
+            placeholder="Buscar por nombre, código o descripción"
+            value="{{ request.GET.q }}"
+          />
+          <button class="filters__button" type="submit">Buscar</button>
+        </div>
+      </div>
+      <div class="filters__group">
+        <label class="filters__label" for="status">Estado</label>
+        <select id="status" name="status" class="filters__select">
+          <option value="">Todos</option>
+          {% for value, label in status_choices %}
+          <option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>
+            {{ label }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filters__group">
+        <label class="filters__label" for="date_from">Desde</label>
+        <input
+          id="date_from"
+          name="date_from"
+          class="filters__input"
+          type="date"
+          value="{{ request.GET.date_from }}"
+        />
+      </div>
+      <div class="filters__group">
+        <label class="filters__label" for="date_to">Hasta</label>
+        <input
+          id="date_to"
+          name="date_to"
+          class="filters__input"
+          type="date"
+          value="{{ request.GET.date_to }}"
+        />
+      </div>
+      <div class="filters__group filters__group--compact">
+        <label class="filters__label" for="only_active">Solo activos</label>
+        <input
+          id="only_active"
+          name="only_active"
+          type="checkbox"
+          class="filters__checkbox"
+          value="1"
+          {% if request.GET.only_active %}checked{% endif %}
+        />
+      </div>
+    </div>
+    <div class="filters__actions">
+      <button class="filters__button filters__button--primary" type="submit">
+        Aplicar filtros
+      </button>
+      <a class="filters__button filters__button--link" href="{{ request.path }}">
+        Limpiar
+      </a>
+      {% block filters_extra_actions %}{% endblock filters_extra_actions %}
+    </div>
+  </form>
+</div>

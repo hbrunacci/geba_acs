@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework.authtoken",
+    "common.apps.CommonConfig",
     "people.apps.PeopleConfig",
     "institutions.apps.InstitutionsConfig",
     "access_control.apps.AccessControlConfig",
@@ -38,7 +39,7 @@ ROOT_URLCONF = "acs.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "common" / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [

@@ -1,0 +1,13 @@
+<div class="stat-card">
+  <div class="stat-card__header">
+    <h3 class="stat-card__title">{{ stat_title|default:"Indicador" }}</h3>
+    {% block stat_icon %}{% endblock stat_icon %}
+  </div>
+  <div class="stat-card__body">
+    <p class="stat-card__value">{{ stat_value|default:"0" }}</p>
+    <p class="stat-card__meta">{{ stat_meta|default:"" }}</p>
+  </div>
+  <div class="stat-card__footer">
+    {% block stat_footer %}{% endblock stat_footer %}
+  </div>
+</div>
