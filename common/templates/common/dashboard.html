@@ -1,0 +1,90 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Panel de Control{% endblock page_title %}
+
+{% block header_title %}Resumen Ejecutivo{% endblock header_title %}
+{% block header_subtitle %}
+Monitoreá la actividad de la plataforma y accedé rápidamente a filtros, reportes y acciones frecuentes.
+{% endblock header_subtitle %}
+
+{% block header_actions %}
+<button class="button button--primary" type="button" data-open-modal="create">
+  <span aria-hidden="true">＋</span> Nuevo registro
+</button>
+<button class="button" type="button" data-action="export">Exportar</button>
+{% endblock header_actions %}
+
+{% block filter_panel %}
+{% include "common/components/filter_panel.html" %}
+{% endblock filter_panel %}
+
+{% block content %}
+<section class="dashboard__metrics" aria-label="Indicadores principales">
+  <div class="dashboard__grid">
+    {% include "common/components/stat_card.html" with stat_title="Total entidades" stat_value=total_entities|default:"0" stat_meta=last_update_text|default:"Última actualización: sin datos" %}
+    {% include "common/components/stat_card.html" with stat_title="Usuarios activos" stat_value=active_users|default:"0" stat_meta=active_users_delta|default:"Variación semanal" %}
+    {% include "common/components/stat_card.html" with stat_title="Alertas" stat_value=alerts|default:"0" stat_meta=alerts_delta|default:"Sin cambios" %}
+    {% include "common/components/stat_card.html" with stat_title="Visitas" stat_value=visits|default:"0" stat_meta=visits_delta|default:"Resumen mensual" %}
+  </div>
+</section>
+
+<section class="dashboard__charts" aria-label="Visualizaciones de datos">
+  <div class="card">
+    <header class="card__header">
+      <h2 class="card__title">Distribución por tipo</h2>
+      <button class="button button--ghost" type="button">Ver detalle</button>
+    </header>
+    <div class="card__body card__body--chart" data-chart="donut">
+      {% block chart_primary %}<canvas data-chart-target="primary"></canvas>{% endblock chart_primary %}
+    </div>
+  </div>
+  <div class="card">
+    <header class="card__header">
+      <h2 class="card__title">Evolución mensual</h2>
+      <div class="card__actions">
+        <button class="button button--ghost" type="button" data-action="toggle-view">Serie</button>
+        <button class="button button--ghost" type="button" data-action="download">Descargar</button>
+      </div>
+    </header>
+    <div class="card__body card__body--chart" data-chart="bar">
+      {% block chart_secondary %}<canvas data-chart-target="secondary"></canvas>{% endblock chart_secondary %}
+    </div>
+  </div>
+</section>
+
+<section class="dashboard__table" aria-label="Listado principal">
+  <div class="card">
+    <header class="card__header">
+      <h2 class="card__title">Listado de entidades</h2>
+      <div class="card__actions">
+        <button class="button" type="button" data-action="bulk-edit" disabled>Editar seleccionados</button>
+        <button class="button" type="button" data-action="bulk-delete" disabled>Eliminar seleccionados</button>
+      </div>
+    </header>
+    <div class="card__body card__body--scroll">
+      {% include "common/components/data_table.html" %}
+    </div>
+  </div>
+</section>
+{% endblock content %}
+
+{% block extra_modals %}
+<div class="modal" id="create" role="dialog" aria-modal="true" aria-labelledby="create-title" hidden>
+  <div class="modal__overlay" data-close-modal></div>
+  <div class="modal__content">
+    <header class="modal__header">
+      <h2 class="modal__title" id="create-title">Nuevo registro</h2>
+      <button class="modal__close" type="button" data-close-modal aria-label="Cerrar">×</button>
+    </header>
+    <div class="modal__body">
+      {% block create_modal_body %}
+      <p>Utilizá este espacio para crear un nuevo elemento en la plataforma.</p>
+      {% endblock create_modal_body %}
+    </div>
+    <footer class="modal__footer">
+      <button class="button" type="button" data-close-modal>Cancelar</button>
+      <button class="button button--primary" type="submit">Guardar</button>
+    </footer>
+  </div>
+</div>
+{% endblock extra_modals %}

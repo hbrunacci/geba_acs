@@ -1,0 +1,99 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block page_title %}Panel de Control{% endblock page_title %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{% static 'common/css/dashboard.css' %}" />
+    {% block extra_css %}{% endblock extra_css %}
+    {% block extra_head %}{% endblock extra_head %}
+  </head>
+  <body class="layout">
+    {% if request.user.is_authenticated %}
+    <aside class="layout__sidebar">
+      <div class="sidebar__brand">
+        {% block brand %}
+        <a class="brand" href="/">{{ request.site.name|default:"ACS" }}</a>
+        {% endblock brand %}
+      </div>
+      <nav class="sidebar__nav">
+        {% block sidebar %}
+        <ul class="nav__list">
+          <li class="nav__item"><a href="#">Inicio</a></li>
+          <li class="nav__item"><a href="#">Reportes</a></li>
+          <li class="nav__item"><a href="#">Configuración</a></li>
+        </ul>
+        {% endblock sidebar %}
+      </nav>
+      <div class="sidebar__footer">
+        {% block sidebar_footer %}
+        <div class="sidebar__user">
+          <span class="sidebar__user-name">
+            {{ request.user.get_full_name|default:request.user.username }}
+          </span>
+          <span class="sidebar__user-role">{{ request.user.get_role_display|default:"Usuario" }}</span>
+        </div>
+        <a class="sidebar__logout" href="{% url 'admin:logout' %}">Cerrar sesión</a>
+        {% endblock sidebar_footer %}
+      </div>
+    </aside>
+
+    <div class="layout__main">
+      <header class="layout__header">
+        <div class="header__titles">
+          <h1 class="header__title">{% block header_title %}Dashboard{% endblock header_title %}</h1>
+          <p class="header__subtitle">
+            {% block header_subtitle %}Resumen general y filtros inteligentes.{% endblock header_subtitle %}
+          </p>
+        </div>
+        <div class="header__actions">
+          {% block header_actions %}{% endblock header_actions %}
+        </div>
+      </header>
+
+      {% block notices %}{% endblock notices %}
+
+      <section class="layout__filters">
+        {% block filter_panel %}{% endblock filter_panel %}
+      </section>
+
+      <main class="layout__content">
+        {% block content %}{% endblock content %}
+      </main>
+
+      <footer class="layout__footer">
+        {% block footer %}
+        <span>&copy; {% now "Y" %} Asociación de Clubes Sociales</span>
+        {% endblock footer %}
+      </footer>
+    </div>
+
+    <div id="modals-root">
+      {% block extra_modals %}{% endblock extra_modals %}
+    </div>
+
+    {% else %}
+    <main class="layout__public">
+      {% block unauthenticated %}
+      <section class="public-card">
+        <h1 class="public-card__title">Acceso restringido</h1>
+        <p class="public-card__body">
+          Ingresá con tus credenciales para visualizar el panel de control.
+        </p>
+        <a class="button button--primary" href="{% url 'admin:login' %}">Iniciar sesión</a>
+      </section>
+      {% endblock unauthenticated %}
+    </main>
+    {% endif %}
+
+    <script src="{% static 'common/js/dashboard.js' %}"></script>
+    {% block extra_js %}{% endblock extra_js %}
+  </body>
+</html>

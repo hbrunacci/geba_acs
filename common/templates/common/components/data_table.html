@@ -1,0 +1,61 @@
+{% load common_components %}
+{% with columns=table_columns|default:None rows=table_rows|default:None %}
+<table class="table" data-component="selectable-table">
+  <caption class="sr-only">{{ table_caption|default:"Resultados" }}</caption>
+  <thead>
+    <tr>
+      <th scope="col" class="table__select">
+        <input type="checkbox" data-table-check="all" aria-label="Seleccionar todas las filas" />
+      </th>
+      {% if columns %}
+      {% for column in columns %}
+      <th scope="col" data-column="{{ column.key|default:forloop.counter }}">
+        {{ column.label|default:column.key|capfirst }}
+      </th>
+      {% endfor %}
+      {% else %}
+      <th scope="col">Nombre</th>
+      <th scope="col">Estado</th>
+      <th scope="col">Actualizado</th>
+      {% endif %}
+      <th scope="col" class="table__actions">Acciones</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% if rows %}
+    {% for row in rows %}
+    <tr>
+      <td class="table__select">
+        <input type="checkbox" name="selected" value="{{ row.id|default:forloop.counter }}" aria-label="Seleccionar {{ row.label|default:row.name }}" />
+      </td>
+      {% if columns %}
+      {% for column in columns %}
+      <td data-column="{{ column.key|default:forloop.counter }}">
+        {{ row|get_item:column.key }}
+      </td>
+      {% endfor %}
+      {% else %}
+      <td>{{ row.name|default:"-" }}</td>
+      <td>{{ row.status|default:"-" }}</td>
+      <td>{{ row.updated_at|default:"-" }}</td>
+      {% endif %}
+      <td class="table__actions">
+        <div class="table__action-buttons">
+          <a href="{{ row.edit_url|default:'#' }}" class="button button--ghost" data-action="edit">Editar</a>
+          <button type="button" class="button button--ghost" data-action="more">⋯</button>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+    {% else %}
+    <tr class="table__row-empty">
+      <td colspan="99">No se encontraron resultados con los filtros actuales.</td>
+    </tr>
+    {% endif %}
+  </tbody>
+</table>
+<div class="table__footer">
+  <div class="table__results">{{ table_summary|default:"Sin registros seleccionados" }}</div>
+  <div class="table__pagination">{{ table_pagination|default:"" }}</div>
+</div>
+{% endwith %}
