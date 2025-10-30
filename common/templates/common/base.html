@@ -25,11 +25,13 @@
       </div>
       <nav class="sidebar__nav">
         {% block sidebar %}
+        {% with request.resolver_match.url_name as current_url %}
         <ul class="nav__list">
-          <li class="nav__item"><a href="#">Inicio</a></li>
-          <li class="nav__item"><a href="#">Reportes</a></li>
-          <li class="nav__item"><a href="#">Configuración</a></li>
+          <li class="nav__item{% if current_url == 'dashboard' %} nav__item--active{% endif %}">
+            <a href="{% url 'common:dashboard' %}">Resumen</a>
+          </li>
         </ul>
+        {% endwith %}
         {% endblock sidebar %}
       </nav>
       <div class="sidebar__footer">
@@ -40,7 +42,7 @@
           </span>
           <span class="sidebar__user-role">{{ request.user.get_role_display|default:"Usuario" }}</span>
         </div>
-        <a class="sidebar__logout" href="{% url 'admin:logout' %}">Cerrar sesión</a>
+        <a class="sidebar__logout" href="{% url 'common:logout' %}">Cerrar sesión</a>
         {% endblock sidebar_footer %}
       </div>
     </aside>
@@ -87,7 +89,7 @@
         <p class="public-card__body">
           Ingresá con tus credenciales para visualizar el panel de control.
         </p>
-        <a class="button button--primary" href="{% url 'admin:login' %}">Iniciar sesión</a>
+        <a class="button button--primary" href="{% url 'common:login' %}">Iniciar sesión</a>
       </section>
       {% endblock unauthenticated %}
     </main>
