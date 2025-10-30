@@ -70,6 +70,7 @@ Los recursos disponibles (todos vía `ModelViewSet`) son:
 - `/api/events/` — Eventos con ventanas de vigencia y categorías permitidas.
 - `/api/guest-invitations/` — Invitaciones para personas registradas como invitados.
 - `/api/whitelist/` — Autorizaciones por persona, acceso y evento.
+- `/api/external-access/latest/` — Últimos ingresos registrados en el sistema externo MSSQL.
 
 Todos los modelos están disponibles desde el administrador de Django (`/admin/`). El proyecto utiliza los grupos y usuarios estándar de Django para gestionar permisos de acceso.
 
@@ -84,3 +85,31 @@ python manage.py test
 ## Base de datos
 
 Por defecto, el proyecto usa SQLite para facilitar la ejecución local. Al definir las variables `POSTGRES_*` se activará la base de datos PostgreSQL. Consulte `docker-compose.yml` y `.env.example` para más detalles.
+
+## Integración con los registros externos de acceso
+
+El endpoint `/api/external-access/latest/` devuelve los últimos ingresos sincronizados en la tabla local `access_control_externalaccesslogentry`. Los datos provienen de la tabla `CD_ES` de la base de datos MSSQL utilizada por el sistema de control físico.
+
+Para mantener la información actualizada sin bloquear las solicitudes HTTP se incluye un proceso asíncrono que replica periódicamente los movimientos externos. Inícielo con:
+
+```bash
+python manage.py sync_external_access_logs --interval 15 --limit 100
+```
+
+El parámetro `--interval` define el tiempo (en segundos) entre sincronizaciones y `--limit` la cantidad máxima de registros a importar por ciclo. Puede omitir ambos parámetros para usar los valores por defecto (30 segundos y el límite configurado en Django). El endpoint acepta además el parámetro opcional `limit` para ajustar la cantidad de resultados devueltos en cada respuesta.
+
+Configure las siguientes variables de entorno para definir la conexión al origen MSSQL:
+
+| Variable | Valor por defecto | Descripción |
+| --- | --- | --- |
+| `MSSQL_ACCESS_LOG_ENABLED` | `1` | Habilita (1) o deshabilita (0) la integración. |
+| `MSSQL_ACCESS_LOG_HOST` | `192.168.0.6` | Dirección IP o nombre del servidor MSSQL. |
+| `MSSQL_ACCESS_LOG_PORT` | `1433` | Puerto TCP del servicio MSSQL. |
+| `MSSQL_ACCESS_LOG_DATABASE` | `xsys_geba` | Base de datos a consultar. |
+| `MSSQL_ACCESS_LOG_USER` | `sa` | Usuario con permisos de lectura. |
+| `MSSQL_ACCESS_LOG_PASSWORD` | `kvy2012*.` | Contraseña del usuario. |
+| `MSSQL_ACCESS_LOG_TABLE` | `CD_ES` | Tabla donde se almacenan los accesos. |
+| `MSSQL_ACCESS_LOG_DRIVER` | `{ODBC Driver 18 for SQL Server}` | Driver ODBC a utilizar. |
+| `MSSQL_ACCESS_LOG_DEFAULT_LIMIT` | `10` | Cantidad predeterminada de registros a replicar y devolver. |
+
+Es necesario tener instalado el paquete `pyodbc` y el driver ODBC correspondiente para establecer la conexión.

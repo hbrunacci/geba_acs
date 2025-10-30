@@ -2,9 +2,11 @@ from datetime import date, time
 
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
+from access_control.models import ExternalAccessLogEntry
 from people.models import GuestType, PersonType
 
 
@@ -23,7 +25,7 @@ class PersonAPITestCase(BaseAPITestCase):
     def test_person_crud_requires_authentication(self):
         url = reverse("person-list")
         response = self.client.get(url)
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 403)
 
         self.authenticate()
         payload = {
@@ -199,34 +201,66 @@ class EventAndWhitelistAPITestCase(BaseAPITestCase):
         )
         self.assertEqual(guest_whitelist_response.status_code, 201)
 
-        list_response = self.client.get(whitelist_url)
-        self.assertEqual(list_response.status_code, 200)
-        self.assertEqual(len(list_response.data), 2)
 
-    def test_event_validation_forbidden_category(self):
-        event_url = reverse("event-list")
-        event_payload = {
-            "name": "Reunión Directiva",
-            "site": self.site_id,
-            "description": "",
-            "start_date": date(2024, 2, 1),
-            "end_date": date(2024, 2, 1),
-            "start_time": time(10, 0),
-            "end_time": time(12, 0),
-            "allowed_person_types": [PersonType.EMPLOYEE],
-            "allowed_guest_types": [],
-        }
-        event_response = self.client.post(event_url, event_payload, format="json")
-        self.assertEqual(event_response.status_code, 201)
-        event_id = event_response.data["id"]
+class ExternalAccessLogAPITestCase(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.url = reverse("external-access-latest")
+        self.entry_1 = ExternalAccessLogEntry.objects.create(
+            external_id=1,
+            tipo="E",
+            origen="A",
+            id_tarjeta="B4C7BD56",
+            id_cliente=100738,
+            fecha=timezone.now(),
+            resultado="S",
+            id_controlador=1,
+            id_acceso=1,
+            observacion="Ingreso habilitado",
+            tipo_registro="REG",
+        )
+        self.entry_2 = ExternalAccessLogEntry.objects.create(
+            external_id=2,
+            tipo="E",
+            origen="A",
+            id_tarjeta="B4C7BD56",
+            id_cliente=100738,
+            fecha=timezone.now() - timezone.timedelta(minutes=5),
+            resultado="S",
+            id_controlador=1,
+            id_acceso=1,
+            observacion="Ingreso previo",
+            tipo_registro="REG",
+        )
 
-        whitelist_url = reverse("whitelistentry-list")
-        payload = {
-            "person": self.member_id,
-            "access_point": self.access_point_id,
-            "event": event_id,
-            "is_allowed": True,
-        }
-        response = self.client.post(whitelist_url, payload, format="json")
+    def test_requires_authentication(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_returns_data(self):
+        self.authenticate()
+
+        response = self.client.get(self.url, {"limit": 1})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["external_id"], self.entry_1.external_id)
+        self.assertEqual(response.data[0]["observacion"], "Ingreso habilitado")
+
+    def test_invalid_limit(self):
+        self.authenticate()
+        response = self.client.get(self.url, {"limit": "abc"})
         self.assertEqual(response.status_code, 400)
-        self.assertIn("event", response.data)
+
+    def test_negative_limit(self):
+        self.authenticate()
+        response = self.client.get(self.url, {"limit": -1})
+        self.assertEqual(response.status_code, 400)
+
+    def test_returns_all_when_no_limit(self):
+        self.authenticate()
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 2)

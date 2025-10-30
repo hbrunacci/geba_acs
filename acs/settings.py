@@ -3,6 +3,17 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def _get_int_env(name: str, default: int | None = None) -> int | None:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-change-me")
 
 DEBUG = os.getenv("DJANGO_DEBUG", "0") == "1"
@@ -90,7 +101,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "es-ar"
 
-TIME_ZONE = "America/Buenos_Aires"
+TIME_ZONE = "America/Argentina/Buenos_Aires"
 
 USE_I18N = True
 
@@ -113,3 +124,15 @@ REST_FRAMEWORK = {
 LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
+
+MSSQL_ACCESS_LOG = {
+    "ENABLED": os.getenv("MSSQL_ACCESS_LOG_ENABLED", "1") == "1",
+    "HOST": os.getenv("MSSQL_ACCESS_LOG_HOST", "192.168.0.6"),
+    "PORT": _get_int_env("MSSQL_ACCESS_LOG_PORT", 1433),
+    "DATABASE": os.getenv("MSSQL_ACCESS_LOG_DATABASE", "xsys_geba"),
+    "USER": os.getenv("MSSQL_ACCESS_LOG_USER", "sa"),
+    "PASSWORD": os.getenv("MSSQL_ACCESS_LOG_PASSWORD", "kvy2012*."),
+    "TABLE": os.getenv("MSSQL_ACCESS_LOG_TABLE", "CD_ES"),
+    "DRIVER": os.getenv("MSSQL_ACCESS_LOG_DRIVER", "{ODBC Driver 18 for SQL Server}"),
+    "DEFAULT_LIMIT": _get_int_env("MSSQL_ACCESS_LOG_DEFAULT_LIMIT", 10),
+}
