@@ -32,9 +32,16 @@ class LoginView(DjangoLoginView):
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
-        form.fields[form.username_field].widget.attrs.update(
-            {"class": "form-input", "placeholder": "Ingresá tu usuario"}
-        )
+
+        username_field = getattr(form, "username_field", "username")
+        if not isinstance(username_field, str):
+            username_field = username_field.name
+
+        username_form_field = form.fields.get(username_field)
+        if username_form_field is not None:
+            username_form_field.widget.attrs.update(
+                {"class": "form-input", "placeholder": "Ingresá tu usuario"}
+            )
         form.fields["password"].widget.attrs.update(
             {"class": "form-input", "placeholder": "Ingresá tu contraseña"}
         )
