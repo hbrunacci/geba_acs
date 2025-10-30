@@ -23,7 +23,15 @@ Este proyecto implementa una API basada en Django y Django REST Framework para g
    ./scripts/setup.sh
    ```
 
-   El script acepta las variables `PYTHON_BIN` y `VENV_DIR` para personalizar la ruta del intérprete y el nombre del entorno virtual.
+   En Windows, utilice el script equivalente para PowerShell:
+
+   ```powershell
+   pwsh -ExecutionPolicy Bypass -File .\scripts\setup.ps1
+   ```
+
+   (Si no cuenta con PowerShell 7, puede reemplazar `pwsh` por `powershell`.)
+
+   Ambos scripts aceptan las variables `PYTHON_BIN` y `VENV_DIR` para personalizar la ruta del intérprete y el nombre del entorno virtual.
 
 4. Crear un superusuario estableciendo previamente la contraseña como variable de entorno (o ejecutando el comando sin la opción `--noinput`):
 
