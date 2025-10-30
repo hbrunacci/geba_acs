@@ -1,0 +1,48 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Iniciar sesión{% endblock page_title %}
+
+{% block unauthenticated %}
+<section class="public-card" aria-labelledby="login-title">
+  <h1 class="public-card__title" id="login-title">Ingresá a la plataforma</h1>
+  <p class="public-card__body">
+    Utilizá tus credenciales para acceder al panel de control.
+  </p>
+  <form method="post" novalidate class="form" aria-describedby="login-help">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+    <div class="form-error" role="alert">
+      {% for error in form.non_field_errors %}
+      <p>{{ error }}</p>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="form-field">
+      <label class="form-label" for="{{ form.username.id_for_label }}">Usuario</label>
+      {{ form.username }}
+      {% if form.username.errors %}
+      <div class="form-error" role="alert">
+        {% for error in form.username.errors %}
+        <p>{{ error }}</p>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    <div class="form-field">
+      <label class="form-label" for="{{ form.password.id_for_label }}">Contraseña</label>
+      {{ form.password }}
+      {% if form.password.errors %}
+      <div class="form-error" role="alert">
+        {% for error in form.password.errors %}
+        <p>{{ error }}</p>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    <p id="login-help" class="form-help">Las credenciales son provistas por la administración.</p>
+    <div class="form-actions">
+      <button type="submit" class="button button--primary">Iniciar sesión</button>
+    </div>
+  </form>
+</section>
+{% endblock unauthenticated %}
