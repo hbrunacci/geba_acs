@@ -55,6 +55,59 @@ body.layout {
   color: var(--color-text-muted);
 }
 
+.form {
+  display: grid;
+  gap: 1.25rem;
+  text-align: left;
+}
+
+.form-field {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.form-label {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.65rem 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: 1rem;
+  color: var(--color-text);
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-secondary);
+  box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.2);
+}
+
+.form-error {
+  color: var(--color-primary);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.form-error p {
+  margin: 0;
+}
+
+.form-help {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .layout__sidebar {
   width: var(--sidebar-width);
   background: var(--color-surface-alt);
@@ -97,6 +150,11 @@ body.layout {
 .nav__item a:hover,
 .nav__item a:focus {
   background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.nav__item--active a {
+  background: rgba(255, 255, 255, 0.18);
   color: #fff;
 }
 
