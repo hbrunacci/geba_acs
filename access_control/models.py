@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 from people.models import PersonType
 
@@ -60,3 +61,36 @@ class WhitelistEntry(models.Model):
                             "event": "La persona no pertenece a una categoría permitida para el evento.",
                         }
                     )
+
+
+class ExternalAccessLogEntry(models.Model):
+    """Persistencia local de los movimientos provenientes del sistema externo."""
+
+    external_id = models.BigIntegerField(unique=True)
+    tipo = models.CharField(max_length=4, blank=True)
+    origen = models.CharField(max_length=8, blank=True)
+    id_tarjeta = models.CharField(max_length=64, blank=True)
+    id_cliente = models.BigIntegerField(null=True, blank=True)
+    fecha = models.DateTimeField()
+    resultado = models.CharField(max_length=4, blank=True)
+    id_controlador = models.BigIntegerField(null=True, blank=True)
+    id_acceso = models.BigIntegerField(null=True, blank=True)
+    observacion = models.CharField(max_length=255, blank=True)
+    tipo_registro = models.CharField(max_length=32, blank=True)
+    id_cd_motivo = models.BigIntegerField(null=True, blank=True)
+    flag_permite_paso = models.CharField(max_length=4, blank=True)
+    fecha_paso_permitido = models.DateTimeField(null=True, blank=True)
+    id_controlador_paso_permitido = models.BigIntegerField(null=True, blank=True)
+    synced_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ("-fecha", "-external_id")
+        indexes = [
+            models.Index(fields=("-fecha",)),
+            models.Index(fields=("external_id",)),
+        ]
+        verbose_name = "Movimiento externo sincronizado"
+        verbose_name_plural = "Movimientos externos sincronizados"
+
+    def __str__(self) -> str:  # pragma: no cover - representación auxiliar
+        return f"#{self.external_id} @ {self.fecha:%Y-%m-%d %H:%M:%S}"
