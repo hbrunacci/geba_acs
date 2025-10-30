@@ -8,7 +8,7 @@
   --color-border: #d9deea;
   --color-text: #1b1e3d;
   --color-text-muted: #6b7094;
-  --sidebar-width: 260px;
+  --sidebar-width: 208px;
   --font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
 }
@@ -25,6 +25,10 @@ body {
   background-color: var(--color-bg);
   color: var(--color-text);
   min-height: 100%;
+}
+
+html {
+  font-size: 80%;
 }
 
 body.layout {
