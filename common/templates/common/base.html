@@ -43,6 +43,9 @@
               </ul>
             </details>
           </li>
+          <li class="nav__item{% if current_url == 'events_console' %} nav__item--active{% endif %}">
+            <a href="{% url 'events_console' %}">Eventos</a>
+          </li>
         </ul>
         {% endwith %}
         {% endblock sidebar %}
