@@ -1,0 +1,145 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Movimientos externos{% endblock page_title %}
+
+{% block header_title %}Movimientos externos{% endblock header_title %}
+
+{% block header_subtitle %}
+  Consulta y sincronización del registro de accesos proveniente de MSSQL.
+{% endblock header_subtitle %}
+
+{% block content %}
+<section class="card">
+  <div class="card__body">
+    <p class="text-muted">
+      Este proceso consulta la tabla configurada en MSSQL y trae los registros más recientes
+      ordenados por fecha. Luego normaliza los campos y los guarda en la base local, actualizando
+      por <strong>ID externo</strong> para evitar duplicados.
+    </p>
+    <div class="d-flex flex-wrap gap-2 align-items-end">
+      <div>
+        <label class="form-label" for="limit-input">Límite por consulta</label>
+        <input
+          id="limit-input"
+          class="form-control form-control-sm"
+          type="number"
+          min="1"
+          placeholder="Ej: 50"
+        />
+      </div>
+      <button id="sync-external" class="btn btn-primary btn-sm">Sincronizar ahora</button>
+    </div>
+    <div id="sync-msg" class="alert d-none mt-3" role="alert"></div>
+  </div>
+</section>
+
+<section class="card mt-4">
+  <div class="card__header">
+    <h5 class="card__title">Últimos movimientos sincronizados</h5>
+  </div>
+  <div class="card__body">
+    <div class="table-responsive">
+      <table class="table table-sm table-striped">
+        <thead>
+          <tr>
+            <th>ID externo</th>
+            <th>Fecha</th>
+            <th>Tipo</th>
+            <th>Origen</th>
+            <th>Resultado</th>
+            <th>Tarjeta</th>
+            <th>Observación</th>
+          </tr>
+        </thead>
+        <tbody id="external-access-body"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<script>
+(function() {
+  const syncButton = document.getElementById("sync-external");
+  const msgEl = document.getElementById("sync-msg");
+  const limitInput = document.getElementById("limit-input");
+  const tableBody = document.getElementById("external-access-body");
+
+  function showMsg(text, kind) {
+    msgEl.className = "alert alert-" + (kind || "info");
+    msgEl.textContent = text;
+    msgEl.classList.remove("d-none");
+    setTimeout(() => msgEl.classList.add("d-none"), 5000);
+  }
+
+  function getCookie(name) {
+    const v = document.cookie.split(";").map(s => s.trim()).find(s => s.startsWith(name + "="));
+    return v ? decodeURIComponent(v.split("=")[1]) : "";
+  }
+
+  async function fetchJSON(url, options) {
+    const resp = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken"),
+      },
+      ...options
+    });
+    if (!resp.ok) {
+      let detail = "HTTP " + resp.status;
+      try {
+        const data = await resp.json();
+        if (data.detail) {
+          detail = data.detail;
+        }
+      } catch (e) {
+        // no-op
+      }
+      throw new Error(detail);
+    }
+    return await resp.json();
+  }
+
+  function formatDate(value) {
+    if (!value) return "";
+    return value.replace("T", " ").slice(0, 19);
+  }
+
+  async function loadEntries() {
+    const data = await fetchJSON("/api/external-access/latest/?limit=25");
+    tableBody.innerHTML = data.map(entry => `
+      <tr>
+        <td>${entry.external_id}</td>
+        <td>${formatDate(entry.fecha)}</td>
+        <td>${entry.tipo || ""}</td>
+        <td>${entry.origen || ""}</td>
+        <td>${entry.resultado || ""}</td>
+        <td>${entry.id_tarjeta || ""}</td>
+        <td>${entry.observacion || ""}</td>
+      </tr>
+    `).join("");
+  }
+
+  syncButton.addEventListener("click", async () => {
+    try {
+      showMsg("Sincronizando movimientos externos...", "info");
+      const limitValue = limitInput.value ? Number(limitInput.value) : null;
+      const payload = {};
+      if (limitValue) {
+        payload.limit = limitValue;
+      }
+      const response = await fetchJSON("/api/external-access/sync/", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      await loadEntries();
+      showMsg(`Sincronización completa. Registros procesados: ${response.synced}`, "success");
+    } catch (error) {
+      showMsg("Error al sincronizar: " + error.message, "danger");
+    }
+  });
+
+  loadEntries().catch(error => showMsg("Error cargando movimientos: " + error.message, "danger"));
+})();
+</script>
+{% endblock content %}

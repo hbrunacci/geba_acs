@@ -25,6 +25,12 @@ def biostar_console(request):
     return render(request, "access_control/biostar_console.html")
 
 
+@login_required
+def external_access_console(request):
+    """Consola web para ver y sincronizar movimientos externos."""
+    return render(request, "access_control/external_access_console.html")
+
+
 
 class WhitelistEntryViewSet(viewsets.ModelViewSet):
     queryset = WhitelistEntry.objects.select_related(
