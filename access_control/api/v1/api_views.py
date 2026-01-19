@@ -38,7 +38,7 @@ class BioStarDeviceSyncAPI(views.APIView):
 
 
 class BioStarUserListAPI(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def get(self, request):
         qs = BioStarUser.objects.order_by("name", "user_id")
