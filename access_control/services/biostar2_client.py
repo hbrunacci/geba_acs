@@ -141,9 +141,6 @@ class BioStar2Client:
         """
         return self.request("GET", "/api/devices").json()
 
-    def list_users(self) -> dict[str, Any]:
-        """
-        Lista usuarios registrados en BioStar 2.
-        Referencia: endpoint /users (en tu server normalmente /api/users). :contentReference[oaicite:2]{index=2}
-        """
-        return self.request("GET", "/api/users").json()
+    def list_users(self, *, limit: int = 200, offset: int = 0) -> dict:
+        return self.request("GET", "/api/users", params={"limit": limit, "offset": offset}).json()
+
