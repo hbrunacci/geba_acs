@@ -30,8 +30,18 @@
           <li class="nav__item{% if current_url == 'dashboard' %} nav__item--active{% endif %}">
             <a href="{% url 'common:dashboard' %}">Resumen</a>
           </li>
-          <li class="nav__item{% if current_url == 'biostar_console' %} nav__item--active{% endif %}">
-            <a href="{% url 'biostar_console' %}">BioStar 2</a>
+          <li class="nav__item nav__item--expandable{% if current_url == 'biostar_devices_console' or current_url == 'biostar_users_console' %} nav__item--active{% endif %}">
+            <details{% if current_url == 'biostar_devices_console' or current_url == 'biostar_users_console' %} open{% endif %}>
+              <summary>Biostar</summary>
+              <ul class="nav__sublist">
+                <li class="nav__subitem">
+                  <a href="{% url 'biostar_devices_console' %}">Dispositivos</a>
+                </li>
+                <li class="nav__subitem">
+                  <a href="{% url 'biostar_users_console' %}">Personas</a>
+                </li>
+              </ul>
+            </details>
           </li>
         </ul>
         {% endwith %}

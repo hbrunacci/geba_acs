@@ -1,0 +1,165 @@
+{% extends "common/base.html" %}
+{% block extra_css %}
+<style>
+  .biostar__panel {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    background: #fff;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  }
+
+  .biostar__filters {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    margin-bottom: 1rem;
+  }
+
+  .biostar__filters label {
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-bottom: 0.25rem;
+  }
+
+  .biostar__filters input {
+    width: 100%;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    font-size: 0.9rem;
+  }
+
+  .biostar__table thead th {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+</style>
+{% endblock extra_css %}
+{% block content %}
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>BioStar 2 - Dispositivos</h3>
+    <div class="d-flex gap-2">
+      <button id="sync-devices" class="btn btn-primary btn-sm">Sincronizar lectores</button>
+    </div>
+  </div>
+
+  <div id="msg" class="alert d-none" role="alert"></div>
+
+  <section class="biostar__panel">
+    <div class="biostar__filters">
+      <div>
+        <label for="devices-search-name">Buscar por nombre</label>
+        <input id="devices-search-name" type="search" placeholder="Ej: Entrada principal" />
+      </div>
+      <div>
+        <label for="devices-search-id">ID BioStar</label>
+        <input id="devices-search-id" type="search" placeholder="Ej: 1004" />
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-sm table-striped biostar__table">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>ID</th>
+            <th>IP</th>
+            <th>Tipo</th>
+            <th>Estado</th>
+            <th>Sync</th>
+          </tr>
+        </thead>
+        <tbody id="devices-body"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+(function() {
+  let devicesCache = [];
+
+  function showMsg(text, kind) {
+    const el = document.getElementById("msg");
+    el.className = "alert alert-" + (kind || "info");
+    el.textContent = text;
+    el.classList.remove("d-none");
+    setTimeout(() => el.classList.add("d-none"), 4000);
+  }
+
+  function statusBadge(status) {
+    if (status === 1) return '<span class="badge bg-success">Conectado</span>';
+    if (status === 0) return '<span class="badge bg-danger">Desconectado</span>';
+    if (status === 2) return '<span class="badge bg-warning text-dark">Sync err</span>';
+    return '<span class="badge bg-secondary">N/A</span>';
+  }
+
+  async function fetchJSON(url, options) {
+    const resp = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken"),
+      },
+      ...options
+    });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    return await resp.json();
+  }
+
+  function getCookie(name) {
+    const v = document.cookie.split(";").map(s => s.trim()).find(s => s.startsWith(name + "="));
+    return v ? decodeURIComponent(v.split("=")[1]) : "";
+  }
+
+  function renderDevices(data) {
+    const body = document.getElementById("devices-body");
+    body.innerHTML = data.map(d => `
+      <tr>
+        <td>${d.name || ""}</td>
+        <td>${d.device_id || ""}</td>
+        <td>${d.ip_addr || ""}</td>
+        <td>${d.device_type || ""}</td>
+        <td>${statusBadge(d.status)}</td>
+        <td>${(d.last_synced_at || "").replace("T", " ").slice(0,19)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function filterDevices() {
+    const nameTerm = document.getElementById("devices-search-name").value.trim().toLowerCase();
+    const idTerm = document.getElementById("devices-search-id").value.trim().toLowerCase();
+    const filtered = devicesCache.filter(device => {
+      const nameMatch = (device.name || "").toLowerCase().includes(nameTerm);
+      const idMatch = String(device.device_id || "").toLowerCase().includes(idTerm);
+      return nameMatch && idMatch;
+    });
+    renderDevices(filtered);
+  }
+
+  async function loadDevices() {
+    devicesCache = await fetchJSON("/api/biostar/devices/");
+    filterDevices();
+  }
+
+  document.getElementById("sync-devices").addEventListener("click", async () => {
+    try {
+      showMsg("Sincronizando lectores...", "info");
+      await fetchJSON("/api/biostar/devices/sync/", { method: "POST" });
+      await loadDevices();
+      showMsg("Lectores sincronizados ✅", "success");
+    } catch (e) {
+      showMsg("Error sincronizando lectores: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("devices-search-name").addEventListener("input", filterDevices);
+  document.getElementById("devices-search-id").addEventListener("input", filterDevices);
+
+  loadDevices().catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
+})();
+</script>
+{% endblock %}

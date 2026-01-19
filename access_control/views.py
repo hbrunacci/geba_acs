@@ -15,14 +15,15 @@ from rest_framework import status, viewsets
 
 
 @login_required
-def biostar_console(request):
-    """
-    Consola web para:
-    - ver lectores
-    - ver usuarios
-    - sincronizar ambos
-    """
-    return render(request, "access_control/biostar_console.html")
+def biostar_devices_console(request):
+    """Consola web para ver lectores BioStar."""
+    return render(request, "access_control/biostar_devices.html")
+
+
+@login_required
+def biostar_users_console(request):
+    """Consola web para ver personas BioStar."""
+    return render(request, "access_control/biostar_users.html")
 
 
 @login_required
