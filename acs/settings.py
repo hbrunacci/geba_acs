@@ -1,8 +1,9 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+load_dotenv(BASE_DIR / ".env")
 
 def _get_int_env(name: str, default: int | None = None) -> int | None:
     value = os.getenv(name)
@@ -73,7 +74,7 @@ if os.getenv("POSTGRES_DB"):
             "USER": os.getenv("POSTGRES_USER", "postgres"),
             "PASSWORD": os.getenv("POSTGRES_PASSWORD", "postgres"),
             "HOST": os.getenv("POSTGRES_HOST", "db"),
-            "PORT": os.getenv("POSTGRES_PORT", "5432"),
+            "PORT": os.getenv("POSTGRES_PORT", "5434"),
         }
     }
 else:
