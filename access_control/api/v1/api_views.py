@@ -53,6 +53,40 @@ class BioStarUserSyncAPI(views.APIView):
         return Response({"ok": True}, status=status.HTTP_200_OK)
 
 
+class BioStarDeviceUsersAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, device_id: int):
+        client = BioStar2Client.from_db_and_env()
+        payload = client.list_device_users(device_id, limit=1, offset=0)
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class BioStarUserSearchAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        search_text = (request.data.get("search_text") or "").strip()
+        if not search_text:
+            return Response(
+                {"detail": "El parámetro 'search_text' es obligatorio."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user_group_id = str(request.data.get("user_group_id") or "1")
+        limit = int(request.data.get("limit") or 50)
+        offset = int(request.data.get("offset") or 0)
+        order_by = request.data.get("order_by") or "user_id:false"
+        client = BioStar2Client.from_db_and_env()
+        payload = client.search_users_v2(
+            search_text=search_text,
+            user_group_id=user_group_id,
+            limit=limit,
+            offset=offset,
+            order_by=order_by,
+        )
+        return Response(payload, status=status.HTTP_200_OK)
+
+
 class ExternalAccessLogSyncAPI(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 

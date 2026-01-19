@@ -13,7 +13,12 @@
 
   <div class="row">
     <div class="col-lg-6">
-      <h5>Lectores</h5>
+      <div class="d-flex justify-content-between align-items-center">
+        <h5>Lectores</h5>
+        <button id="refresh-device-users" class="btn btn-outline-primary btn-sm">
+          Buscar en dispositivo
+        </button>
+      </div>
       <div class="table-responsive">
         <table class="table table-sm table-striped">
           <thead>
@@ -21,6 +26,7 @@
               <th>Nombre</th>
               <th>IP</th>
               <th>Tipo</th>
+              <th>Usuarios</th>
               <th>Estado</th>
               <th>Sync</th>
             </tr>
@@ -31,16 +37,33 @@
     </div>
 
     <div class="col-lg-6">
-      <h5>Personas</h5>
+      <div class="d-flex justify-content-between align-items-center">
+        <h5>Personas</h5>
+        <div class="d-flex gap-2">
+          <input
+            id="user-search-text"
+            class="form-control form-control-sm"
+            placeholder="Buscar usuarios..."
+            autocomplete="off"
+          />
+          <button id="user-search-btn" class="btn btn-outline-secondary btn-sm">Buscar</button>
+        </div>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-2">
+        <small id="user-search-meta" class="text-muted"></small>
+        <div class="d-flex gap-2">
+          <button id="user-prev" class="btn btn-outline-secondary btn-sm" disabled>◀</button>
+          <button id="user-next" class="btn btn-outline-secondary btn-sm" disabled>▶</button>
+        </div>
+      </div>
       <div class="table-responsive">
         <table class="table table-sm table-striped">
           <thead>
             <tr>
               <th>Nombre</th>
               <th>ID BioStar</th>
-              <th>Email</th>
-              <th>Tel</th>
-              <th>Sync</th>
+              <th>Grupo</th>
+              <th>Grupos de acceso</th>
             </tr>
           </thead>
           <tbody id="users-body"></tbody>
@@ -86,32 +109,107 @@
     return v ? decodeURIComponent(v.split("=")[1]) : "";
   }
 
-  async function loadDevices() {
+  function getDeviceUsersTotal(payload) {
+    const collection =
+      payload?.DeviceUserCollection ||
+      payload?.device_user_collection ||
+      payload?.UserCollection ||
+      payload?.user_collection;
+    if (!collection) return null;
+    if (typeof collection.total === "number") return collection.total;
+    if (Array.isArray(collection.rows)) return collection.rows.length;
+    return null;
+  }
+
+  async function fetchDeviceUserTotal(deviceId) {
+    try {
+      const payload = await fetchJSON(`/api/biostar/devices/${deviceId}/users/`);
+      return getDeviceUsersTotal(payload);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function loadDevices({ refreshUsers = true } = {}) {
     const data = await fetchJSON("/api/biostar/devices/");
     const body = document.getElementById("devices-body");
+    const totals = {};
+    if (refreshUsers) {
+      await Promise.all(
+        data.map(async (d) => {
+          const total = await fetchDeviceUserTotal(d.device_id);
+          totals[d.device_id] = total;
+        })
+      );
+    }
     body.innerHTML = data.map(d => `
       <tr>
         <td>${d.name || ""}</td>
         <td>${d.ip_addr || ""}</td>
         <td>${d.device_type || ""}</td>
+        <td>${totals[d.device_id] ?? "—"}</td>
         <td>${statusBadge(d.status)}</td>
         <td>${(d.last_synced_at || "").replace("T", " ").slice(0,19)}</td>
       </tr>
     `).join("");
   }
 
+  function mapAccessGroups(accessGroups) {
+    if (!Array.isArray(accessGroups) || accessGroups.length === 0) return "—";
+    return accessGroups.map(g => g.name).filter(Boolean).join(", ");
+  }
+
+  function mapUserGroup(userGroup) {
+    if (!userGroup) return "—";
+    if (typeof userGroup === "string") return userGroup;
+    return userGroup.name || "—";
+  }
+
+  let userSearchState = {
+    searchText: "",
+    limit: 50,
+    offset: 0,
+    total: 0,
+  };
+
   async function loadUsers() {
-    const data = await fetchJSON("/api/biostar/users/");
+    if (!userSearchState.searchText) {
+      const body = document.getElementById("users-body");
+      body.innerHTML = "<tr><td colspan=\"4\">Ingresá un texto para buscar.</td></tr>";
+      document.getElementById("user-search-meta").textContent = "";
+      document.getElementById("user-prev").disabled = true;
+      document.getElementById("user-next").disabled = true;
+      return;
+    }
+    const payload = await fetchJSON("/api/biostar/users/search/", {
+      method: "POST",
+      body: JSON.stringify({
+        search_text: userSearchState.searchText,
+        user_group_id: "1",
+        limit: userSearchState.limit,
+        offset: userSearchState.offset,
+        order_by: "user_id:false",
+      }),
+    });
+    const collection = payload?.UserCollection || payload?.user_collection;
+    const total = collection?.total || 0;
+    const rows = collection?.rows || [];
+    userSearchState.total = total;
     const body = document.getElementById("users-body");
-    body.innerHTML = data.map(u => `
+    body.innerHTML = rows.map(u => `
       <tr>
         <td>${u.name || ""}</td>
-        <td>${u.user_unique_id || u.user_id}</td>
-        <td>${u.email || ""}</td>
-        <td>${u.phone || ""}</td>
-        <td>${(u.last_synced_at || "").replace("T", " ").slice(0,19)}</td>
+        <td>${u.user_id || ""}</td>
+        <td>${mapUserGroup(u.user_group_id)}</td>
+        <td>${mapAccessGroups(u.access_groups)}</td>
       </tr>
     `).join("");
+    const start = userSearchState.offset + 1;
+    const end = userSearchState.offset + rows.length;
+    document.getElementById("user-search-meta").textContent =
+      total > 0 ? `Mostrando ${start}-${end} de ${total}` : "Sin resultados";
+    document.getElementById("user-prev").disabled = userSearchState.offset === 0;
+    document.getElementById("user-next").disabled = end >= total;
   }
 
   document.getElementById("sync-devices").addEventListener("click", async () => {
@@ -133,6 +231,44 @@
       showMsg("Personas sincronizadas ✅", "success");
     } catch (e) {
       showMsg("Error sincronizando personas: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("refresh-device-users").addEventListener("click", async () => {
+    try {
+      showMsg("Consultando usuarios por dispositivo...", "info");
+      await loadDevices({ refreshUsers: true });
+      showMsg("Usuarios actualizados ✅", "success");
+    } catch (e) {
+      showMsg("Error consultando usuarios: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("user-search-btn").addEventListener("click", async () => {
+    userSearchState.searchText = document.getElementById("user-search-text").value.trim();
+    userSearchState.offset = 0;
+    try {
+      await loadUsers();
+    } catch (e) {
+      showMsg("Error buscando usuarios: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("user-prev").addEventListener("click", async () => {
+    userSearchState.offset = Math.max(0, userSearchState.offset - userSearchState.limit);
+    try {
+      await loadUsers();
+    } catch (e) {
+      showMsg("Error buscando usuarios: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("user-next").addEventListener("click", async () => {
+    userSearchState.offset = userSearchState.offset + userSearchState.limit;
+    try {
+      await loadUsers();
+    } catch (e) {
+      showMsg("Error buscando usuarios: " + e.message, "danger");
     }
   });
 
