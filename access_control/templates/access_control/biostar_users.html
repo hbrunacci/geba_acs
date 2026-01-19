@@ -98,8 +98,17 @@
       },
       ...options
     });
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    return await resp.json();
+    const contentType = resp.headers.get("content-type") || "";
+    const text = await resp.text();
+    if (!resp.ok) throw new Error("HTTP " + resp.status + ": " + text.slice(0, 200));
+    if (!contentType.includes("application/json")) {
+      throw new Error("Respuesta inesperada (no es JSON). ¿Sesión expirada?");
+    }
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      throw new Error("JSON inválido: " + e.message);
+    }
   }
 
   function getCookie(name) {
