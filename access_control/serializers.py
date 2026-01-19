@@ -55,9 +55,19 @@ class ExternalAccessLogEntrySerializer(serializers.ModelSerializer):
 
 
 class BioStarDeviceSerializer(serializers.ModelSerializer):
+    device_group = serializers.CharField(source="device_group.name", default="")
+
     class Meta:
         model = BioStarDevice
-        fields = ("device_id", "name", "device_type", "ip_addr", "status", "last_synced_at")
+        fields = (
+            "device_id",
+            "name",
+            "device_type",
+            "ip_addr",
+            "status",
+            "device_group",
+            "last_synced_at",
+        )
 
 
 class BioStarUserSerializer(serializers.ModelSerializer):

@@ -6,6 +6,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from access_control.models import BioStarDevice
+from access_control.models import BioStarDeviceGroup
 from access_control.services.biostar2_client import BioStar2Client
 
 
@@ -43,12 +44,42 @@ class Command(BaseCommand):
                 if device_id is None:
                     continue
 
+                raw_group = item.get("device_group_id") or item.get("device_group")
+
+                group = None
+                group_id_int = None
+                group_name = None
+
+                if isinstance(raw_group, dict):
+                    group_id = raw_group.get("id")
+                    group_name = raw_group.get("name")
+                else:
+                    group_id = raw_group
+
+                # normalizar id a int
+                try:
+                    group_id_int = int(group_id) if group_id not in (None, "") else None
+                except (TypeError, ValueError):
+                    group_id_int = None
+
+                if group_id_int is not None:
+                    group = BioStarDeviceGroup.objects.filter(group_id=group_id_int).first()
+
+                    # fallback: crear grupo si no existe todavía
+                    if group is None:
+                        group = BioStarDeviceGroup.objects.create(
+                            group_id=group_id_int,
+                            name=str(group_name or f"Grupo {group_id_int}"),
+                            raw_payload=raw_group if isinstance(raw_group, dict) else {"id": group_id_int},
+                        )
+
                 defaults = {
                     "name": item.get("name", "") or "",
                     "device_type": (item.get("type") or item.get("device_type") or "")[:100],
                     "ip_addr": item.get("ip_addr") or item.get("ip") or None,
                     "status": item.get("status"),
                     "raw_payload": item,
+                    "device_group": group,
                 }
 
                 obj, was_created = BioStarDevice.objects.update_or_create(
