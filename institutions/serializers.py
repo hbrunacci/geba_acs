@@ -38,6 +38,7 @@ class EventSerializer(serializers.ModelSerializer):
     allowed_guest_types = serializers.ListField(
         child=serializers.ChoiceField(choices=GuestType.choices), required=False, default=list
     )
+    site_name = serializers.CharField(source="site.name", read_only=True)
 
     class Meta:
         model = Event
@@ -45,6 +46,7 @@ class EventSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "site",
+            "site_name",
             "description",
             "start_date",
             "end_date",

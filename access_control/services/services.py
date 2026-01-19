@@ -83,7 +83,7 @@ class ExternalAccessLogService:
             "DATABASE": self.config["DATABASE"],
             "UID": self.config["USER"],
             "PWD": self.config["PASSWORD"],
-            "TrustServerCertificate": "yes",
+            #"TrustServerCertificate": "yes",
         }
         return ";".join(f"{key}={value}" for key, value in params.items() if value) + ";"
 

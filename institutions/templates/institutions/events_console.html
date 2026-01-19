@@ -1,0 +1,131 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Eventos{% endblock page_title %}
+
+{% block header_title %}Eventos{% endblock header_title %}
+
+{% block header_subtitle %}
+  Consulta y sincronización de eventos registrados en la base de datos.
+{% endblock header_subtitle %}
+
+{% block content %}
+<section class="card">
+  <div class="card__body">
+    <p class="text-muted">
+      Esta pantalla consulta la base local y muestra los eventos disponibles. Usá el botón
+      <strong>Sincronizar</strong> para refrescar la lista desde SQL.
+    </p>
+    <div class="d-flex flex-wrap gap-2 align-items-end">
+      <button id="sync-events" class="btn btn-primary btn-sm">Sincronizar</button>
+    </div>
+    <div id="sync-msg" class="alert d-none mt-3" role="alert"></div>
+  </div>
+</section>
+
+<section class="card mt-4">
+  <div class="card__header">
+    <h5 class="card__title">Eventos disponibles</h5>
+  </div>
+  <div class="card__body">
+    <div class="table-responsive">
+      <table class="table table-sm table-striped">
+        <thead>
+          <tr>
+            <th>Evento</th>
+            <th>Sede</th>
+            <th>Inicio</th>
+            <th>Fin</th>
+            <th>Horario</th>
+          </tr>
+        </thead>
+        <tbody id="events-body"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<script>
+(function() {
+  const syncButton = document.getElementById("sync-events");
+  const msgEl = document.getElementById("sync-msg");
+  const tableBody = document.getElementById("events-body");
+
+  function showMsg(text, kind) {
+    msgEl.className = "alert alert-" + (kind || "info");
+    msgEl.textContent = text;
+    msgEl.classList.remove("d-none");
+    setTimeout(() => msgEl.classList.add("d-none"), 5000);
+  }
+
+  async function fetchJSON(url, options) {
+    const resp = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      ...options
+    });
+    if (!resp.ok) {
+      let detail = "HTTP " + resp.status;
+      try {
+        const data = await resp.json();
+        if (data.detail) {
+          detail = data.detail;
+        }
+      } catch (e) {
+        // no-op
+      }
+      throw new Error(detail);
+    }
+    return await resp.json();
+  }
+
+  function formatDate(value) {
+    if (!value) return "";
+    return value;
+  }
+
+  function formatTime(value) {
+    if (!value) return "";
+    return value.slice(0, 5);
+  }
+
+  function renderEvents(events) {
+    if (!events.length) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="5" class="text-muted">Sin eventos disponibles.</td>
+        </tr>
+      `;
+      return;
+    }
+    tableBody.innerHTML = events.map(event => `
+      <tr>
+        <td>${event.name || ""}</td>
+        <td>${event.site_name || ""}</td>
+        <td>${formatDate(event.start_date)}</td>
+        <td>${formatDate(event.end_date)}</td>
+        <td>${formatTime(event.start_time)} - ${formatTime(event.end_time)}</td>
+      </tr>
+    `).join("");
+  }
+
+  async function loadEvents() {
+    const data = await fetchJSON("/api/events/");
+    renderEvents(data);
+  }
+
+  syncButton.addEventListener("click", async () => {
+    try {
+      showMsg("Sincronizando eventos...", "info");
+      await loadEvents();
+      showMsg("Lista de eventos actualizada ✅", "success");
+    } catch (error) {
+      showMsg("Error al sincronizar: " + error.message, "danger");
+    }
+  });
+
+  loadEvents().catch(error => showMsg("Error cargando eventos: " + error.message, "danger"));
+})();
+</script>
+{% endblock content %}

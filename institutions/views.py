@@ -1,3 +1,5 @@
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render
 from rest_framework import viewsets
 
 from .models import AccessDevice, AccessPoint, Event, Site
@@ -27,3 +29,9 @@ class AccessDeviceViewSet(viewsets.ModelViewSet):
 class EventViewSet(viewsets.ModelViewSet):
     queryset = Event.objects.select_related("site").all()
     serializer_class = EventSerializer
+
+
+@login_required
+def events_console(request):
+    """Consola web para listar y sincronizar eventos desde la base local."""
+    return render(request, "institutions/events_console.html")
