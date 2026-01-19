@@ -6,6 +6,9 @@
     <div class="d-flex gap-2">
       <button id="sync-devices" class="btn btn-primary btn-sm">Sincronizar lectores</button>
       <button id="sync-users" class="btn btn-secondary btn-sm">Sincronizar personas</button>
+      <button id="refresh-device-users" class="btn btn-outline-primary btn-sm">
+        Buscar en dispositivo
+      </button>
     </div>
   </div>
 
@@ -15,9 +18,6 @@
     <div class="col-lg-6">
       <div class="d-flex justify-content-between align-items-center">
         <h5>Lectores</h5>
-        <button id="refresh-device-users" class="btn btn-outline-primary btn-sm">
-          Buscar en dispositivo
-        </button>
       </div>
       <div class="table-responsive">
         <table class="table table-sm table-striped">
@@ -62,8 +62,8 @@
             <tr>
               <th>Nombre</th>
               <th>ID BioStar</th>
-              <th>Grupo</th>
               <th>Grupos de acceso</th>
+              <th>Grupo</th>
             </tr>
           </thead>
           <tbody id="users-body"></tbody>
@@ -156,7 +156,11 @@
 
   function mapAccessGroups(accessGroups) {
     if (!Array.isArray(accessGroups) || accessGroups.length === 0) return "—";
-    return accessGroups.map(g => g.name).filter(Boolean).join(", ");
+    return accessGroups
+      .map(g => g.name)
+      .filter(Boolean)
+      .map(name => `<div>${name}</div>`)
+      .join("");
   }
 
   function mapUserGroup(userGroup) {
@@ -200,8 +204,8 @@
       <tr>
         <td>${u.name || ""}</td>
         <td>${u.user_id || ""}</td>
-        <td>${mapUserGroup(u.user_group_id)}</td>
         <td>${mapAccessGroups(u.access_groups)}</td>
+        <td>${mapUserGroup(u.user_group_id)}</td>
       </tr>
     `).join("");
     const start = userSearchState.offset + 1;
@@ -246,6 +250,17 @@
 
   document.getElementById("user-search-btn").addEventListener("click", async () => {
     userSearchState.searchText = document.getElementById("user-search-text").value.trim();
+    userSearchState.offset = 0;
+    try {
+      await loadUsers();
+    } catch (e) {
+      showMsg("Error buscando usuarios: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("user-search-text").addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") return;
+    userSearchState.searchText = event.target.value.trim();
     userSearchState.offset = 0;
     try {
       await loadUsers();
