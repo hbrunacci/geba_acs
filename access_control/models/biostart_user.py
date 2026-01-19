@@ -20,6 +20,9 @@ class BioStarUser(models.Model):
     email = models.EmailField(blank=True, default="")
     phone = models.CharField(max_length=64, blank=True, default="")
 
+    is_active = models.BooleanField(default=True, db_index=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
     raw_payload = models.JSONField(default=dict, blank=True)
     last_synced_at = models.DateTimeField(auto_now=True)
 
