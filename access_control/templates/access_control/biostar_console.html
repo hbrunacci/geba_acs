@@ -1,4 +1,43 @@
 {% extends "common/base.html" %}
+{% block extra_css %}
+<style>
+  .biostar__panel {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    background: #fff;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+    height: 100%;
+  }
+
+  .biostar__filters {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    margin-bottom: 1rem;
+  }
+
+  .biostar__filters label {
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-bottom: 0.25rem;
+  }
+
+  .biostar__filters input {
+    width: 100%;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    font-size: 0.9rem;
+  }
+
+  .biostar__table thead th {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+</style>
+{% endblock extra_css %}
 {% block content %}
 <div class="container mt-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
@@ -11,14 +50,28 @@
 
   <div id="msg" class="alert d-none" role="alert"></div>
 
-  <div class="row">
+  <div class="row g-3">
     <div class="col-lg-6">
-      <h5>Lectores</h5>
-      <div class="table-responsive">
-        <table class="table table-sm table-striped">
+      <section id="biostar-devices" class="biostar__panel">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">Dispositivos</h5>
+        </div>
+        <div class="biostar__filters">
+          <div>
+            <label for="devices-search-name">Buscar por nombre</label>
+            <input id="devices-search-name" type="search" placeholder="Ej: Entrada principal" />
+          </div>
+          <div>
+            <label for="devices-search-id">ID BioStar</label>
+            <input id="devices-search-id" type="search" placeholder="Ej: 1004" />
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-striped biostar__table">
           <thead>
             <tr>
               <th>Nombre</th>
+              <th>ID</th>
               <th>IP</th>
               <th>Tipo</th>
               <th>Estado</th>
@@ -26,14 +79,28 @@
             </tr>
           </thead>
           <tbody id="devices-body"></tbody>
-        </table>
-      </div>
+          </table>
+        </div>
+      </section>
     </div>
 
     <div class="col-lg-6">
-      <h5>Personas</h5>
-      <div class="table-responsive">
-        <table class="table table-sm table-striped">
+      <section id="biostar-users" class="biostar__panel">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">Personas</h5>
+        </div>
+        <div class="biostar__filters">
+          <div>
+            <label for="users-search-name">Buscar por nombre</label>
+            <input id="users-search-name" type="search" placeholder="Ej: Juan Pérez" />
+          </div>
+          <div>
+            <label for="users-search-id">ID BioStar</label>
+            <input id="users-search-id" type="search" placeholder="Ej: 4500" />
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-striped biostar__table">
           <thead>
             <tr>
               <th>Nombre</th>
@@ -44,14 +111,17 @@
             </tr>
           </thead>
           <tbody id="users-body"></tbody>
-        </table>
-      </div>
+          </table>
+        </div>
+      </section>
     </div>
   </div>
 </div>
 
 <script>
 (function() {
+  let devicesCache = [];
+  let usersCache = [];
   function showMsg(text, kind) {
     const el = document.getElementById("msg");
     el.className = "alert alert-" + (kind || "info");
@@ -86,12 +156,12 @@
     return v ? decodeURIComponent(v.split("=")[1]) : "";
   }
 
-  async function loadDevices() {
-    const data = await fetchJSON("/api/biostar/devices/");
+  function renderDevices(data) {
     const body = document.getElementById("devices-body");
     body.innerHTML = data.map(d => `
       <tr>
         <td>${d.name || ""}</td>
+        <td>${d.device_id || ""}</td>
         <td>${d.ip_addr || ""}</td>
         <td>${d.device_type || ""}</td>
         <td>${statusBadge(d.status)}</td>
@@ -100,8 +170,7 @@
     `).join("");
   }
 
-  async function loadUsers() {
-    const data = await fetchJSON("/api/biostar/users/");
+  function renderUsers(data) {
     const body = document.getElementById("users-body");
     body.innerHTML = data.map(u => `
       <tr>
@@ -112,6 +181,39 @@
         <td>${(u.last_synced_at || "").replace("T", " ").slice(0,19)}</td>
       </tr>
     `).join("");
+  }
+
+  function filterDevices() {
+    const nameTerm = document.getElementById("devices-search-name").value.trim().toLowerCase();
+    const idTerm = document.getElementById("devices-search-id").value.trim().toLowerCase();
+    const filtered = devicesCache.filter(device => {
+      const nameMatch = (device.name || "").toLowerCase().includes(nameTerm);
+      const idMatch = String(device.device_id || "").toLowerCase().includes(idTerm);
+      return nameMatch && idMatch;
+    });
+    renderDevices(filtered);
+  }
+
+  function filterUsers() {
+    const nameTerm = document.getElementById("users-search-name").value.trim().toLowerCase();
+    const idTerm = document.getElementById("users-search-id").value.trim().toLowerCase();
+    const filtered = usersCache.filter(user => {
+      const nameMatch = (user.name || "").toLowerCase().includes(nameTerm);
+      const idValue = user.user_unique_id || user.user_id || "";
+      const idMatch = String(idValue).toLowerCase().includes(idTerm);
+      return nameMatch && idMatch;
+    });
+    renderUsers(filtered);
+  }
+
+  async function loadDevices() {
+    devicesCache = await fetchJSON("/api/biostar/devices/");
+    filterDevices();
+  }
+
+  async function loadUsers() {
+    usersCache = await fetchJSON("/api/biostar/users/");
+    filterUsers();
   }
 
   document.getElementById("sync-devices").addEventListener("click", async () => {
@@ -135,6 +237,11 @@
       showMsg("Error sincronizando personas: " + e.message, "danger");
     }
   });
+
+  document.getElementById("devices-search-name").addEventListener("input", filterDevices);
+  document.getElementById("devices-search-id").addEventListener("input", filterDevices);
+  document.getElementById("users-search-name").addEventListener("input", filterUsers);
+  document.getElementById("users-search-id").addEventListener("input", filterUsers);
 
   // Carga inicial
   Promise.all([loadDevices(), loadUsers()]).catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
