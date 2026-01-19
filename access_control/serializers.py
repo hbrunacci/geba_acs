@@ -73,4 +73,13 @@ class BioStarDeviceSerializer(serializers.ModelSerializer):
 class BioStarUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = BioStarUser
-        fields = ("user_id", "user_unique_id", "name", "email", "phone", "last_synced_at")
+        fields = (
+            "user_id",
+            "user_unique_id",
+            "name",
+            "email",
+            "phone",
+            "is_active",
+            "last_seen_at",
+            "last_synced_at",
+        )
