@@ -149,3 +149,28 @@ class BioStar2Client:
         Lista grupos de dispositivos en BioStar 2
         """
         return self.request("GET", "/api/device_groups").json()
+
+    def list_device_users(self, device_id: int, *, limit: int = 1, offset: int = 0) -> dict:
+        return self.request(
+            "GET",
+            f"/api/devices/{device_id}/users",
+            params={"limit": limit, "offset": offset},
+        ).json()
+
+    def search_users_v2(
+        self,
+        *,
+        search_text: str,
+        user_group_id: str = "1",
+        limit: int = 50,
+        offset: int = 0,
+        order_by: str = "user_id:false",
+    ) -> dict:
+        payload = {
+            "limit": limit,
+            "offset": offset,
+            "search_text": search_text,
+            "user_group_id": user_group_id,
+            "order_by": order_by,
+        }
+        return self.request("POST", "/api/v2/users/search", json=payload).json()

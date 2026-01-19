@@ -1,0 +1,294 @@
+{% extends "common/base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>BioStar 2 - Consola</h3>
+    <div class="d-flex gap-2">
+      <button id="sync-devices" class="btn btn-primary btn-sm">Sincronizar lectores</button>
+      <button id="sync-users" class="btn btn-secondary btn-sm">Sincronizar personas</button>
+      <button id="refresh-device-users" class="btn btn-outline-primary btn-sm">
+        Buscar en dispositivo
+      </button>
+    </div>
+  </div>
+
+  <div id="msg" class="alert d-none" role="alert"></div>
+
+  <div class="row">
+    <div class="col-lg-6">
+      <div class="d-flex justify-content-between align-items-center">
+        <h5>Lectores</h5>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-striped">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>IP</th>
+              <th>Tipo</th>
+              <th>Usuarios</th>
+              <th>Estado</th>
+              <th>Sync</th>
+            </tr>
+          </thead>
+          <tbody id="devices-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="d-flex justify-content-between align-items-center">
+        <h5>Personas</h5>
+        <div class="d-flex gap-2">
+          <input
+            id="user-search-text"
+            class="form-control form-control-sm"
+            placeholder="Buscar usuarios..."
+            autocomplete="off"
+          />
+          <button id="user-search-btn" class="btn btn-outline-secondary btn-sm">Buscar</button>
+        </div>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-2">
+        <small id="user-search-meta" class="text-muted"></small>
+        <div class="d-flex gap-2">
+          <button id="user-prev" class="btn btn-outline-secondary btn-sm" disabled>◀</button>
+          <button id="user-next" class="btn btn-outline-secondary btn-sm" disabled>▶</button>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-striped">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>ID BioStar</th>
+              <th>Grupos de acceso</th>
+              <th>Grupo</th>
+            </tr>
+          </thead>
+          <tbody id="users-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  function showMsg(text, kind) {
+    const el = document.getElementById("msg");
+    el.className = "alert alert-" + (kind || "info");
+    el.textContent = text;
+    el.classList.remove("d-none");
+    setTimeout(() => el.classList.add("d-none"), 4000);
+  }
+
+  function statusBadge(status) {
+    // Ajustable: si BioStar usa 0/1/2, esto te da una UI clara
+    if (status === 1) return '<span class="badge bg-success">Conectado</span>';
+    if (status === 0) return '<span class="badge bg-danger">Desconectado</span>';
+    if (status === 2) return '<span class="badge bg-warning text-dark">Sync err</span>';
+    return '<span class="badge bg-secondary">N/A</span>';
+  }
+
+  async function fetchJSON(url, options) {
+    const resp = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken"),
+      },
+      ...options
+    });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    return await resp.json();
+  }
+
+  function getCookie(name) {
+    const v = document.cookie.split(";").map(s => s.trim()).find(s => s.startsWith(name + "="));
+    return v ? decodeURIComponent(v.split("=")[1]) : "";
+  }
+
+  function getDeviceUsersTotal(payload) {
+    const collection =
+      payload?.DeviceUserCollection ||
+      payload?.device_user_collection ||
+      payload?.UserCollection ||
+      payload?.user_collection;
+    if (!collection) return null;
+    if (typeof collection.total === "number") return collection.total;
+    if (Array.isArray(collection.rows)) return collection.rows.length;
+    return null;
+  }
+
+  async function fetchDeviceUserTotal(deviceId) {
+    try {
+      const payload = await fetchJSON(`/api/biostar/devices/${deviceId}/users/`);
+      return getDeviceUsersTotal(payload);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function loadDevices({ refreshUsers = true } = {}) {
+    const data = await fetchJSON("/api/biostar/devices/");
+    const body = document.getElementById("devices-body");
+    const totals = {};
+    if (refreshUsers) {
+      await Promise.all(
+        data.map(async (d) => {
+          const total = await fetchDeviceUserTotal(d.device_id);
+          totals[d.device_id] = total;
+        })
+      );
+    }
+    body.innerHTML = data.map(d => `
+      <tr>
+        <td>${d.name || ""}</td>
+        <td>${d.ip_addr || ""}</td>
+        <td>${d.device_type || ""}</td>
+        <td>${totals[d.device_id] ?? "—"}</td>
+        <td>${statusBadge(d.status)}</td>
+        <td>${(d.last_synced_at || "").replace("T", " ").slice(0,19)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function mapAccessGroups(accessGroups) {
+    if (!Array.isArray(accessGroups) || accessGroups.length === 0) return "—";
+    return accessGroups
+      .map(g => g.name)
+      .filter(Boolean)
+      .map(name => `<div>${name}</div>`)
+      .join("");
+  }
+
+  function mapUserGroup(userGroup) {
+    if (!userGroup) return "—";
+    if (typeof userGroup === "string") return userGroup;
+    return userGroup.name || "—";
+  }
+
+  let userSearchState = {
+    searchText: "",
+    limit: 50,
+    offset: 0,
+    total: 0,
+  };
+
+  async function loadUsers() {
+    if (!userSearchState.searchText) {
+      const body = document.getElementById("users-body");
+      body.innerHTML = "<tr><td colspan=\"4\">Ingresá un texto para buscar.</td></tr>";
+      document.getElementById("user-search-meta").textContent = "";
+      document.getElementById("user-prev").disabled = true;
+      document.getElementById("user-next").disabled = true;
+      return;
+    }
+    const payload = await fetchJSON("/api/biostar/users/search/", {
+      method: "POST",
+      body: JSON.stringify({
+        search_text: userSearchState.searchText,
+        user_group_id: "1",
+        limit: userSearchState.limit,
+        offset: userSearchState.offset,
+        order_by: "user_id:false",
+      }),
+    });
+    const collection = payload?.UserCollection || payload?.user_collection;
+    const total = collection?.total || 0;
+    const rows = collection?.rows || [];
+    userSearchState.total = total;
+    const body = document.getElementById("users-body");
+    body.innerHTML = rows.map(u => `
+      <tr>
+        <td>${u.name || ""}</td>
+        <td>${u.user_id || ""}</td>
+        <td>${mapAccessGroups(u.access_groups)}</td>
+        <td>${mapUserGroup(u.user_group_id)}</td>
+      </tr>
+    `).join("");
+    const start = userSearchState.offset + 1;
+    const end = userSearchState.offset + rows.length;
+    document.getElementById("user-search-meta").textContent =
+      total > 0 ? `Mostrando ${start}-${end} de ${total}` : "Sin resultados";
+    document.getElementById("user-prev").disabled = userSearchState.offset === 0;
+    document.getElementById("user-next").disabled = end >= total;
+  }
+
+  document.getElementById("sync-devices").addEventListener("click", async () => {
+    try {
+      showMsg("Sincronizando lectores...", "info");
+      await fetchJSON("/api/biostar/devices/sync/", { method: "POST" });
+      await loadDevices();
+      showMsg("Lectores sincronizados ✅", "success");
+    } catch (e) {
+      showMsg("Error sincronizando lectores: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("sync-users").addEventListener("click", async () => {
+    try {
+      showMsg("Sincronizando personas...", "info");
+      await fetchJSON("/api/biostar/users/sync/", { method: "POST" });
+      await loadUsers();
+      showMsg("Personas sincronizadas ✅", "success");
+    } catch (e) {
+      showMsg("Error sincronizando personas: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("refresh-device-users").addEventListener("click", async () => {
+    try {
+      showMsg("Consultando usuarios por dispositivo...", "info");
+      await loadDevices({ refreshUsers: true });
+      showMsg("Usuarios actualizados ✅", "success");
+    } catch (e) {
+      showMsg("Error consultando usuarios: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("user-search-btn").addEventListener("click", async () => {
+    userSearchState.searchText = document.getElementById("user-search-text").value.trim();
+    userSearchState.offset = 0;
+    try {
+      await loadUsers();
+    } catch (e) {
+      showMsg("Error buscando usuarios: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("user-search-text").addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") return;
+    userSearchState.searchText = event.target.value.trim();
+    userSearchState.offset = 0;
+    try {
+      await loadUsers();
+    } catch (e) {
+      showMsg("Error buscando usuarios: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("user-prev").addEventListener("click", async () => {
+    userSearchState.offset = Math.max(0, userSearchState.offset - userSearchState.limit);
+    try {
+      await loadUsers();
+    } catch (e) {
+      showMsg("Error buscando usuarios: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("user-next").addEventListener("click", async () => {
+    userSearchState.offset = userSearchState.offset + userSearchState.limit;
+    try {
+      await loadUsers();
+    } catch (e) {
+      showMsg("Error buscando usuarios: " + e.message, "danger");
+    }
+  });
+
+  // Carga inicial
+  Promise.all([loadDevices(), loadUsers()]).catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
+})();
+</script>
+{% endblock %}
