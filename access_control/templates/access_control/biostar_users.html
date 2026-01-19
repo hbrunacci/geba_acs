@@ -1,0 +1,157 @@
+{% extends "common/base.html" %}
+{% block extra_css %}
+<style>
+  .biostar__panel {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    background: #fff;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  }
+
+  .biostar__filters {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    margin-bottom: 1rem;
+  }
+
+  .biostar__filters label {
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-bottom: 0.25rem;
+  }
+
+  .biostar__filters input {
+    width: 100%;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    font-size: 0.9rem;
+  }
+
+  .biostar__table thead th {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+</style>
+{% endblock extra_css %}
+{% block content %}
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>BioStar 2 - Personas</h3>
+    <div class="d-flex gap-2">
+      <button id="sync-users" class="btn btn-secondary btn-sm">Sincronizar personas</button>
+    </div>
+  </div>
+
+  <div id="msg" class="alert d-none" role="alert"></div>
+
+  <section class="biostar__panel">
+    <div class="biostar__filters">
+      <div>
+        <label for="users-search-name">Buscar por nombre</label>
+        <input id="users-search-name" type="search" placeholder="Ej: Juan Pérez" />
+      </div>
+      <div>
+        <label for="users-search-id">ID BioStar</label>
+        <input id="users-search-id" type="search" placeholder="Ej: 4500" />
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-sm table-striped biostar__table">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>ID BioStar</th>
+            <th>Email</th>
+            <th>Tel</th>
+            <th>Sync</th>
+          </tr>
+        </thead>
+        <tbody id="users-body"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+(function() {
+  let usersCache = [];
+
+  function showMsg(text, kind) {
+    const el = document.getElementById("msg");
+    el.className = "alert alert-" + (kind || "info");
+    el.textContent = text;
+    el.classList.remove("d-none");
+    setTimeout(() => el.classList.add("d-none"), 4000);
+  }
+
+  async function fetchJSON(url, options) {
+    const resp = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken"),
+      },
+      ...options
+    });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    return await resp.json();
+  }
+
+  function getCookie(name) {
+    const v = document.cookie.split(";").map(s => s.trim()).find(s => s.startsWith(name + "="));
+    return v ? decodeURIComponent(v.split("=")[1]) : "";
+  }
+
+  function renderUsers(data) {
+    const body = document.getElementById("users-body");
+    body.innerHTML = data.map(u => `
+      <tr>
+        <td>${u.name || ""}</td>
+        <td>${u.user_unique_id || u.user_id}</td>
+        <td>${u.email || ""}</td>
+        <td>${u.phone || ""}</td>
+        <td>${(u.last_synced_at || "").replace("T", " ").slice(0,19)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function filterUsers() {
+    const nameTerm = document.getElementById("users-search-name").value.trim().toLowerCase();
+    const idTerm = document.getElementById("users-search-id").value.trim().toLowerCase();
+    const filtered = usersCache.filter(user => {
+      const nameMatch = (user.name || "").toLowerCase().includes(nameTerm);
+      const idValue = user.user_unique_id || user.user_id || "";
+      const idMatch = String(idValue).toLowerCase().includes(idTerm);
+      return nameMatch && idMatch;
+    });
+    renderUsers(filtered);
+  }
+
+  async function loadUsers() {
+    usersCache = await fetchJSON("/api/biostar/users/");
+    filterUsers();
+  }
+
+  document.getElementById("sync-users").addEventListener("click", async () => {
+    try {
+      showMsg("Sincronizando personas...", "info");
+      await fetchJSON("/api/biostar/users/sync/", { method: "POST" });
+      await loadUsers();
+      showMsg("Personas sincronizadas ✅", "success");
+    } catch (e) {
+      showMsg("Error sincronizando personas: " + e.message, "danger");
+    }
+  });
+
+  document.getElementById("users-search-name").addEventListener("input", filterUsers);
+  document.getElementById("users-search-id").addEventListener("input", filterUsers);
+
+  loadUsers().catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
+})();
+</script>
+{% endblock %}
