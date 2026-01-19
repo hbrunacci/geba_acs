@@ -72,50 +72,39 @@ class BioStar2Client:
         return cls(cfg=cfg, env=env)
 
     def _headers(self) -> dict[str, str]:
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "accept": "application/json",
+        }
         if self.cfg.bs_session_id:
             headers["bs-session-id"] = self.cfg.bs_session_id
         return headers
 
     def login(self) -> None:
-        """
-        Login y persistencia del bs-session-id.
-
-        Doc: login es POST /login, y el header 'bs-session-id' viene en la respuesta. :contentReference[oaicite:4]{index=4} :contentReference[oaicite:5]{index=5}
-        """
-        # En muchos entornos el endpoint es /api/login (swagger local suele mostrar /login).
-        # Intentamos primero /api/login y si da 404 probamos /login.
+        url = f"{self.env.base_url}/api/login"
         payload = {"User": {"login_id": self.env.username, "password": self.env.password}}
 
-        for path in ("/api/login", "/login"):
-            url = f"{self.env.base_url}{path}"
-            resp = self.session.post(
-                url,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                verify=self.env.verify_tls,
-                timeout=self.env.timeout_seconds,
-            )
-            if resp.status_code == 404:
-                continue
+        resp = self.session.post(
+            url,
+            json=payload,
+            headers={"Content-Type": "application/json", "accept": "application/json"},
+            verify=self.env.verify_tls,
+            timeout=self.env.timeout_seconds,
+        )
+        resp.raise_for_status()
 
-            resp.raise_for_status()
-            session_id = resp.headers.get("bs-session-id")
-            if not session_id:
-                raise RuntimeError("Login OK pero no vino header bs-session-id")
+        session_id = resp.headers.get("bs-session-id")
+        if not session_id:
+            raise RuntimeError("Login OK pero no vino header bs-session-id")
 
-            self.cfg.set_session(session_id)
-            return
+        self.cfg.set_session(session_id.strip())
 
-        raise RuntimeError("No se encontró endpoint de login (/api/login ni /login)")
-
-    def request(self, method: str, path: str, *, json: Any | None = None, params: dict[str, Any] | None = None) -> requests.Response:
-        """
-        Hace un request autenticado.
-        Si la sesión no existe o expira, re-loguea una vez y reintenta.
-        """
+    def request(self, method: str, path: str, *, json=None, params=None):
         if not path.startswith("/"):
             path = "/" + path
+
+        if not self.cfg.bs_session_id:
+            self.login()
 
         url = f"{self.env.base_url}{path}"
 
@@ -129,8 +118,8 @@ class BioStar2Client:
             timeout=self.env.timeout_seconds,
         )
 
-        if resp.status_code in (401, 403):
-            # Reintento 1 vez: sesión expirada / LOGIN REQUIRED
+        if resp.status_code == 401:
+            # sesión vencida o inválida
             self.login()
             resp = self.session.request(
                 method=method.upper(),
