@@ -6,6 +6,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from access_control.models import BioStarDevice
+from access_control.models import BioStarDeviceGroup
 from access_control.services.biostar2_client import BioStar2Client
 
 
@@ -43,12 +44,18 @@ class Command(BaseCommand):
                 if device_id is None:
                     continue
 
+                group_id = item.get("device_group_id") or item.get("device_group", {}).get("id")
+                group = None
+                if group_id:
+                    group = BioStarDeviceGroup.objects.filter(group_id=group_id).first()
+
                 defaults = {
                     "name": item.get("name", "") or "",
                     "device_type": (item.get("type") or item.get("device_type") or "")[:100],
                     "ip_addr": item.get("ip_addr") or item.get("ip") or None,
                     "status": item.get("status"),
                     "raw_payload": item,
+                    "device_group": group,
                 }
 
                 obj, was_created = BioStarDevice.objects.update_or_create(

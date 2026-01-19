@@ -19,6 +19,14 @@ class BioStarDevice(models.Model):
     raw_payload = models.JSONField(default=dict, blank=True)
 
     last_synced_at = models.DateTimeField(auto_now=True)
+    device_group = models.ForeignKey(
+        "access_control.BioStarDeviceGroup",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="devices",
+    )
+
 
     class Meta:
         verbose_name = "BioStar Device"

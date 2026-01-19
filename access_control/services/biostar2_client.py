@@ -144,3 +144,8 @@ class BioStar2Client:
     def list_users(self, *, limit: int = 200, offset: int = 0) -> dict:
         return self.request("GET", "/api/users", params={"limit": limit, "offset": offset}).json()
 
+    def list_device_groups(self) -> dict:
+        """
+        Lista grupos de dispositivos en BioStar 2
+        """
+        return self.request("GET", "/api/device_groups").json()

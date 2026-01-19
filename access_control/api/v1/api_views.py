@@ -48,3 +48,4 @@ class BioStarUserSyncAPI(views.APIView):
         call_command("biostar_sync_users")
         return Response({"ok": True}, status=status.HTTP_200_OK)
 
+
