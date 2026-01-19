@@ -22,7 +22,7 @@ from django.core.management import call_command
 
 
 class BioStarDeviceListAPI(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def get(self, request):
         qs = BioStarDevice.objects.order_by("name", "device_id")
@@ -38,7 +38,7 @@ class BioStarDeviceSyncAPI(views.APIView):
 
 
 class BioStarUserListAPI(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def get(self, request):
         qs = BioStarUser.objects.order_by("name", "user_id")
