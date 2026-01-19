@@ -30,6 +30,9 @@
           <li class="nav__item{% if current_url == 'dashboard' %} nav__item--active{% endif %}">
             <a href="{% url 'common:dashboard' %}">Resumen</a>
           </li>
+          <li class="nav__item{% if current_url == 'biostar_console' %} nav__item--active{% endif %}">
+            <a href="{% url 'biostar_console' %}">BioStar 2</a>
+          </li>
         </ul>
         {% endwith %}
         {% endblock sidebar %}
