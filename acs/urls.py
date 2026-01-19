@@ -8,5 +8,6 @@ urlpatterns = [
     path("api/", include("people.urls")),
     path("api/", include("institutions.urls")),
     path("api/", include("access_control.urls")),
+    path("api/", include("access_control.urls_api")),
     path("", include("common.urls")),
 ]

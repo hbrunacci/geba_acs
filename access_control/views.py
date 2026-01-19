@@ -1,35 +1,29 @@
+from __future__ import annotations
+
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render
+
 from django.utils.translation import gettext_lazy as _
-from rest_framework import status, viewsets
+
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from access_control.models.models import ExternalAccessLogEntry, WhitelistEntry
 from access_control.serializers import ExternalAccessLogEntrySerializer, WhitelistEntrySerializer
 
-from rest_framework import permissions, status, views
-
-from access_control.models import BioStarDevice
-from access_control.serializers import BioStarDeviceSerializer
-from access_control.services.biostar2_client import BioStar2Client
+from rest_framework import status, viewsets
 
 
-class BioStarDeviceListView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+@login_required
+def biostar_console(request):
+    """
+    Consola web para:
+    - ver lectores
+    - ver usuarios
+    - sincronizar ambos
+    """
+    return render(request, "access_control/biostar_console.html")
 
-    def get(self, request):
-        qs = BioStarDevice.objects.order_by("name", "device_id")
-        return Response(BioStarDeviceSerializer(qs, many=True).data)
-
-
-class BioStarDeviceSyncView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request):
-        client = BioStar2Client.from_db_and_env()
-        payload = client.list_devices()
-        # si querés, acá podés llamar a una función reusable que haga el upsert
-        # (para no duplicar lógica con el management command).
-        return Response({"ok": True, "payload": payload}, status=status.HTTP_200_OK)
 
 
 class WhitelistEntryViewSet(viewsets.ModelViewSet):
