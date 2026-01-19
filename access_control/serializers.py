@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
-from .models import ExternalAccessLogEntry, WhitelistEntry
-
+from access_control.models import BioStarDevice
+from access_control.models.models import ExternalAccessLogEntry, WhitelistEntry
 
 class WhitelistEntrySerializer(serializers.ModelSerializer):
     class Meta:
@@ -51,3 +51,9 @@ class ExternalAccessLogEntrySerializer(serializers.ModelSerializer):
             "id_controlador_paso_permitido",
             "synced_at",
         ]
+
+
+class BioStarDeviceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BioStarDevice
+        fields = ("device_id", "name", "device_type", "ip_addr", "status", "last_synced_at")
