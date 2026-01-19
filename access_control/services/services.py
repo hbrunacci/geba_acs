@@ -18,7 +18,7 @@ try:  # pragma: no cover - la importación depende del entorno
 except ModuleNotFoundError:  # pragma: no cover - cubierto por prueba negativa
     pyodbc = None  # type: ignore
 
-from .models import ExternalAccessLogEntry
+from access_control.models.models import ExternalAccessLogEntry
 
 
 logger = logging.getLogger(__name__)

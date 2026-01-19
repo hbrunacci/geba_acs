@@ -7,7 +7,7 @@ import os
 import requests
 from django.utils import timezone
 
-from access_control.models import BioStar2Config
+from access_control.models.biostar_config import BioStar2Config
 
 
 @dataclass(frozen=True)
