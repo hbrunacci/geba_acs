@@ -8,6 +8,11 @@ from people.models import PersonType
 
 
 class WhitelistEntry(models.Model):
+    class Recurrence(models.TextChoices):
+        NONE = "none", "Sin recurrencia"
+        DAILY = "daily", "Diaria"
+        WEEKLY = "weekly", "Semanal"
+
     person = models.ForeignKey(
         "people.Person",
         on_delete=models.CASCADE,
@@ -29,6 +34,18 @@ class WhitelistEntry(models.Model):
     is_allowed = models.BooleanField(default=True)
     valid_from = models.DateField(null=True, blank=True)
     valid_until = models.DateField(null=True, blank=True)
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+    recurrence = models.CharField(
+        max_length=16,
+        choices=Recurrence.choices,
+        default=Recurrence.NONE,
+    )
+    recurrence_days = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Días de la semana (0=Lunes ... 6=Domingo) para recurrencia semanal.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -43,6 +60,26 @@ class WhitelistEntry(models.Model):
 
     def clean(self):
         super().clean()
+        errors: dict[str, str] = {}
+        if self.valid_from and self.valid_until and self.valid_from > self.valid_until:
+            errors["valid_until"] = "La fecha de fin no puede ser anterior a la de inicio."
+        if (self.start_time is None) ^ (self.end_time is None):
+            errors["start_time"] = "Debe definir un rango horario completo (inicio y fin)."
+        if self.start_time and self.end_time and self.start_time >= self.end_time:
+            errors["end_time"] = "La hora de fin debe ser posterior a la hora de inicio."
+        if self.recurrence == self.Recurrence.WEEKLY:
+            if not self.recurrence_days:
+                errors["recurrence_days"] = "Debe indicar los días de la semana para la recurrencia semanal."
+            else:
+                invalid_days = [
+                    day
+                    for day in self.recurrence_days
+                    if not isinstance(day, int) or day < 0 or day > 6
+                ]
+                if invalid_days:
+                    errors["recurrence_days"] = "Los días de recurrencia deben ser enteros entre 0 y 6."
+        elif self.recurrence_days:
+            errors["recurrence_days"] = "Solo se permiten días de recurrencia cuando la recurrencia es semanal."
         if self.event:
             if self.event.site != self.access_point.site:
                 raise ValidationError(
@@ -63,6 +100,63 @@ class WhitelistEntry(models.Model):
                             "event": "La persona no pertenece a una categoría permitida para el evento.",
                         }
                     )
+        if errors:
+            raise ValidationError(errors)
+        self._validate_overlaps()
+
+    def _validate_overlaps(self) -> None:
+        if not self.person_id or not self.access_point_id:
+            return
+        overlaps = WhitelistEntry.objects.filter(
+            person=self.person,
+            access_point=self.access_point,
+        ).exclude(pk=self.pk)
+        date_filter = models.Q()
+        if self.valid_from:
+            date_filter &= models.Q(valid_until__isnull=True) | models.Q(
+                valid_until__gte=self.valid_from
+            )
+        if self.valid_until:
+            date_filter &= models.Q(valid_from__isnull=True) | models.Q(
+                valid_from__lte=self.valid_until
+            )
+        if date_filter:
+            overlaps = overlaps.filter(date_filter)
+        if self.start_time and self.end_time:
+            overlaps = overlaps.filter(
+                models.Q(start_time__isnull=True, end_time__isnull=True)
+                | models.Q(start_time__isnull=True, end_time__gte=self.start_time)
+                | models.Q(end_time__isnull=True, start_time__lte=self.end_time)
+                | models.Q(start_time__lte=self.end_time, end_time__gte=self.start_time)
+            )
+        recurrence_filter = models.Q(
+            recurrence__in=[
+                self.Recurrence.NONE,
+                self.Recurrence.DAILY,
+                self.Recurrence.WEEKLY,
+            ]
+        )
+        if self.recurrence == self.Recurrence.WEEKLY:
+            recurrence_filter = models.Q(
+                recurrence__in=[self.Recurrence.WEEKLY, self.Recurrence.DAILY, self.Recurrence.NONE]
+            )
+        overlaps = overlaps.filter(recurrence_filter).exclude(is_allowed=self.is_allowed)
+        if self.recurrence == self.Recurrence.WEEKLY:
+            weekdays = set(self.recurrence_days or [])
+            conflicts = [
+                entry
+                for entry in overlaps
+                if entry.recurrence != self.Recurrence.WEEKLY
+                or weekdays.intersection(entry.recurrence_days or [])
+            ]
+        else:
+            conflicts = list(overlaps)
+        if conflicts:
+            raise ValidationError(
+                {
+                    "__all__": "Existe una autorización contradictoria con el mismo rango de fechas/horarios."
+                }
+            )
 
 
 class ExternalAccessLogEntry(models.Model):
@@ -96,5 +190,4 @@ class ExternalAccessLogEntry(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover - representación auxiliar
         return f"#{self.external_id} @ {self.fecha:%Y-%m-%d %H:%M:%S}"
-
 

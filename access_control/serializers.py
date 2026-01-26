@@ -15,6 +15,10 @@ class WhitelistEntrySerializer(serializers.ModelSerializer):
             "is_allowed",
             "valid_from",
             "valid_until",
+            "start_time",
+            "end_time",
+            "recurrence",
+            "recurrence_days",
             "created_at",
             "updated_at",
         ]

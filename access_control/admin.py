@@ -29,6 +29,9 @@ class WhitelistEntryAdmin(admin.ModelAdmin):
         "is_allowed",
         "valid_from",
         "valid_until",
+        "start_time",
+        "end_time",
+        "recurrence",
     )
     list_filter = ("is_allowed", "access_point__site")
     search_fields = ("person__last_name", "access_point__name", "event__name")
