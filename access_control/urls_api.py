@@ -8,6 +8,7 @@ from access_control.api.v1.api_views import (
     BioStarUserSearchAPI,
     BioStarUserSyncAPI,
     ExternalAccessLogSyncAPI,
+    WhitelistBatchCreateAPI,
 )
 
 urlpatterns = [
@@ -25,5 +26,10 @@ urlpatterns = [
         "external-access/sync/",
         ExternalAccessLogSyncAPI.as_view(),
         name="external_access_sync_api",
+    ),
+    path(
+        "whitelist/batch/",
+        WhitelistBatchCreateAPI.as_view(),
+        name="whitelist_batch_create_api",
     ),
 ]
