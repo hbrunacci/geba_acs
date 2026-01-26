@@ -29,6 +29,13 @@ class WhitelistEntry(models.Model):
     is_allowed = models.BooleanField(default=True)
     valid_from = models.DateField(null=True, blank=True)
     valid_until = models.DateField(null=True, blank=True)
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+    days_of_week = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Lista de días de la semana (0=Lunes, 6=Domingo) para recurrencia semanal.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -96,5 +103,4 @@ class ExternalAccessLogEntry(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover - representación auxiliar
         return f"#{self.external_id} @ {self.fecha:%Y-%m-%d %H:%M:%S}"
-
 
