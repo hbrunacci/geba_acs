@@ -130,7 +130,7 @@
     }
   }
 
-  async function loadDevices({ refreshUsers = true } = {}) {
+  async function loadDevices({ refreshUsers = false } = {}) {
     const data = await fetchJSON("/api/biostar/devices/");
     const body = document.getElementById("devices-body");
     const totals = {};
@@ -220,7 +220,7 @@
     try {
       showMsg("Sincronizando lectores...", "info");
       await fetchJSON("/api/biostar/devices/sync/", { method: "POST" });
-      await loadDevices();
+      await loadDevices({ refreshUsers: false });
       showMsg("Lectores sincronizados ✅", "success");
     } catch (e) {
       showMsg("Error sincronizando lectores: " + e.message, "danger");
@@ -288,7 +288,9 @@
   });
 
   // Carga inicial
-  Promise.all([loadDevices(), loadUsers()]).catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
+  Promise.all([loadDevices({ refreshUsers: false }), loadUsers()]).catch(
+    e => showMsg("Error cargando datos: " + e.message, "danger")
+  );
 })();
 </script>
 {% endblock %}
