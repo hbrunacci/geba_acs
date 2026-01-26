@@ -50,26 +50,102 @@ class WhitelistEntry(models.Model):
 
     def clean(self):
         super().clean()
+        errors: dict[str, str] = {}
+        if (self.start_time and not self.end_time) or (self.end_time and not self.start_time):
+            errors["start_time"] = "Debe indicar hora de inicio y hora de fin juntas."
+            errors["end_time"] = "Debe indicar hora de inicio y hora de fin juntas."
+        if self.start_time and self.end_time and self.start_time >= self.end_time:
+            errors["start_time"] = "La hora de inicio debe ser anterior a la hora de fin."
+        if self.valid_from and self.valid_until and self.valid_from > self.valid_until:
+            errors["valid_until"] = "La fecha de inicio debe ser anterior o igual a la fecha de fin."
+        if self.days_of_week is not None:
+            if not isinstance(self.days_of_week, list) or not self.days_of_week:
+                errors["days_of_week"] = "Debe ser una lista no vacía de días de la semana."
+            else:
+                invalid_days = [
+                    day
+                    for day in self.days_of_week
+                    if not isinstance(day, int) or day not in range(7)
+                ]
+                if invalid_days:
+                    errors["days_of_week"] = (
+                        "Los días deben estar entre 0 (lunes) y 6 (domingo)."
+                    )
+
         if self.event:
             if self.event.site != self.access_point.site:
-                raise ValidationError(
-                    {"event": "El evento debe pertenecer a la misma sede del punto de acceso."}
-                )
+                errors["event"] = "El evento debe pertenecer a la misma sede del punto de acceso."
             person_type = self.person.person_type
             if person_type == PersonType.GUEST:
                 if self.person.guest_type not in self.event.allowed_guest_types:
-                    raise ValidationError(
-                        {
-                            "event": "El invitado no coincide con los tipos de invitados permitidos para el evento.",
-                        }
+                    errors["event"] = (
+                        "El invitado no coincide con los tipos de invitados permitidos para el evento."
                     )
             else:
                 if person_type not in self.event.allowed_person_types:
-                    raise ValidationError(
-                        {
-                            "event": "La persona no pertenece a una categoría permitida para el evento.",
-                        }
+                    errors["event"] = (
+                        "La persona no pertenece a una categoría permitida para el evento."
                     )
+
+        if errors:
+            raise ValidationError(errors)
+
+        overlapping_entries = self._find_overlapping_entries()
+        if overlapping_entries:
+            raise ValidationError(
+                {
+                    "is_allowed": (
+                        "Ya existe una autorización con horarios o fechas solapadas para la misma persona y acceso."
+                    )
+                }
+            )
+
+    def _find_overlapping_entries(self) -> list["WhitelistEntry"]:
+        queryset = (
+            WhitelistEntry.objects.filter(
+                person=self.person,
+                access_point=self.access_point,
+            )
+            .exclude(pk=self.pk)
+            .exclude(is_allowed=self.is_allowed)
+        )
+
+        date_overlap_filters = []
+        if self.valid_until is not None:
+            date_overlap_filters.append(
+                models.Q(valid_from__isnull=True) | models.Q(valid_from__lte=self.valid_until)
+            )
+        if self.valid_from is not None:
+            date_overlap_filters.append(
+                models.Q(valid_until__isnull=True) | models.Q(valid_until__gte=self.valid_from)
+            )
+        if date_overlap_filters:
+            date_overlap = date_overlap_filters.pop()
+            for condition in date_overlap_filters:
+                date_overlap &= condition
+            queryset = queryset.filter(date_overlap)
+
+        if self.start_time and self.end_time:
+            time_overlap = (
+                models.Q(start_time__isnull=True)
+                | models.Q(end_time__isnull=True)
+                | (models.Q(start_time__lt=self.end_time) & models.Q(end_time__gt=self.start_time))
+            )
+            queryset = queryset.filter(time_overlap)
+
+        candidates = list(queryset)
+        if self.days_of_week is None:
+            return candidates
+        overlapping = []
+        current_days = set(self.days_of_week or [])
+        for entry in candidates:
+            if entry.days_of_week is None:
+                overlapping.append(entry)
+                continue
+            entry_days = set(entry.days_of_week or [])
+            if current_days.intersection(entry_days):
+                overlapping.append(entry)
+        return overlapping
 
 
 class ExternalAccessLogEntry(models.Model):
@@ -103,4 +179,3 @@ class ExternalAccessLogEntry(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover - representación auxiliar
         return f"#{self.external_id} @ {self.fecha:%Y-%m-%d %H:%M:%S}"
-
