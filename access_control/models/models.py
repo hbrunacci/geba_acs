@@ -111,44 +111,25 @@ class WhitelistEntry(models.Model):
             person=self.person,
             access_point=self.access_point,
         ).exclude(pk=self.pk)
-        date_filter = models.Q()
-        if self.valid_from:
-            date_filter &= models.Q(valid_until__isnull=True) | models.Q(
-                valid_until__gte=self.valid_from
-            )
-        if self.valid_until:
-            date_filter &= models.Q(valid_from__isnull=True) | models.Q(
-                valid_from__lte=self.valid_until
-            )
-        if date_filter:
-            overlaps = overlaps.filter(date_filter)
-        if self.start_time and self.end_time:
-            overlaps = overlaps.filter(
-                models.Q(start_time__isnull=True, end_time__isnull=True)
-                | models.Q(start_time__isnull=True, end_time__gte=self.start_time)
-                | models.Q(end_time__isnull=True, start_time__lte=self.end_time)
-                | models.Q(start_time__lte=self.end_time, end_time__gte=self.start_time)
-            )
-        recurrence_filter = models.Q(
-            recurrence__in=[
-                self.Recurrence.NONE,
-                self.Recurrence.DAILY,
-                self.Recurrence.WEEKLY,
-            ]
-        )
-        if self.recurrence == self.Recurrence.WEEKLY:
-            recurrence_filter = models.Q(
-                recurrence__in=[self.Recurrence.WEEKLY, self.Recurrence.DAILY, self.Recurrence.NONE]
-            )
-        overlaps = overlaps.filter(recurrence_filter).exclude(is_allowed=self.is_allowed)
+        date_overlap = self._date_overlap_query()
+        if date_overlap is not None:
+            overlaps = overlaps.filter(date_overlap)
+        time_overlap = self._time_overlap_query()
+        if time_overlap is not None:
+            overlaps = overlaps.filter(time_overlap)
+        overlaps = overlaps.exclude(is_allowed=self.is_allowed)
         if self.recurrence == self.Recurrence.WEEKLY:
             weekdays = set(self.recurrence_days or [])
-            conflicts = [
-                entry
-                for entry in overlaps
-                if entry.recurrence != self.Recurrence.WEEKLY
-                or weekdays.intersection(entry.recurrence_days or [])
-            ]
+            weekly_entries = overlaps.filter(recurrence=self.Recurrence.WEEKLY)
+            non_weekly_entries = overlaps.exclude(recurrence=self.Recurrence.WEEKLY)
+            conflicts = list(non_weekly_entries)
+            conflicts.extend(
+                [
+                    entry
+                    for entry in weekly_entries
+                    if weekdays.intersection(entry.recurrence_days or [])
+                ]
+            )
         else:
             conflicts = list(overlaps)
         if conflicts:
@@ -157,6 +138,28 @@ class WhitelistEntry(models.Model):
                     "__all__": "Existe una autorización contradictoria con el mismo rango de fechas/horarios."
                 }
             )
+
+    def _date_overlap_query(self) -> models.Q | None:
+        if self.valid_from and self.valid_until:
+            return (
+                (models.Q(valid_from__isnull=True) | models.Q(valid_from__lte=self.valid_until))
+                & (models.Q(valid_until__isnull=True) | models.Q(valid_until__gte=self.valid_from))
+            )
+        if self.valid_from:
+            return models.Q(valid_until__isnull=True) | models.Q(valid_until__gte=self.valid_from)
+        if self.valid_until:
+            return models.Q(valid_from__isnull=True) | models.Q(valid_from__lte=self.valid_until)
+        return None
+
+    def _time_overlap_query(self) -> models.Q | None:
+        if self.start_time and self.end_time:
+            return (
+                models.Q(start_time__isnull=True, end_time__isnull=True)
+                | models.Q(start_time__isnull=True, end_time__gte=self.start_time)
+                | models.Q(end_time__isnull=True, start_time__lte=self.end_time)
+                | models.Q(start_time__lte=self.end_time, end_time__gte=self.start_time)
+            )
+        return None
 
 
 class ExternalAccessLogEntry(models.Model):
@@ -190,4 +193,3 @@ class ExternalAccessLogEntry(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover - representación auxiliar
         return f"#{self.external_id} @ {self.fecha:%Y-%m-%d %H:%M:%S}"
-
