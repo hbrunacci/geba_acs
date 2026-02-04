@@ -64,22 +64,63 @@
       <table class="table table-sm table-striped biostar__table">
         <thead>
           <tr>
-            <th>Nombre</th>
-            <th>ID BioStar</th>
-            <th>Email</th>
-            <th>Tel</th>
-            <th>Sync</th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="name">
+                Nombre <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="user_unique_id">
+                ID BioStar <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="email">
+                Email <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="phone">
+                Tel <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="last_synced_at">
+                Sync <span class="text-muted">↕</span>
+              </button>
+            </th>
           </tr>
         </thead>
         <tbody id="users-body"></tbody>
       </table>
+    </div>
+    <div class="d-flex justify-content-between align-items-center mt-2">
+      <small id="users-pagination-meta" class="text-muted"></small>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Paginación de personas">
+        <button id="users-prev" class="btn btn-outline-secondary" type="button" disabled>◀</button>
+        <button id="users-next" class="btn btn-outline-secondary" type="button" disabled>▶</button>
+      </div>
     </div>
   </section>
 </div>
 
 <script>
 (function() {
-  let usersCache = [];
+  let usersPage = [];
+  const paginationMeta = document.getElementById("users-pagination-meta");
+  const prevButton = document.getElementById("users-prev");
+  const nextButton = document.getElementById("users-next");
+  const sortButtons = document.querySelectorAll("[data-sort-key]");
+  const usersState = {
+    url: "/api/biostar/users/",
+    next: null,
+    previous: null,
+    count: null,
+    page: 1,
+    pageSize: 0,
+    sortKey: "name",
+    sortDir: "asc",
+  };
 
   function showMsg(text, kind) {
     const el = document.getElementById("msg");
@@ -116,9 +157,29 @@
     return v ? decodeURIComponent(v.split("=")[1]) : "";
   }
 
+  function compareValues(a, b) {
+    const aNum = Number(a);
+    const bNum = Number(b);
+    if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+      return aNum - bNum;
+    }
+    return String(a ?? "").localeCompare(String(b ?? ""), "es", { numeric: true, sensitivity: "base" });
+  }
+
+  function applySort(items) {
+    if (!usersState.sortKey) return items;
+    const dir = usersState.sortDir === "asc" ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const valueA = a?.[usersState.sortKey] ?? a?.user_id;
+      const valueB = b?.[usersState.sortKey] ?? b?.user_id;
+      return compareValues(valueA, valueB) * dir;
+    });
+  }
+
   function renderUsers(data) {
     const body = document.getElementById("users-body");
-    body.innerHTML = data.map(u => `
+    const sorted = applySort(data);
+    body.innerHTML = sorted.map(u => `
       <tr>
         <td>${u.name || ""}</td>
         <td>${u.user_unique_id || u.user_id}</td>
@@ -132,18 +193,66 @@
   function filterUsers() {
     const nameTerm = document.getElementById("users-search-name").value.trim().toLowerCase();
     const idTerm = document.getElementById("users-search-id").value.trim().toLowerCase();
-    const filtered = usersCache.filter(user => {
+    const filtered = usersPage.filter(user => {
       const nameMatch = (user.name || "").toLowerCase().includes(nameTerm);
       const idValue = user.user_unique_id || user.user_id || "";
       const idMatch = String(idValue).toLowerCase().includes(idTerm);
       return nameMatch && idMatch;
     });
     renderUsers(filtered);
+    if (nameTerm || idTerm) {
+      paginationMeta.textContent = `Mostrando ${filtered.length} resultados en esta página`;
+    } else if (usersState.count && usersState.pageSize) {
+      const start = (usersState.page - 1) * usersState.pageSize + 1;
+      const end = Math.min(usersState.page * usersState.pageSize, usersState.count);
+      paginationMeta.textContent = `Mostrando ${start}-${end} de ${usersState.count}`;
+    } else {
+      paginationMeta.textContent = `Mostrando ${filtered.length} resultados`;
+    }
   }
 
-  async function loadUsers() {
-    usersCache = await fetchJSON("/api/biostar/users/");
+  function getPageNumber(url) {
+    if (!url) return 1;
+    try {
+      const parsed = new URL(url, window.location.origin);
+      const page = Number(parsed.searchParams.get("page"));
+      return Number.isNaN(page) || page <= 0 ? 1 : page;
+    } catch (e) {
+      return 1;
+    }
+  }
+
+  function parsePaginated(payload) {
+    if (Array.isArray(payload)) {
+      return { items: payload, count: payload.length, next: null, previous: null };
+    }
+    if (payload && Array.isArray(payload.results)) {
+      return {
+        items: payload.results,
+        count: payload.count ?? payload.results.length,
+        next: payload.next || null,
+        previous: payload.previous || null,
+      };
+    }
+    return { items: [], count: 0, next: null, previous: null };
+  }
+
+  function updatePaginationButtons() {
+    prevButton.disabled = !usersState.previous;
+    nextButton.disabled = !usersState.next;
+  }
+
+  async function loadUsers(url) {
+    const data = await fetchJSON(url || usersState.url);
+    const parsed = parsePaginated(data);
+    usersPage = parsed.items;
+    usersState.count = parsed.count;
+    usersState.next = parsed.next;
+    usersState.previous = parsed.previous;
+    usersState.pageSize = parsed.items.length;
+    usersState.page = getPageNumber(url || usersState.url);
     filterUsers();
+    updatePaginationButtons();
   }
 
   document.getElementById("sync-users").addEventListener("click", async () => {
@@ -159,6 +268,31 @@
 
   document.getElementById("users-search-name").addEventListener("input", filterUsers);
   document.getElementById("users-search-id").addEventListener("input", filterUsers);
+
+  prevButton.addEventListener("click", () => {
+    if (usersState.previous) {
+      loadUsers(usersState.previous).catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
+    }
+  });
+
+  nextButton.addEventListener("click", () => {
+    if (usersState.next) {
+      loadUsers(usersState.next).catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
+    }
+  });
+
+  sortButtons.forEach(button => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.sortKey;
+      if (usersState.sortKey === key) {
+        usersState.sortDir = usersState.sortDir === "asc" ? "desc" : "asc";
+      } else {
+        usersState.sortKey = key;
+        usersState.sortDir = "asc";
+      }
+      filterUsers();
+    });
+  });
 
   loadUsers().catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
 })();

@@ -42,17 +42,52 @@
       <table class="table table-sm table-striped">
         <thead>
           <tr>
-            <th>ID externo</th>
-            <th>Fecha</th>
-            <th>Tipo</th>
-            <th>Origen</th>
-            <th>Resultado</th>
-            <th>Tarjeta</th>
-            <th>Observación</th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="external_id">
+                ID externo <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="fecha">
+                Fecha <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="tipo">
+                Tipo <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="origen">
+                Origen <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="resultado">
+                Resultado <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="id_tarjeta">
+                Tarjeta <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="observacion">
+                Observación <span class="text-muted">↕</span>
+              </button>
+            </th>
           </tr>
         </thead>
         <tbody id="external-access-body"></tbody>
       </table>
+    </div>
+    <div class="d-flex justify-content-between align-items-center mt-2">
+      <small id="external-pagination-meta" class="text-muted"></small>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Paginación de movimientos">
+        <button id="external-prev" class="btn btn-outline-secondary" type="button" disabled>◀</button>
+        <button id="external-next" class="btn btn-outline-secondary" type="button" disabled>▶</button>
+      </div>
     </div>
   </div>
 </section>
@@ -63,6 +98,21 @@
   const msgEl = document.getElementById("sync-msg");
   const limitInput = document.getElementById("limit-input");
   const tableBody = document.getElementById("external-access-body");
+  const paginationMeta = document.getElementById("external-pagination-meta");
+  const prevButton = document.getElementById("external-prev");
+  const nextButton = document.getElementById("external-next");
+  const sortButtons = document.querySelectorAll("[data-sort-key]");
+  const externalState = {
+    url: "/api/external-access/latest/?limit=25",
+    next: null,
+    previous: null,
+    count: null,
+    page: 1,
+    pageSize: 0,
+    items: [],
+    sortKey: "fecha",
+    sortDir: "desc",
+  };
 
   function showMsg(text, kind) {
     msgEl.className = "alert alert-" + (kind || "info");
@@ -105,9 +155,54 @@
     return value.replace("T", " ").slice(0, 19);
   }
 
-  async function loadEntries() {
-    const data = await fetchJSON("/api/external-access/latest/?limit=25");
-    tableBody.innerHTML = data.map(entry => `
+  function getPageNumber(url) {
+    if (!url) return 1;
+    try {
+      const parsed = new URL(url, window.location.origin);
+      const page = Number(parsed.searchParams.get("page"));
+      return Number.isNaN(page) || page <= 0 ? 1 : page;
+    } catch (e) {
+      return 1;
+    }
+  }
+
+  function parsePaginated(payload) {
+    if (Array.isArray(payload)) {
+      return { items: payload, count: payload.length, next: null, previous: null };
+    }
+    if (payload && Array.isArray(payload.results)) {
+      return {
+        items: payload.results,
+        count: payload.count ?? payload.results.length,
+        next: payload.next || null,
+        previous: payload.previous || null,
+      };
+    }
+    return { items: [], count: 0, next: null, previous: null };
+  }
+
+  function compareValues(a, b) {
+    const aNum = Number(a);
+    const bNum = Number(b);
+    if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+      return aNum - bNum;
+    }
+    return String(a ?? "").localeCompare(String(b ?? ""), "es", { numeric: true, sensitivity: "base" });
+  }
+
+  function applySort(items) {
+    if (!externalState.sortKey) return items;
+    const dir = externalState.sortDir === "asc" ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const valueA = a?.[externalState.sortKey];
+      const valueB = b?.[externalState.sortKey];
+      return compareValues(valueA, valueB) * dir;
+    });
+  }
+
+  function renderEntries(entries) {
+    const sorted = applySort(entries);
+    tableBody.innerHTML = sorted.map(entry => `
       <tr>
         <td>${entry.external_id}</td>
         <td>${formatDate(entry.fecha)}</td>
@@ -118,6 +213,39 @@
         <td>${entry.observacion || ""}</td>
       </tr>
     `).join("");
+  }
+
+  function renderPagination() {
+    if (externalState.count === 0) {
+      paginationMeta.textContent = "Sin resultados";
+      return;
+    }
+    if (externalState.count && externalState.pageSize) {
+      const start = (externalState.page - 1) * externalState.pageSize + 1;
+      const end = Math.min(externalState.page * externalState.pageSize, externalState.count);
+      paginationMeta.textContent = `Mostrando ${start}-${end} de ${externalState.count}`;
+      return;
+    }
+    paginationMeta.textContent = `Mostrando ${externalState.items.length} resultados`;
+  }
+
+  function updatePaginationButtons() {
+    prevButton.disabled = !externalState.previous;
+    nextButton.disabled = !externalState.next;
+  }
+
+  async function loadEntries(url) {
+    const data = await fetchJSON(url || externalState.url);
+    const parsed = parsePaginated(data);
+    externalState.items = parsed.items;
+    externalState.count = parsed.count;
+    externalState.next = parsed.next;
+    externalState.previous = parsed.previous;
+    externalState.pageSize = parsed.items.length;
+    externalState.page = getPageNumber(url || externalState.url);
+    renderEntries(parsed.items);
+    renderPagination();
+    updatePaginationButtons();
   }
 
   syncButton.addEventListener("click", async () => {
@@ -137,6 +265,32 @@
     } catch (error) {
       showMsg("Error al sincronizar: " + error.message, "danger");
     }
+  });
+
+  prevButton.addEventListener("click", () => {
+    if (externalState.previous) {
+      loadEntries(externalState.previous).catch(error => showMsg("Error cargando movimientos: " + error.message, "danger"));
+    }
+  });
+
+  nextButton.addEventListener("click", () => {
+    if (externalState.next) {
+      loadEntries(externalState.next).catch(error => showMsg("Error cargando movimientos: " + error.message, "danger"));
+    }
+  });
+
+  sortButtons.forEach(button => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.sortKey;
+      if (externalState.sortKey === key) {
+        externalState.sortDir = externalState.sortDir === "asc" ? "desc" : "asc";
+      } else {
+        externalState.sortKey = key;
+        externalState.sortDir = "asc";
+      }
+      renderEntries(externalState.items);
+      renderPagination();
+    });
   });
 
   loadEntries().catch(error => showMsg("Error cargando movimientos: " + error.message, "danger"));

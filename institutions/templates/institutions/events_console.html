@@ -28,18 +28,45 @@
   </div>
   <div class="card__body">
     <div class="table-responsive">
-      <table class="table table-sm table-striped">
+      <table class="table table-sm table-striped" data-sortable-table>
         <thead>
           <tr>
-            <th>Evento</th>
-            <th>Sede</th>
-            <th>Inicio</th>
-            <th>Fin</th>
-            <th>Horario</th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="name">
+                Evento <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="site_name">
+                Sede <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="start_date">
+                Inicio <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="end_date">
+                Fin <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="start_time">
+                Horario <span class="text-muted">↕</span>
+              </button>
+            </th>
           </tr>
         </thead>
         <tbody id="events-body"></tbody>
       </table>
+    </div>
+    <div class="d-flex justify-content-between align-items-center mt-2">
+      <small id="events-pagination-meta" class="text-muted"></small>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Paginación de eventos">
+        <button id="events-prev" class="btn btn-outline-secondary" type="button" disabled>◀</button>
+        <button id="events-next" class="btn btn-outline-secondary" type="button" disabled>▶</button>
+      </div>
     </div>
   </div>
 </section>
@@ -49,6 +76,21 @@
   const syncButton = document.getElementById("sync-events");
   const msgEl = document.getElementById("sync-msg");
   const tableBody = document.getElementById("events-body");
+  const paginationMeta = document.getElementById("events-pagination-meta");
+  const prevButton = document.getElementById("events-prev");
+  const nextButton = document.getElementById("events-next");
+  const sortButtons = document.querySelectorAll("[data-sort-key]");
+  let eventsState = {
+    url: "/api/events/",
+    next: null,
+    previous: null,
+    count: null,
+    page: 1,
+    pageSize: 0,
+    items: [],
+    sortKey: "start_date",
+    sortDir: "asc",
+  };
 
   function showMsg(text, kind) {
     msgEl.className = "alert alert-" + (kind || "info");
@@ -90,8 +132,69 @@
     return value.slice(0, 5);
   }
 
+  function getPageNumber(url) {
+    if (!url) return 1;
+    try {
+      const parsed = new URL(url, window.location.origin);
+      const page = Number(parsed.searchParams.get("page"));
+      return Number.isNaN(page) || page <= 0 ? 1 : page;
+    } catch (e) {
+      return 1;
+    }
+  }
+
+  function parsePaginated(payload) {
+    if (Array.isArray(payload)) {
+      return { items: payload, count: payload.length, next: null, previous: null };
+    }
+    if (payload && Array.isArray(payload.results)) {
+      return {
+        items: payload.results,
+        count: payload.count ?? payload.results.length,
+        next: payload.next || null,
+        previous: payload.previous || null,
+      };
+    }
+    return { items: [], count: 0, next: null, previous: null };
+  }
+
+  function compareValues(a, b) {
+    const aNum = Number(a);
+    const bNum = Number(b);
+    if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+      return aNum - bNum;
+    }
+    return String(a ?? "").localeCompare(String(b ?? ""), "es", { numeric: true, sensitivity: "base" });
+  }
+
+  function applySort(items) {
+    if (!eventsState.sortKey) return items;
+    const dir = eventsState.sortDir === "asc" ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const valueA = a?.[eventsState.sortKey];
+      const valueB = b?.[eventsState.sortKey];
+      return compareValues(valueA, valueB) * dir;
+    });
+  }
+
+  function renderPagination() {
+    if (!paginationMeta) return;
+    if (eventsState.count === 0) {
+      paginationMeta.textContent = "Sin resultados";
+      return;
+    }
+    if (eventsState.count && eventsState.pageSize) {
+      const start = (eventsState.page - 1) * eventsState.pageSize + 1;
+      const end = Math.min(eventsState.page * eventsState.pageSize, eventsState.count);
+      paginationMeta.textContent = `Mostrando ${start}-${end} de ${eventsState.count}`;
+      return;
+    }
+    paginationMeta.textContent = `Mostrando ${eventsState.items.length} resultados`;
+  }
+
   function renderEvents(events) {
-    if (!events.length) {
+    const sorted = applySort(events);
+    if (!sorted.length) {
       tableBody.innerHTML = `
         <tr>
           <td colspan="5" class="text-muted">Sin eventos disponibles.</td>
@@ -99,7 +202,7 @@
       `;
       return;
     }
-    tableBody.innerHTML = events.map(event => `
+    tableBody.innerHTML = sorted.map(event => `
       <tr>
         <td>${event.name || ""}</td>
         <td>${event.site_name || ""}</td>
@@ -110,9 +213,23 @@
     `).join("");
   }
 
-  async function loadEvents() {
-    const data = await fetchJSON("/api/events/");
-    renderEvents(data);
+  function updatePaginationButtons() {
+    prevButton.disabled = !eventsState.previous;
+    nextButton.disabled = !eventsState.next;
+  }
+
+  async function loadEvents(url) {
+    const data = await fetchJSON(url || eventsState.url);
+    const parsed = parsePaginated(data);
+    eventsState.items = parsed.items;
+    eventsState.count = parsed.count;
+    eventsState.next = parsed.next;
+    eventsState.previous = parsed.previous;
+    eventsState.pageSize = parsed.items.length;
+    eventsState.page = getPageNumber(url || eventsState.url);
+    renderEvents(parsed.items);
+    renderPagination();
+    updatePaginationButtons();
   }
 
   syncButton.addEventListener("click", async () => {
@@ -123,6 +240,32 @@
     } catch (error) {
       showMsg("Error al sincronizar: " + error.message, "danger");
     }
+  });
+
+  prevButton.addEventListener("click", () => {
+    if (eventsState.previous) {
+      loadEvents(eventsState.previous).catch(error => showMsg("Error cargando eventos: " + error.message, "danger"));
+    }
+  });
+
+  nextButton.addEventListener("click", () => {
+    if (eventsState.next) {
+      loadEvents(eventsState.next).catch(error => showMsg("Error cargando eventos: " + error.message, "danger"));
+    }
+  });
+
+  sortButtons.forEach(button => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.sortKey;
+      if (eventsState.sortKey === key) {
+        eventsState.sortDir = eventsState.sortDir === "asc" ? "desc" : "asc";
+      } else {
+        eventsState.sortKey = key;
+        eventsState.sortDir = "asc";
+      }
+      renderEvents(eventsState.items);
+      renderPagination();
+    });
   });
 
   loadEvents().catch(error => showMsg("Error cargando eventos: " + error.message, "danger"));
