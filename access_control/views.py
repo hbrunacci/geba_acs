@@ -7,6 +7,8 @@ from django.utils.translation import gettext_lazy as _
 
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.settings import api_settings
 
 from access_control.models.models import ExternalAccessLogEntry, WhitelistEntry
 from access_control.serializers import ExternalAccessLogEntrySerializer, WhitelistEntrySerializer
@@ -64,8 +66,10 @@ class ExternalAccessLogView(APIView):
                 )
 
         queryset = ExternalAccessLogEntry.objects.all()
+        paginator = PageNumberPagination()
+        paginator.page_size = api_settings.PAGE_SIZE
         if limit_value is not None:
-            queryset = queryset[:limit_value]
-
-        serializer = ExternalAccessLogEntrySerializer(queryset, many=True)
-        return Response(serializer.data)
+            paginator.page_size = limit_value
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        serializer = ExternalAccessLogEntrySerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
