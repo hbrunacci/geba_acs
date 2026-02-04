@@ -1,4 +1,5 @@
 from django.urls import path
+from rest_framework.routers import DefaultRouter
 
 from access_control.api.v1.api_views import (
     BioStarDeviceListAPI,
@@ -10,8 +11,12 @@ from access_control.api.v1.api_views import (
     ExternalAccessLogSyncAPI,
     WhitelistBatchCreateAPI,
 )
+from access_control.views import ExternalAccessLogView, WhitelistEntryViewSet
 
-urlpatterns = [
+router = DefaultRouter()
+router.register(r"whitelist", WhitelistEntryViewSet)
+
+urlpatterns = router.urls + [
     path("biostar/devices/", BioStarDeviceListAPI.as_view(), name="biostar_devices_list_api"),
     path("biostar/devices/sync/", BioStarDeviceSyncAPI.as_view(), name="biostar_devices_sync_api"),
     path(
@@ -26,6 +31,11 @@ urlpatterns = [
         "external-access/sync/",
         ExternalAccessLogSyncAPI.as_view(),
         name="external_access_sync_api",
+    ),
+    path(
+        "external-access/latest/",
+        ExternalAccessLogView.as_view(),
+        name="external-access-latest",
     ),
     path(
         "whitelist/batch/",
