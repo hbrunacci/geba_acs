@@ -23,9 +23,9 @@ urlpatterns = router.urls + [
         name="external_access_console",
     ),
     path(
-        "biostar/devices/",
-        biostar_devices_console,
-        name="biostar_devices_console",
+         "biostar/devices/",
+         biostar_devices_console,
+         name="biostar_devices_console",
     ),
     path(
         "biostar/users/",
