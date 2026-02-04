@@ -1,6 +1,5 @@
 from django.urls import path
-from rest_framework.routers import DefaultRouter
-from .views import ExternalAccessLogView, WhitelistEntryViewSet
+
 from access_control.views import (
     biostar_devices_console,
     biostar_users_console,
@@ -8,24 +7,16 @@ from access_control.views import (
 )
 
 
-router = DefaultRouter()
-router.register(r"whitelist", WhitelistEntryViewSet)
-
-urlpatterns = router.urls + [
-    path(
-        "external-access/latest/",
-        ExternalAccessLogView.as_view(),
-        name="external-access-latest",
-    ),
+urlpatterns = [
     path(
         "external-access/",
         external_access_console,
         name="external_access_console",
     ),
     path(
-         "biostar/devices/",
-         biostar_devices_console,
-         name="biostar_devices_console",
+        "biostar/devices/",
+        biostar_devices_console,
+        name="biostar_devices_console",
     ),
     path(
         "biostar/users/",

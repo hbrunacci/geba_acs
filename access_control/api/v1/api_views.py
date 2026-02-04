@@ -7,6 +7,8 @@ from django.db.models import Q
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.settings import api_settings
 
 from access_control.models.models import ExternalAccessLogEntry, WhitelistEntry
 from access_control.serializers import (
@@ -35,7 +37,11 @@ class BioStarDeviceListAPI(views.APIView):
 
     def get(self, request):
         qs = BioStarDevice.objects.order_by("name", "device_id")
-        return Response(BioStarDeviceSerializer(qs, many=True).data)
+        paginator = PageNumberPagination()
+        paginator.page_size = api_settings.PAGE_SIZE
+        page = paginator.paginate_queryset(qs, request, view=self)
+        serializer = BioStarDeviceSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
 
 class BioStarDeviceSyncAPI(views.APIView):
@@ -51,7 +57,11 @@ class BioStarUserListAPI(views.APIView):
 
     def get(self, request):
         qs = BioStarUser.objects.order_by("name", "user_id")
-        return Response(BioStarUserSerializer(qs, many=True).data)
+        paginator = PageNumberPagination()
+        paginator.page_size = api_settings.PAGE_SIZE
+        page = paginator.paginate_queryset(qs, request, view=self)
+        serializer = BioStarUserSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
 
 class BioStarUserSyncAPI(views.APIView):
