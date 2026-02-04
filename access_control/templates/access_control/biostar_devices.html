@@ -64,23 +64,68 @@
       <table class="table table-sm table-striped biostar__table">
         <thead>
           <tr>
-            <th>Nombre</th>
-            <th>ID</th>
-            <th>IP</th>
-            <th>Tipo</th>
-            <th>Estado</th>
-            <th>Sync</th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="name">
+                Nombre <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="device_id">
+                ID <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="ip_addr">
+                IP <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="device_type">
+                Tipo <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="status">
+                Estado <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="last_synced_at">
+                Sync <span class="text-muted">↕</span>
+              </button>
+            </th>
           </tr>
         </thead>
         <tbody id="devices-body"></tbody>
       </table>
+    </div>
+    <div class="d-flex justify-content-between align-items-center mt-2">
+      <small id="devices-pagination-meta" class="text-muted"></small>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Paginación de dispositivos">
+        <button id="devices-prev" class="btn btn-outline-secondary" type="button" disabled>◀</button>
+        <button id="devices-next" class="btn btn-outline-secondary" type="button" disabled>▶</button>
+      </div>
     </div>
   </section>
 </div>
 
 <script>
 (function() {
-  let devicesCache = [];
+  let devicesPage = [];
+  const paginationMeta = document.getElementById("devices-pagination-meta");
+  const prevButton = document.getElementById("devices-prev");
+  const nextButton = document.getElementById("devices-next");
+  const sortButtons = document.querySelectorAll("[data-sort-key]");
+  const devicesState = {
+    url: "/api/biostar/devices/",
+    next: null,
+    previous: null,
+    count: null,
+    page: 1,
+    pageSize: 0,
+    sortKey: "name",
+    sortDir: "asc",
+  };
 
   function showMsg(text, kind) {
     const el = document.getElementById("msg");
@@ -124,9 +169,29 @@
     return v ? decodeURIComponent(v.split("=")[1]) : "";
   }
 
+  function compareValues(a, b) {
+    const aNum = Number(a);
+    const bNum = Number(b);
+    if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+      return aNum - bNum;
+    }
+    return String(a ?? "").localeCompare(String(b ?? ""), "es", { numeric: true, sensitivity: "base" });
+  }
+
+  function applySort(items) {
+    if (!devicesState.sortKey) return items;
+    const dir = devicesState.sortDir === "asc" ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const valueA = a?.[devicesState.sortKey];
+      const valueB = b?.[devicesState.sortKey];
+      return compareValues(valueA, valueB) * dir;
+    });
+  }
+
   function renderDevices(data) {
     const body = document.getElementById("devices-body");
-    body.innerHTML = data.map(d => `
+    const sorted = applySort(data);
+    body.innerHTML = sorted.map(d => `
       <tr>
         <td>${d.name || ""}</td>
         <td>${d.device_id || ""}</td>
@@ -141,17 +206,65 @@
   function filterDevices() {
     const nameTerm = document.getElementById("devices-search-name").value.trim().toLowerCase();
     const idTerm = document.getElementById("devices-search-id").value.trim().toLowerCase();
-    const filtered = devicesCache.filter(device => {
+    const filtered = devicesPage.filter(device => {
       const nameMatch = (device.name || "").toLowerCase().includes(nameTerm);
       const idMatch = String(device.device_id || "").toLowerCase().includes(idTerm);
       return nameMatch && idMatch;
     });
     renderDevices(filtered);
+    if (nameTerm || idTerm) {
+      paginationMeta.textContent = `Mostrando ${filtered.length} resultados en esta página`;
+    } else if (devicesState.count && devicesState.pageSize) {
+      const start = (devicesState.page - 1) * devicesState.pageSize + 1;
+      const end = Math.min(devicesState.page * devicesState.pageSize, devicesState.count);
+      paginationMeta.textContent = `Mostrando ${start}-${end} de ${devicesState.count}`;
+    } else {
+      paginationMeta.textContent = `Mostrando ${filtered.length} resultados`;
+    }
   }
 
-  async function loadDevices() {
-    devicesCache = await fetchJSON("/api/biostar/devices/");
+  function getPageNumber(url) {
+    if (!url) return 1;
+    try {
+      const parsed = new URL(url, window.location.origin);
+      const page = Number(parsed.searchParams.get("page"));
+      return Number.isNaN(page) || page <= 0 ? 1 : page;
+    } catch (e) {
+      return 1;
+    }
+  }
+
+  function parsePaginated(payload) {
+    if (Array.isArray(payload)) {
+      return { items: payload, count: payload.length, next: null, previous: null };
+    }
+    if (payload && Array.isArray(payload.results)) {
+      return {
+        items: payload.results,
+        count: payload.count ?? payload.results.length,
+        next: payload.next || null,
+        previous: payload.previous || null,
+      };
+    }
+    return { items: [], count: 0, next: null, previous: null };
+  }
+
+  function updatePaginationButtons() {
+    prevButton.disabled = !devicesState.previous;
+    nextButton.disabled = !devicesState.next;
+  }
+
+  async function loadDevices(url) {
+    const data = await fetchJSON(url || devicesState.url);
+    const parsed = parsePaginated(data);
+    devicesPage = parsed.items;
+    devicesState.count = parsed.count;
+    devicesState.next = parsed.next;
+    devicesState.previous = parsed.previous;
+    devicesState.pageSize = parsed.items.length;
+    devicesState.page = getPageNumber(url || devicesState.url);
     filterDevices();
+    updatePaginationButtons();
   }
 
   document.getElementById("sync-devices").addEventListener("click", async () => {
@@ -167,6 +280,31 @@
 
   document.getElementById("devices-search-name").addEventListener("input", filterDevices);
   document.getElementById("devices-search-id").addEventListener("input", filterDevices);
+
+  prevButton.addEventListener("click", () => {
+    if (devicesState.previous) {
+      loadDevices(devicesState.previous).catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
+    }
+  });
+
+  nextButton.addEventListener("click", () => {
+    if (devicesState.next) {
+      loadDevices(devicesState.next).catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
+    }
+  });
+
+  sortButtons.forEach(button => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.sortKey;
+      if (devicesState.sortKey === key) {
+        devicesState.sortDir = devicesState.sortDir === "asc" ? "desc" : "asc";
+      } else {
+        devicesState.sortKey = key;
+        devicesState.sortDir = "asc";
+      }
+      filterDevices();
+    });
+  });
 
   loadDevices().catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
 })();

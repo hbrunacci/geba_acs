@@ -23,16 +23,47 @@
         <table class="table table-sm table-striped">
           <thead>
             <tr>
-              <th>Nombre</th>
-              <th>IP</th>
-              <th>Tipo</th>
-              <th>Usuarios</th>
-              <th>Estado</th>
-              <th>Sync</th>
+              <th>
+                <button type="button" class="btn btn-link btn-sm p-0" data-device-sort-key="name">
+                  Nombre <span class="text-muted">↕</span>
+                </button>
+              </th>
+              <th>
+                <button type="button" class="btn btn-link btn-sm p-0" data-device-sort-key="ip_addr">
+                  IP <span class="text-muted">↕</span>
+                </button>
+              </th>
+              <th>
+                <button type="button" class="btn btn-link btn-sm p-0" data-device-sort-key="device_type">
+                  Tipo <span class="text-muted">↕</span>
+                </button>
+              </th>
+              <th>
+                <button type="button" class="btn btn-link btn-sm p-0" data-device-sort-key="users_total">
+                  Usuarios <span class="text-muted">↕</span>
+                </button>
+              </th>
+              <th>
+                <button type="button" class="btn btn-link btn-sm p-0" data-device-sort-key="status">
+                  Estado <span class="text-muted">↕</span>
+                </button>
+              </th>
+              <th>
+                <button type="button" class="btn btn-link btn-sm p-0" data-device-sort-key="last_synced_at">
+                  Sync <span class="text-muted">↕</span>
+                </button>
+              </th>
             </tr>
           </thead>
           <tbody id="devices-body"></tbody>
         </table>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-2">
+        <small id="devices-pagination-meta" class="text-muted"></small>
+        <div class="btn-group btn-group-sm" role="group" aria-label="Paginación de lectores">
+          <button id="devices-prev" class="btn btn-outline-secondary" type="button" disabled>◀</button>
+          <button id="devices-next" class="btn btn-outline-secondary" type="button" disabled>▶</button>
+        </div>
       </div>
     </div>
 
@@ -60,10 +91,22 @@
         <table class="table table-sm table-striped">
           <thead>
             <tr>
-              <th>Nombre</th>
-              <th>ID BioStar</th>
+              <th>
+                <button type="button" class="btn btn-link btn-sm p-0" data-user-sort-key="name">
+                  Nombre <span class="text-muted">↕</span>
+                </button>
+              </th>
+              <th>
+                <button type="button" class="btn btn-link btn-sm p-0" data-user-sort-key="user_id">
+                  ID BioStar <span class="text-muted">↕</span>
+                </button>
+              </th>
               <th>Grupos de acceso</th>
-              <th>Grupo</th>
+              <th>
+                <button type="button" class="btn btn-link btn-sm p-0" data-user-sort-key="user_group_id">
+                  Grupo <span class="text-muted">↕</span>
+                </button>
+              </th>
             </tr>
           </thead>
           <tbody id="users-body"></tbody>
@@ -75,6 +118,23 @@
 
 <script>
 (function() {
+  const devicesMeta = document.getElementById("devices-pagination-meta");
+  const devicesPrev = document.getElementById("devices-prev");
+  const devicesNext = document.getElementById("devices-next");
+  const deviceSortButtons = document.querySelectorAll("[data-device-sort-key]");
+  const userSortButtons = document.querySelectorAll("[data-user-sort-key]");
+  const devicesState = {
+    url: "/api/biostar/devices/",
+    next: null,
+    previous: null,
+    count: null,
+    page: 1,
+    pageSize: 0,
+    items: [],
+    sortKey: "name",
+    sortDir: "asc",
+  };
+
   function showMsg(text, kind) {
     const el = document.getElementById("msg");
     el.className = "alert alert-" + (kind || "info");
@@ -109,6 +169,41 @@
     return v ? decodeURIComponent(v.split("=")[1]) : "";
   }
 
+  function compareValues(a, b) {
+    const aNum = Number(a);
+    const bNum = Number(b);
+    if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+      return aNum - bNum;
+    }
+    return String(a ?? "").localeCompare(String(b ?? ""), "es", { numeric: true, sensitivity: "base" });
+  }
+
+  function parsePaginated(payload) {
+    if (Array.isArray(payload)) {
+      return { items: payload, count: payload.length, next: null, previous: null };
+    }
+    if (payload && Array.isArray(payload.results)) {
+      return {
+        items: payload.results,
+        count: payload.count ?? payload.results.length,
+        next: payload.next || null,
+        previous: payload.previous || null,
+      };
+    }
+    return { items: [], count: 0, next: null, previous: null };
+  }
+
+  function getPageNumber(url) {
+    if (!url) return 1;
+    try {
+      const parsed = new URL(url, window.location.origin);
+      const page = Number(parsed.searchParams.get("page"));
+      return Number.isNaN(page) || page <= 0 ? 1 : page;
+    } catch (e) {
+      return 1;
+    }
+  }
+
   function getDeviceUsersTotal(payload) {
     const collection =
       payload?.DeviceUserCollection ||
@@ -130,28 +225,74 @@
     }
   }
 
-  async function loadDevices({ refreshUsers = false } = {}) {
-    const data = await fetchJSON("/api/biostar/devices/");
+  function applyDeviceSort(items) {
+    if (!devicesState.sortKey) return items;
+    const dir = devicesState.sortDir === "asc" ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const valueA = a?.[devicesState.sortKey];
+      const valueB = b?.[devicesState.sortKey];
+      return compareValues(valueA, valueB) * dir;
+    });
+  }
+
+  function renderDevices(items) {
     const body = document.getElementById("devices-body");
+    const sorted = applyDeviceSort(items);
+    body.innerHTML = sorted.map(d => `
+      <tr>
+        <td>${d.name || ""}</td>
+        <td>${d.ip_addr || ""}</td>
+        <td>${d.device_type || ""}</td>
+        <td>${d.users_total ?? "—"}</td>
+        <td>${statusBadge(d.status)}</td>
+        <td>${(d.last_synced_at || "").replace("T", " ").slice(0,19)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderDevicesMeta() {
+    if (devicesState.count === 0) {
+      devicesMeta.textContent = "Sin resultados";
+      return;
+    }
+    if (devicesState.count && devicesState.pageSize) {
+      const start = (devicesState.page - 1) * devicesState.pageSize + 1;
+      const end = Math.min(devicesState.page * devicesState.pageSize, devicesState.count);
+      devicesMeta.textContent = `Mostrando ${start}-${end} de ${devicesState.count}`;
+      return;
+    }
+    devicesMeta.textContent = `Mostrando ${devicesState.items.length} resultados`;
+  }
+
+  function updateDeviceButtons() {
+    devicesPrev.disabled = !devicesState.previous;
+    devicesNext.disabled = !devicesState.next;
+  }
+
+  async function loadDevices({ refreshUsers = false, url = null } = {}) {
+    const data = await fetchJSON(url || devicesState.url);
+    const parsed = parsePaginated(data);
     const totals = {};
     if (refreshUsers) {
       await Promise.all(
-        data.map(async (d) => {
+        parsed.items.map(async (d) => {
           const total = await fetchDeviceUserTotal(d.device_id);
           totals[d.device_id] = total;
         })
       );
     }
-    body.innerHTML = data.map(d => `
-      <tr>
-        <td>${d.name || ""}</td>
-        <td>${d.ip_addr || ""}</td>
-        <td>${d.device_type || ""}</td>
-        <td>${totals[d.device_id] ?? "—"}</td>
-        <td>${statusBadge(d.status)}</td>
-        <td>${(d.last_synced_at || "").replace("T", " ").slice(0,19)}</td>
-      </tr>
-    `).join("");
+    devicesState.items = parsed.items.map((d) => ({
+      ...d,
+      users_total: totals[d.device_id] ?? null,
+    }));
+    devicesState.count = parsed.count;
+    devicesState.next = parsed.next;
+    devicesState.previous = parsed.previous;
+    devicesState.pageSize = parsed.items.length;
+    devicesState.page = getPageNumber(url || devicesState.url);
+    renderDevices(devicesState.items);
+    renderDevicesMeta();
+    updateDeviceButtons();
   }
 
   function mapAccessGroups(accessGroups) {
@@ -174,7 +315,20 @@
     limit: 50,
     offset: 0,
     total: 0,
+    rows: [],
+    sortKey: "user_id",
+    sortDir: "asc",
   };
+
+  function applyUserSort(items) {
+    if (!userSearchState.sortKey) return items;
+    const dir = userSearchState.sortDir === "asc" ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const valueA = a?.[userSearchState.sortKey];
+      const valueB = b?.[userSearchState.sortKey];
+      return compareValues(valueA, valueB) * dir;
+    });
+  }
 
   async function loadUsers() {
     if (!userSearchState.searchText) {
@@ -200,7 +354,9 @@
     const rows = collection?.rows || [];
     userSearchState.total = total;
     const body = document.getElementById("users-body");
-    body.innerHTML = rows.map(u => `
+    userSearchState.rows = rows;
+    const sorted = applyUserSort(rows);
+    body.innerHTML = sorted.map(u => `
       <tr>
         <td>${u.name || ""}</td>
         <td>${u.user_id || ""}</td>
@@ -285,6 +441,58 @@
     } catch (e) {
       showMsg("Error buscando usuarios: " + e.message, "danger");
     }
+  });
+
+  devicesPrev.addEventListener("click", () => {
+    if (devicesState.previous) {
+      loadDevices({ refreshUsers: false, url: devicesState.previous }).catch(
+        e => showMsg("Error cargando datos: " + e.message, "danger")
+      );
+    }
+  });
+
+  devicesNext.addEventListener("click", () => {
+    if (devicesState.next) {
+      loadDevices({ refreshUsers: false, url: devicesState.next }).catch(
+        e => showMsg("Error cargando datos: " + e.message, "danger")
+      );
+    }
+  });
+
+  deviceSortButtons.forEach(button => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.deviceSortKey;
+      if (devicesState.sortKey === key) {
+        devicesState.sortDir = devicesState.sortDir === "asc" ? "desc" : "asc";
+      } else {
+        devicesState.sortKey = key;
+        devicesState.sortDir = "asc";
+      }
+      renderDevices(devicesState.items);
+      renderDevicesMeta();
+    });
+  });
+
+  userSortButtons.forEach(button => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.userSortKey;
+      if (userSearchState.sortKey === key) {
+        userSearchState.sortDir = userSearchState.sortDir === "asc" ? "desc" : "asc";
+      } else {
+        userSearchState.sortKey = key;
+        userSearchState.sortDir = "asc";
+      }
+      const body = document.getElementById("users-body");
+      const sorted = applyUserSort(userSearchState.rows);
+      body.innerHTML = sorted.map(u => `
+        <tr>
+          <td>${u.name || ""}</td>
+          <td>${u.user_id || ""}</td>
+          <td>${mapAccessGroups(u.access_groups)}</td>
+          <td>${mapUserGroup(u.user_group_id)}</td>
+        </tr>
+      `).join("");
+    });
   });
 
   // Carga inicial
