@@ -7,7 +7,7 @@ urlpatterns = [
     path("api/auth/token/", drf_views.obtain_auth_token, name="api-token"),
     path("api/", include("people.urls")),
     path("api/", include("institutions.urls")),
-    path("api/", include("access_control.urls")),
     path("api/", include("access_control.urls_api")),
+    path("api/", include("access_control.urls")),
     path("", include("common.urls")),
 ]
