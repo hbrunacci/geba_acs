@@ -81,6 +81,15 @@ class BioStarDeviceUsersAPI(views.APIView):
         return Response(payload, status=status.HTTP_200_OK)
 
 
+class BioStarDeviceUserdataAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, device_id: int):
+        client = BioStar2Client.from_db_and_env()
+        payload = client.discover_device_userdata(device_id)
+        return Response(payload, status=status.HTTP_200_OK)
+
+
 class BioStarUserSearchAPI(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
