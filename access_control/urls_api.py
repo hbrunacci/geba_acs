@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from access_control.api.v1.api_views import (
     BioStarDeviceListAPI,
     BioStarDeviceSyncAPI,
+    BioStarDeviceUserdataAPI,
     BioStarDeviceUsersAPI,
     BioStarUserListAPI,
     BioStarUserSearchAPI,
@@ -23,6 +24,11 @@ urlpatterns = router.urls + [
         "biostar/devices/<int:device_id>/users/",
         BioStarDeviceUsersAPI.as_view(),
         name="biostar_device_users_api",
+    ),
+    path(
+        "biostar/devices/<int:device_id>/discover_userdata/",
+        BioStarDeviceUserdataAPI.as_view(),
+        name="biostar_device_userdata_api",
     ),
     path("biostar/users/", BioStarUserListAPI.as_view(), name="biostar_users_list_api"),
     path("biostar/users/search/", BioStarUserSearchAPI.as_view(), name="biostar_users_search_api"),

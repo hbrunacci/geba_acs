@@ -157,6 +157,9 @@ class BioStar2Client:
             params={"limit": limit, "offset": offset},
         ).json()
 
+    def discover_device_userdata(self, device_id: int) -> dict:
+        return self.request("GET", f"/api/devices/{device_id}/discover_userdata").json()
+
     def search_users_v2(
         self,
         *,

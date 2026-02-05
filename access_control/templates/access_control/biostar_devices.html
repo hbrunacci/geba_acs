@@ -35,6 +35,10 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
+
+  .biostar__row {
+    cursor: pointer;
+  }
 </style>
 {% endblock extra_css %}
 {% block content %}
@@ -107,6 +111,79 @@
       </div>
     </div>
   </section>
+</div>
+
+<div class="modal fade" id="device-modal" tabindex="-1" aria-labelledby="device-modal-label" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title" id="device-modal-label">Detalle del dispositivo</h5>
+          <div class="text-muted small" id="device-modal-subtitle"></div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="device-modal-alert" class="alert d-none" role="alert"></div>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <div class="card border-0 bg-light h-100">
+              <div class="card-body">
+                <h6 class="card-title">Resumen</h6>
+                <dl class="mb-0 small">
+                  <dt>ID BioStar</dt>
+                  <dd id="device-modal-id" class="mb-2"></dd>
+                  <dt>IP</dt>
+                  <dd id="device-modal-ip" class="mb-2"></dd>
+                  <dt>Tipo</dt>
+                  <dd id="device-modal-type" class="mb-2"></dd>
+                  <dt>Estado</dt>
+                  <dd id="device-modal-status" class="mb-0"></dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-8">
+            <h6 class="mb-2">Usuarios registrados (BioStar)</h6>
+            <div id="device-modal-loading" class="text-muted small">Cargando información...</div>
+            <div id="device-modal-stats" class="table-responsive d-none">
+              <table class="table table-sm">
+                <tbody>
+                  <tr>
+                    <th scope="row">Usuarios</th>
+                    <td id="device-modal-users"></td>
+                    <th scope="row">Tarjetas</th>
+                    <td id="device-modal-cards"></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Huellas</th>
+                    <td id="device-modal-fingerprints"></td>
+                    <th scope="row">Rostros</th>
+                    <td id="device-modal-faces"></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Nombres</th>
+                    <td id="device-modal-names"></td>
+                    <th scope="row">Imágenes</th>
+                    <td id="device-modal-images"></td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Frases</th>
+                    <td id="device-modal-phrases"></td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -192,7 +269,7 @@
     const body = document.getElementById("devices-body");
     const sorted = applySort(data);
     body.innerHTML = sorted.map(d => `
-      <tr>
+      <tr class="biostar__row" data-device-id="${d.device_id || ""}">
         <td>${d.name || ""}</td>
         <td>${d.device_id || ""}</td>
         <td>${d.ip_addr || ""}</td>
@@ -201,6 +278,60 @@
         <td>${(d.last_synced_at || "").replace("T", " ").slice(0,19)}</td>
       </tr>
     `).join("");
+  }
+
+  function setModalAlert(text, kind) {
+    const alert = document.getElementById("device-modal-alert");
+    if (!text) {
+      alert.classList.add("d-none");
+      return;
+    }
+    alert.textContent = text;
+    alert.className = "alert alert-" + (kind || "info");
+    alert.classList.remove("d-none");
+  }
+
+  function setText(id, value) {
+    const el = document.getElementById(id);
+    el.textContent = value ?? "";
+  }
+
+  function openDeviceModal(device) {
+    if (!device) return;
+    setText("device-modal-label", device.name || "Detalle del dispositivo");
+    setText("device-modal-subtitle", device.device_id ? `ID ${device.device_id}` : "");
+    setText("device-modal-id", device.device_id || "-");
+    setText("device-modal-ip", device.ip_addr || "-");
+    setText("device-modal-type", device.device_type || "-");
+    document.getElementById("device-modal-status").innerHTML = statusBadge(device.status);
+    setModalAlert("", "");
+
+    const loading = document.getElementById("device-modal-loading");
+    const stats = document.getElementById("device-modal-stats");
+    loading.classList.remove("d-none");
+    stats.classList.add("d-none");
+
+    const modalEl = document.getElementById("device-modal");
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+
+    fetchJSON(`/api/biostar/devices/${device.device_id}/discover_userdata/`)
+      .then(payload => {
+        const statsPayload = payload?.UserStatistics || payload?.user_statistics || {};
+        setText("device-modal-users", statsPayload.numUsers ?? "-");
+        setText("device-modal-cards", statsPayload.numCards ?? "-");
+        setText("device-modal-fingerprints", statsPayload.numFingerprints ?? "-");
+        setText("device-modal-faces", statsPayload.numFaces ?? "-");
+        setText("device-modal-names", statsPayload.numNames ?? "-");
+        setText("device-modal-images", statsPayload.numImages ?? "-");
+        setText("device-modal-phrases", statsPayload.numPhrases ?? "-");
+        loading.classList.add("d-none");
+        stats.classList.remove("d-none");
+      })
+      .catch(e => {
+        loading.classList.add("d-none");
+        setModalAlert("No se pudo obtener la información del dispositivo: " + e.message, "danger");
+      });
   }
 
   function filterDevices() {
@@ -304,6 +435,14 @@
       }
       filterDevices();
     });
+  });
+
+  document.getElementById("devices-body").addEventListener("dblclick", (event) => {
+    const row = event.target.closest("tr[data-device-id]");
+    if (!row) return;
+    const deviceId = row.dataset.deviceId;
+    const device = devicesPage.find(item => String(item.device_id || "") === String(deviceId));
+    openDeviceModal(device);
   });
 
   loadDevices().catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
