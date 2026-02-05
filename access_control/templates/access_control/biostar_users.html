@@ -35,6 +35,49 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
+
+  .biostar__device-lookup {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    margin-bottom: 1rem;
+    align-items: end;
+  }
+
+  .biostar__device-lookup-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .biostar__result {
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: rgba(15, 23, 42, 0.02);
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+  }
+
+  .biostar__result-title {
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+  }
+
+  .biostar__result-row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .biostar__result pre {
+    margin: 0.5rem 0 0;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    font-size: 0.78rem;
+  }
 </style>
 {% endblock extra_css %}
 {% block content %}
@@ -49,6 +92,24 @@
   <div id="msg" class="alert d-none" role="alert"></div>
 
   <section class="biostar__panel">
+    <div class="biostar__device-lookup">
+      <div>
+        <label for="device-search-id">ID dispositivo</label>
+        <input id="device-search-id" type="search" placeholder="Ej: 12" />
+      </div>
+      <div>
+        <label for="device-search-document">Nro. de documento</label>
+        <input id="device-search-document" type="search" placeholder="Ej: 30123456" />
+      </div>
+      <div class="biostar__device-lookup-actions">
+        <button id="device-search-btn" class="btn btn-outline-primary btn-sm" type="button">
+          Buscar en dispositivo
+        </button>
+      </div>
+    </div>
+
+    <div id="device-user-result" class="biostar__result d-none"></div>
+
     <div class="biostar__filters">
       <div>
         <label for="users-search-name">Buscar por nombre</label>
@@ -111,6 +172,10 @@
   const prevButton = document.getElementById("users-prev");
   const nextButton = document.getElementById("users-next");
   const sortButtons = document.querySelectorAll("[data-sort-key]");
+  const deviceResult = document.getElementById("device-user-result");
+  const deviceSearchBtn = document.getElementById("device-search-btn");
+  const deviceSearchId = document.getElementById("device-search-id");
+  const deviceSearchDocument = document.getElementById("device-search-document");
   const usersState = {
     url: "/api/biostar/users/",
     next: null,
@@ -190,6 +255,64 @@
     `).join("");
   }
 
+  function clearDeviceResult() {
+    deviceResult.innerHTML = "";
+    deviceResult.classList.add("d-none");
+  }
+
+  function renderDeviceResult(data) {
+    deviceResult.innerHTML = "";
+    deviceResult.classList.remove("d-none");
+    const title = document.createElement("div");
+    title.className = "biostar__result-title";
+    if (data.match) {
+      title.textContent = "Usuario encontrado en el dispositivo ✅";
+    } else {
+      title.textContent = "No se encontró el usuario en el dispositivo";
+    }
+    deviceResult.appendChild(title);
+
+    const meta = document.createElement("div");
+    meta.className = "biostar__result-row text-muted";
+    const total = data.total ?? "—";
+    meta.textContent = `Dispositivo ${data.device_id} · Documento ${data.document} · Escaneados ${data.scanned} · Total ${total}`;
+    deviceResult.appendChild(meta);
+
+    if (data.match) {
+      const fields = [
+        { label: "Nombre", key: "name" },
+        { label: "ID BioStar", key: "user_id" },
+        { label: "ID único", key: "user_unique_id" },
+        { label: "Grupo", key: "user_group_id" },
+      ];
+      const details = document.createElement("div");
+      details.className = "biostar__result-row";
+      fields.forEach(field => {
+        if (data.match[field.key] === undefined || data.match[field.key] === null) return;
+        const item = document.createElement("div");
+        const label = document.createElement("strong");
+        label.textContent = `${field.label}: `;
+        const value = document.createElement("span");
+        value.textContent = data.match[field.key];
+        item.appendChild(label);
+        item.appendChild(value);
+        details.appendChild(item);
+      });
+      if (details.childElementCount) {
+        deviceResult.appendChild(details);
+      }
+
+      const payloadDetails = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "Ver payload completo";
+      const pre = document.createElement("pre");
+      pre.textContent = JSON.stringify(data.match, null, 2);
+      payloadDetails.appendChild(summary);
+      payloadDetails.appendChild(pre);
+      deviceResult.appendChild(payloadDetails);
+    }
+  }
+
   function filterUsers() {
     const nameTerm = document.getElementById("users-search-name").value.trim().toLowerCase();
     const idTerm = document.getElementById("users-search-id").value.trim().toLowerCase();
@@ -255,6 +378,25 @@
     updatePaginationButtons();
   }
 
+  async function searchDeviceUser() {
+    const deviceId = deviceSearchId.value.trim();
+    const documentNumber = deviceSearchDocument.value.trim();
+    if (!deviceId || !documentNumber) {
+      showMsg("Ingresá ID de dispositivo y nro. de documento.", "warning");
+      return;
+    }
+    clearDeviceResult();
+    try {
+      showMsg("Buscando usuario en dispositivo...", "info");
+      const url = `/api/biostar/devices/${encodeURIComponent(deviceId)}/users/?document=${encodeURIComponent(documentNumber)}`;
+      const data = await fetchJSON(url);
+      renderDeviceResult(data);
+      showMsg("Búsqueda completada ✅", "success");
+    } catch (e) {
+      showMsg("Error buscando en dispositivo: " + e.message, "danger");
+    }
+  }
+
   document.getElementById("sync-users").addEventListener("click", async () => {
     try {
       showMsg("Sincronizando personas...", "info");
@@ -292,6 +434,16 @@
       }
       filterUsers();
     });
+  });
+
+  deviceSearchBtn.addEventListener("click", () => {
+    searchDeviceUser();
+  });
+
+  deviceSearchDocument.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      searchDeviceUser();
+    }
   });
 
   loadUsers().catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
