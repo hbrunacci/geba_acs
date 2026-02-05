@@ -77,8 +77,88 @@ class BioStarDeviceUsersAPI(views.APIView):
 
     def get(self, request, device_id: int):
         client = BioStar2Client.from_db_and_env()
-        payload = client.list_device_users(device_id, limit=1, offset=0)
-        return Response(payload, status=status.HTTP_200_OK)
+        document = (request.query_params.get("document") or "").strip()
+        limit_param = request.query_params.get("limit")
+        offset_param = request.query_params.get("offset")
+        try:
+            limit = int(limit_param) if limit_param is not None else 1
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "El parámetro 'limit' debe ser numérico."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            offset = int(offset_param) if offset_param is not None else 0
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "El parámetro 'offset' debe ser numérico."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        def normalize_doc(value: object) -> str:
+            if value is None:
+                return ""
+            raw = str(value).strip()
+            digits = "".join(ch for ch in raw if ch.isdigit())
+            return digits if digits else raw.lower()
+
+        def extract_collection(payload: dict) -> dict:
+            return (
+                payload.get("DeviceUserCollection")
+                or payload.get("device_user_collection")
+                or payload.get("UserCollection")
+                or payload.get("user_collection")
+                or {}
+            )
+
+        def match_document(row: dict, doc_value: str) -> bool:
+            normalized = normalize_doc(doc_value)
+            if not normalized:
+                return False
+            for key in ("user_unique_id", "user_unique_id_str", "user_id", "id", "name"):
+                candidate = row.get(key)
+                if candidate is None:
+                    continue
+                if normalize_doc(candidate) == normalized:
+                    return True
+            return False
+
+        if not document:
+            payload = client.list_device_users(device_id, limit=limit, offset=offset)
+            return Response(payload, status=status.HTTP_200_OK)
+
+        limit = 200 if limit <= 0 else limit
+        offset = 0 if offset < 0 else offset
+        matched = None
+        total = None
+        scanned = 0
+        while True:
+            payload = client.list_device_users(device_id, limit=limit, offset=offset)
+            collection = extract_collection(payload)
+            rows = collection.get("rows") or []
+            scanned += len(rows)
+            if total is None:
+                total = collection.get("total")
+            for row in rows:
+                if match_document(row, document):
+                    matched = row
+                    break
+            if matched or not rows:
+                break
+            if total is not None and offset + limit >= total:
+                break
+            offset += limit
+
+        return Response(
+            {
+                "device_id": device_id,
+                "document": document,
+                "total": total,
+                "scanned": scanned,
+                "match": matched,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class BioStarUserSearchAPI(views.APIView):
