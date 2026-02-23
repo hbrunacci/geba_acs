@@ -46,6 +46,9 @@
           <li class="nav__item{% if current_url == 'events_console' %} nav__item--active{% endif %}">
             <a href="{% url 'events_console' %}">Eventos</a>
           </li>
+          <li class="nav__item{% if current_url == 'external_access_console' %} nav__item--active{% endif %}">
+            <a href="{% url 'external_access_console' %}">Movimientos externos</a>
+          </li>
         </ul>
         {% endwith %}
         {% endblock sidebar %}
