@@ -1,6 +1,40 @@
 {% extends "common/base.html" %}
 {% block extra_css %}
 <style>
+  .btn {
+    appearance: none;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 0.45rem 0.7rem;
+    transition: all 0.2s ease;
+  }
+
+  .btn-sm {
+    font-size: 0.8rem;
+    padding: 0.35rem 0.65rem;
+  }
+
+  .btn-primary {
+    background: #4f46e5;
+    border-color: #4f46e5;
+    color: #fff;
+  }
+
+  .btn-outline-secondary {
+    background: #fff;
+    border-color: rgba(15, 23, 42, 0.2);
+    color: #1e293b;
+  }
+
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
   .biostar__panel {
     border: 1px solid rgba(15, 23, 42, 0.08);
     border-radius: 1rem;
@@ -36,8 +70,103 @@
     letter-spacing: 0.04em;
   }
 
+  .biostar__table th button[data-sort-key] {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    color: #334155;
+    cursor: pointer;
+    font-weight: 600;
+    padding: 0;
+  }
+
+  .biostar__table tbody tr:hover {
+    background: rgba(79, 70, 229, 0.06);
+  }
+
   .biostar__row {
     cursor: pointer;
+  }
+
+  .modal[hidden] {
+    display: none;
+  }
+
+  .modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+
+  .modal.show {
+    display: flex;
+  }
+
+  .modal-dialog {
+    width: min(860px, 100%);
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+    position: relative;
+    z-index: 1;
+  }
+
+  .modal-content {
+    background: #fff;
+    border-radius: 0.9rem;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow: 0 20px 45px rgba(15, 23, 42, 0.18);
+  }
+
+  .modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1900;
+    background: rgba(15, 23, 42, 0.55);
+  }
+
+  .modal-backdrop.show {
+    display: block;
+  }
+
+  .modal-header,
+  .modal-body,
+  .modal-footer {
+    padding: 1rem 1.25rem;
+  }
+
+  .modal-header,
+  .modal-footer {
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  }
+
+  .modal-footer {
+    border-top: 1px solid rgba(15, 23, 42, 0.08);
+    border-bottom: 0;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .btn-close {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: #475569;
+    cursor: pointer;
+    font-size: 1.4rem;
+    line-height: 1;
+    padding: 0;
+  }
+
+  .btn-close::before {
+    content: "×";
+  }
+
+  .card-title {
+    margin-top: 0;
   }
 </style>
 {% endblock extra_css %}
@@ -113,15 +242,15 @@
   </section>
 </div>
 
-<div class="modal fade" id="device-modal" tabindex="-1" aria-labelledby="device-modal-label" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-centered">
+<div class="modal" id="device-modal" tabindex="-1" aria-labelledby="device-modal-label" aria-hidden="true" hidden>
+  <div class="modal-dialog" role="dialog" aria-modal="true">
     <div class="modal-content">
       <div class="modal-header">
         <div>
           <h5 class="modal-title" id="device-modal-label">Detalle del dispositivo</h5>
           <div class="text-muted small" id="device-modal-subtitle"></div>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        <button type="button" class="btn-close" data-device-modal-close aria-label="Cerrar"></button>
       </div>
       <div class="modal-body">
         <div id="device-modal-alert" class="alert d-none" role="alert"></div>
@@ -180,11 +309,12 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+        <button type="button" class="btn btn-outline-secondary" data-device-modal-close>Cerrar</button>
       </div>
     </div>
   </div>
 </div>
+<div id="device-modal-backdrop" class="modal-backdrop"></div>
 
 <script>
 (function() {
@@ -193,6 +323,8 @@
   const prevButton = document.getElementById("devices-prev");
   const nextButton = document.getElementById("devices-next");
   const sortButtons = document.querySelectorAll("[data-sort-key]");
+  const modalEl = document.getElementById("device-modal");
+  const modalBackdrop = document.getElementById("device-modal-backdrop");
   const devicesState = {
     url: "/api/biostar/devices/",
     next: null,
@@ -311,9 +443,10 @@
     loading.classList.remove("d-none");
     stats.classList.add("d-none");
 
-    const modalEl = document.getElementById("device-modal");
-    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-    modal.show();
+    modalEl.hidden = false;
+    modalEl.classList.add("show");
+    modalEl.setAttribute("aria-hidden", "false");
+    modalBackdrop.classList.add("show");
 
     fetchJSON(`/api/biostar/devices/${device.device_id}/discover_userdata/`)
       .then(payload => {
@@ -332,6 +465,13 @@
         loading.classList.add("d-none");
         setModalAlert("No se pudo obtener la información del dispositivo: " + e.message, "danger");
       });
+  }
+
+  function closeDeviceModal() {
+    modalEl.classList.remove("show");
+    modalEl.setAttribute("aria-hidden", "true");
+    modalEl.hidden = true;
+    modalBackdrop.classList.remove("show");
   }
 
   function filterDevices() {
@@ -443,6 +583,18 @@
     const deviceId = row.dataset.deviceId;
     const device = devicesPage.find(item => String(item.device_id || "") === String(deviceId));
     openDeviceModal(device);
+  });
+
+  document.querySelectorAll("[data-device-modal-close]").forEach(button => {
+    button.addEventListener("click", closeDeviceModal);
+  });
+
+  modalBackdrop.addEventListener("click", closeDeviceModal);
+
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && modalEl.classList.contains("show")) {
+      closeDeviceModal();
+    }
   });
 
   loadDevices().catch(e => showMsg("Error cargando datos: " + e.message, "danger"));
