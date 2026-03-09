@@ -113,3 +113,7 @@ Configure las siguientes variables de entorno para definir la conexión al orige
 | `MSSQL_ACCESS_LOG_DEFAULT_LIMIT` | `10` | Cantidad predeterminada de registros a replicar y devolver. |
 
 Es necesario tener instalado el paquete `pyodbc` y el driver ODBC correspondiente para establecer la conexión.
+
+## Documento de planificación funcional
+
+Se agregó un plan funcional detallado para extender el sistema en `docs/plan_funcional_accesos.md`.

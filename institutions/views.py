@@ -2,10 +2,14 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 from rest_framework import viewsets
 
-from .models import AccessDevice, AccessPoint, Event, Site
+from .models import AccessDevice, AccessDoor, AccessPoint, AccessZone, DoorDevice, DoorZoneControl, Event, Site
 from .serializers import (
     AccessDeviceSerializer,
+    AccessDoorSerializer,
     AccessPointSerializer,
+    AccessZoneSerializer,
+    DoorDeviceSerializer,
+    DoorZoneControlSerializer,
     EventSerializer,
     SiteSerializer,
 )
@@ -29,6 +33,26 @@ class AccessDeviceViewSet(viewsets.ModelViewSet):
 class EventViewSet(viewsets.ModelViewSet):
     queryset = Event.objects.select_related("site").all()
     serializer_class = EventSerializer
+
+
+class AccessDoorViewSet(viewsets.ModelViewSet):
+    queryset = AccessDoor.objects.select_related("site").all()
+    serializer_class = AccessDoorSerializer
+
+
+class DoorDeviceViewSet(viewsets.ModelViewSet):
+    queryset = DoorDevice.objects.select_related("door", "door__site").all()
+    serializer_class = DoorDeviceSerializer
+
+
+class AccessZoneViewSet(viewsets.ModelViewSet):
+    queryset = AccessZone.objects.select_related("site", "parent_zone").all()
+    serializer_class = AccessZoneSerializer
+
+
+class DoorZoneControlViewSet(viewsets.ModelViewSet):
+    queryset = DoorZoneControl.objects.select_related("door", "zone").all()
+    serializer_class = DoorZoneControlSerializer
 
 
 @login_required

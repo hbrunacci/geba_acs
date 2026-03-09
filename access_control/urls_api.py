@@ -12,10 +12,18 @@ from access_control.api.v1.api_views import (
     ExternalAccessLogSyncAPI,
     WhitelistBatchCreateAPI,
 )
-from access_control.views import ExternalAccessLogView, WhitelistEntryViewSet
+from access_control.views import (
+    AccessByCategoryReportView,
+    AccessBySiteReportView,
+    AccessEventViewSet,
+    AccessHeatmapReportView,
+    ExternalAccessLogView,
+    WhitelistEntryViewSet,
+)
 
 router = DefaultRouter()
 router.register(r"whitelist", WhitelistEntryViewSet)
+router.register(r"access-events", AccessEventViewSet)
 
 urlpatterns = router.urls + [
     path("biostar/devices/", BioStarDeviceListAPI.as_view(), name="biostar_devices_list_api"),
@@ -48,4 +56,7 @@ urlpatterns = router.urls + [
         WhitelistBatchCreateAPI.as_view(),
         name="whitelist_batch_create_api",
     ),
+    path("reports/access-by-category/", AccessByCategoryReportView.as_view(), name="report_access_by_category"),
+    path("reports/access-by-site/", AccessBySiteReportView.as_view(), name="report_access_by_site"),
+    path("reports/access-heatmap/", AccessHeatmapReportView.as_view(), name="report_access_heatmap"),
 ]

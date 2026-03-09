@@ -7,6 +7,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from access_control.models import ExternalAccessLogEntry
+from access_control.models.models import AccessEvent
 from people.models import GuestType, PersonType
 
 
@@ -264,3 +265,51 @@ class ExternalAccessLogAPITestCase(BaseAPITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 2)
+
+
+class AccessReportsAPITestCase(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.authenticate()
+        self.site_id = self.client.post(
+            reverse("site-list"),
+            {"name": "Sede Reportes", "address": "Av. 123"},
+            format="json",
+        ).data["id"]
+        self.category_id = self.client.post(
+            reverse("personcategory-list"),
+            {"code": "prof", "name": "Profesores", "description": "", "is_active": True},
+            format="json",
+        ).data["id"]
+        person_payload = {
+            "first_name": "Mario",
+            "last_name": "Lopez",
+            "dni": "20111222",
+            "address": "Calle",
+            "phone": "123",
+            "email": "mario@example.com",
+            "person_type": PersonType.EMPLOYEE,
+            "person_category": self.category_id,
+            "guest_type": None,
+            "is_active": True,
+        }
+        self.person_id = self.client.post(reverse("person-list"), person_payload, format="json").data["id"]
+        AccessEvent.objects.create(
+            person_id=self.person_id,
+            site_id=self.site_id,
+            category_id=self.category_id,
+            occurred_at=timezone.now(),
+            source="test",
+        )
+
+    def test_access_by_category_report(self):
+        response = self.client.get(reverse("report_access_by_category"), {"site": self.site_id})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["site"], self.site_id)
+        self.assertTrue(response.data["by_category"])
+
+    def test_access_heatmap_report(self):
+        response = self.client.get(reverse("report_access_heatmap"), {"site": self.site_id})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["site"], self.site_id)
+        self.assertTrue(response.data["heatmap"])
