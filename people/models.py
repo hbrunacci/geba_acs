@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.core.exceptions import ValidationError
 from django.db import models
 
@@ -24,6 +26,13 @@ class Person(models.Model):
     credential_code = models.CharField(max_length=64, unique=True, null=True, blank=True)
     facial_enrolled = models.BooleanField(default=False)
     person_type = models.CharField(max_length=16, choices=PersonType.choices)
+    person_category = models.ForeignKey(
+        "people.PersonCategory",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="persons",
+    )
     guest_type = models.CharField(
         max_length=32,
         choices=GuestType.choices,
@@ -81,6 +90,103 @@ class GuestInvitation(models.Model):
 
     def __str__(self):
         return f"{self.person} -> {self.event}"
+
+
+class PersonCategory(models.Model):
+    code = models.CharField(max_length=32, unique=True)
+    name = models.CharField(max_length=120)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class DocumentType(models.Model):
+    code = models.CharField(max_length=32, unique=True)
+    name = models.CharField(max_length=120)
+    description = models.TextField(blank=True)
+    requires_expiration = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class PersonCategoryDocumentRequirement(models.Model):
+    person_category = models.ForeignKey(
+        "people.PersonCategory",
+        on_delete=models.CASCADE,
+        related_name="document_requirements",
+    )
+    document_type = models.ForeignKey(
+        "people.DocumentType",
+        on_delete=models.CASCADE,
+        related_name="category_requirements",
+    )
+    is_mandatory = models.BooleanField(default=True)
+    requires_expiration = models.BooleanField(default=False)
+    max_validity_days = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ("person_category", "document_type")
+        ordering = ["person_category__name", "document_type__name"]
+
+    def __str__(self):
+        return f"{self.person_category} - {self.document_type}"
+
+
+class PersonDocument(models.Model):
+    class Status(models.TextChoices):
+        VALID = "valid", "Vigente"
+        EXPIRING_SOON = "expiring_soon", "Por vencer"
+        EXPIRED = "expired", "Vencido"
+
+    person = models.ForeignKey("people.Person", on_delete=models.CASCADE, related_name="documents")
+    document_type = models.ForeignKey(
+        "people.DocumentType",
+        on_delete=models.CASCADE,
+        related_name="person_documents",
+    )
+    document_number = models.CharField(max_length=64, blank=True)
+    file_url = models.URLField(blank=True)
+    issued_at = models.DateField(null=True, blank=True)
+    expires_at = models.DateField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ("person", "document_type", "document_number")
+        ordering = ["expires_at", "person__last_name"]
+
+    def get_status(self, warning_days: int = 30) -> str:
+        if not self.expires_at:
+            return self.Status.VALID
+        from django.utils import timezone
+
+        today = timezone.localdate()
+        if self.expires_at < today:
+            return self.Status.EXPIRED
+        if self.expires_at <= today + timedelta(days=warning_days):
+            return self.Status.EXPIRING_SOON
+        return self.Status.VALID
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.issued_at and self.expires_at and self.expires_at < self.issued_at:
+            errors["expires_at"] = "La fecha de vencimiento debe ser posterior a la de emisión."
+        if self.document_type and self.document_type.requires_expiration and not self.expires_at:
+            errors["expires_at"] = "Este tipo documental requiere vencimiento."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return f"{self.person} - {self.document_type}"
 
 
 class Cliente(models.Model):

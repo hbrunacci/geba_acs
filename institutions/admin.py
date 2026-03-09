@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AccessDevice, AccessPoint, Event, Site
+from .models import AccessDevice, AccessDoor, AccessPoint, AccessZone, DoorDevice, DoorZoneControl, Event, Site
 
 
 @admin.register(Site)
@@ -42,3 +42,27 @@ class EventAdmin(admin.ModelAdmin):
     )
     list_filter = ("site", "start_date")
     search_fields = ("name", "site__name")
+
+
+@admin.register(AccessDoor)
+class AccessDoorAdmin(admin.ModelAdmin):
+    list_display = ("name", "site", "code", "is_active")
+    list_filter = ("site", "is_active")
+
+
+@admin.register(DoorDevice)
+class DoorDeviceAdmin(admin.ModelAdmin):
+    list_display = ("door", "device_type", "vendor", "serial_number", "direction", "is_active")
+    list_filter = ("device_type", "direction", "is_active")
+
+
+@admin.register(AccessZone)
+class AccessZoneAdmin(admin.ModelAdmin):
+    list_display = ("name", "site", "ring_code", "parent_zone", "is_active")
+    list_filter = ("site", "is_active")
+
+
+@admin.register(DoorZoneControl)
+class DoorZoneControlAdmin(admin.ModelAdmin):
+    list_display = ("door", "zone", "control_type")
+    list_filter = ("control_type",)

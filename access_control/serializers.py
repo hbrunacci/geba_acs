@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from access_control.models import BioStarDevice, BioStarUser
 
-from access_control.models.models import ExternalAccessLogEntry, WhitelistEntry
+from access_control.models.models import AccessEvent, ExternalAccessLogEntry, WhitelistEntry
 from people.models import GuestType, PersonType
 
 
@@ -172,3 +172,9 @@ class BioStarUserSerializer(serializers.ModelSerializer):
             "last_seen_at",
             "last_synced_at",
         )
+
+
+class AccessEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AccessEvent
+        fields = ["id", "person", "site", "category", "occurred_at", "source"]

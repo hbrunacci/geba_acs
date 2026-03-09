@@ -179,3 +179,27 @@ class ExternalAccessLogEntry(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover - representación auxiliar
         return f"#{self.external_id} @ {self.fecha:%Y-%m-%d %H:%M:%S}"
+
+
+class AccessEvent(models.Model):
+    person = models.ForeignKey("people.Person", on_delete=models.CASCADE, related_name="access_events")
+    site = models.ForeignKey("institutions.Site", on_delete=models.CASCADE, related_name="access_events")
+    category = models.ForeignKey(
+        "people.PersonCategory",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="access_events",
+    )
+    occurred_at = models.DateTimeField()
+    source = models.CharField(max_length=32, default="manual")
+
+    class Meta:
+        ordering = ("-occurred_at",)
+        indexes = [
+            models.Index(fields=("site", "occurred_at")),
+            models.Index(fields=("category", "occurred_at")),
+        ]
+
+    def __str__(self):
+        return f"{self.person} @ {self.site} ({self.occurred_at:%Y-%m-%d %H:%M})"
