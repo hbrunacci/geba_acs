@@ -46,6 +46,15 @@
           <li class="nav__item{% if current_url == 'events_console' %} nav__item--active{% endif %}">
             <a href="{% url 'events_console' %}">Eventos</a>
           </li>
+          <li class="nav__item{% if current_url == 'people_configuration_console' %} nav__item--active{% endif %}">
+            <a href="{% url 'people_configuration_console' %}">Personas y documentación</a>
+          </li>
+          <li class="nav__item{% if current_url == 'access_topology_console' %} nav__item--active{% endif %}">
+            <a href="{% url 'access_topology_console' %}">Puertas y zonas</a>
+          </li>
+          <li class="nav__item{% if current_url == 'access_reports_console' %} nav__item--active{% endif %}">
+            <a href="{% url 'access_reports_console' %}">Reportes de accesos</a>
+          </li>
           <li class="nav__item{% if current_url == 'external_access_console' %} nav__item--active{% endif %}">
             <a href="{% url 'external_access_console' %}">Movimientos externos</a>
           </li>

@@ -59,3 +59,9 @@ class DoorZoneControlViewSet(viewsets.ModelViewSet):
 def events_console(request):
     """Consola web para listar y sincronizar eventos desde la base local."""
     return render(request, "institutions/events_console.html")
+
+
+@login_required
+def access_topology_console(request):
+    """Consola para gestionar puertas, dispositivos y zonas."""
+    return render(request, "institutions/access_topology_console.html")

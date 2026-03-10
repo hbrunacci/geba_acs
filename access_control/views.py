@@ -37,6 +37,11 @@ def external_access_console(request):
     return render(request, "access_control/external_access_console.html")
 
 
+@login_required
+def access_reports_console(request):
+    """Consola visual para reportes de accesos."""
+    return render(request, "access_control/access_reports_console.html")
+
 
 class WhitelistEntryViewSet(viewsets.ModelViewSet):
     queryset = WhitelistEntry.objects.select_related(
