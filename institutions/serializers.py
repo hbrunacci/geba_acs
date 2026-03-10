@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from people.models import GuestType, PersonType
 
-from .models import AccessDevice, AccessPoint, Event, Site
+from .models import AccessDevice, AccessDoor, AccessPoint, AccessZone, DoorDevice, DoorZoneControl, Event, Site
 
 
 class SiteSerializer(serializers.ModelSerializer):
@@ -55,3 +55,30 @@ class EventSerializer(serializers.ModelSerializer):
             "allowed_person_types",
             "allowed_guest_types",
         ]
+
+
+class AccessDoorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AccessDoor
+        fields = ["id", "site", "name", "code", "is_active"]
+
+
+class DoorDeviceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DoorDevice
+        fields = ["id", "door", "device_type", "vendor", "serial_number", "ip_address", "direction", "is_active"]
+
+
+class AccessZoneSerializer(serializers.ModelSerializer):
+    ring_level = serializers.IntegerField(read_only=True)
+    ring_order = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = AccessZone
+        fields = ["id", "site", "name", "ring_code", "ring_level", "ring_order", "parent_zone", "is_active"]
+
+
+class DoorZoneControlSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DoorZoneControl
+        fields = ["id", "door", "zone", "control_type"]

@@ -1,0 +1,80 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Personas y Documentación{% endblock %}
+{% block header_title %}Tipos de personas y documentación{% endblock %}
+{% block header_subtitle %}Configurá categorías y tipos documentales con vencimiento.{% endblock %}
+
+{% block content %}
+<div class="dashboard__charts">
+  <section class="card">
+    <header class="card__header"><h2 class="card__title">Nueva categoría</h2></header>
+    <div class="card__body">
+      <form id="category-form" class="form-inline">
+        <input class="form-input" name="code" placeholder="Código (ej: profesor)" required>
+        <input class="form-input" name="name" placeholder="Nombre" required>
+        <button class="button button--primary" type="submit">Guardar</button>
+      </form>
+      <p id="category-msg" class="console-msg"></p>
+    </div>
+  </section>
+  <section class="card">
+    <header class="card__header"><h2 class="card__title">Nuevo tipo documental</h2></header>
+    <div class="card__body">
+      <form id="doctype-form" class="form-inline">
+        <input class="form-input" name="code" placeholder="Código (ej: apto_medico)" required>
+        <input class="form-input" name="name" placeholder="Nombre" required>
+        <label><input type="checkbox" name="requires_expiration"> Requiere vencimiento</label>
+        <button class="button button--primary" type="submit">Guardar</button>
+      </form>
+      <p id="doctype-msg" class="console-msg"></p>
+    </div>
+  </section>
+</div>
+
+<section class="card">
+  <header class="card__header"><h2 class="card__title">Categorías registradas</h2></header>
+  <div class="card__body card__body--scroll">
+    <table class="table-clean">
+      <thead><tr><th>ID</th><th>Código</th><th>Nombre</th><th>Activa</th></tr></thead>
+      <tbody id="categories-body"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <header class="card__header"><h2 class="card__title">Tipos documentales registrados</h2></header>
+  <div class="card__body card__body--scroll">
+    <table class="table-clean">
+      <thead><tr><th>ID</th><th>Código</th><th>Nombre</th><th>Vence</th></tr></thead>
+      <tbody id="doctypes-body"></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const getCookie = (n) => document.cookie.split(';').map(v=>v.trim()).find(v=>v.startsWith(n+'='))?.split('=')[1] || '';
+async function api(url, options={}) {
+  const r = await fetch(url, {credentials:'same-origin', headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')}, ...options});
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+function rows(target, data, map){ document.getElementById(target).innerHTML = data.map(map).join('') || '<tr><td colspan="4">Sin datos</td></tr>'; }
+async function load(){
+  const [cats, docs] = await Promise.all([api('/api/person-categories/'), api('/api/document-types/')]);
+  rows('categories-body', cats.results || cats, c => `<tr><td>${c.id}</td><td>${c.code}</td><td>${c.name}</td><td>${c.is_active?'Sí':'No'}</td></tr>`);
+  rows('doctypes-body', docs.results || docs, d => `<tr><td>${d.id}</td><td>${d.code}</td><td>${d.name}</td><td>${d.requires_expiration?'Sí':'No'}</td></tr>`);
+}
+
+document.getElementById('category-form').addEventListener('submit', async (e)=>{
+ e.preventDefault(); const f = new FormData(e.target);
+ try { await api('/api/person-categories/', {method:'POST', body: JSON.stringify({code:f.get('code'), name:f.get('name'), description:'', is_active:true})}); e.target.reset(); document.getElementById('category-msg').textContent='Categoría creada'; load(); } catch(err){ document.getElementById('category-msg').textContent='Error al crear categoría'; }
+});
+document.getElementById('doctype-form').addEventListener('submit', async (e)=>{
+ e.preventDefault(); const f = new FormData(e.target);
+ try { await api('/api/document-types/', {method:'POST', body: JSON.stringify({code:f.get('code'), name:f.get('name'), description:'', requires_expiration:f.get('requires_expiration')==='on', is_active:true})}); e.target.reset(); document.getElementById('doctype-msg').textContent='Tipo documental creado'; load(); } catch(err){ document.getElementById('doctype-msg').textContent='Error al crear tipo documental'; }
+});
+load();
+</script>
+{% endblock %}

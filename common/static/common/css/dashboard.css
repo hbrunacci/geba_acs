@@ -592,3 +592,27 @@ body.layout {
     flex-wrap: wrap;
   }
 }
+
+.form-inline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.table-clean {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table-clean th,
+.table-clean td {
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.console-msg {
+  margin: 0.65rem 0 0;
+  color: var(--color-text-muted);
+}

@@ -1,0 +1,65 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Topología de Acceso{% endblock %}
+{% block header_title %}Puertas, dispositivos y zonas{% endblock %}
+{% block header_subtitle %}Administrá la estructura física y jerárquica de acceso.{% endblock %}
+
+{% block content %}
+<div class="dashboard__charts">
+  <section class="card">
+    <header class="card__header"><h2 class="card__title">Nueva puerta</h2></header>
+    <div class="card__body">
+      <form id="door-form" class="form-inline">
+        <input class="form-input" name="site" placeholder="ID sede" required>
+        <input class="form-input" name="code" placeholder="Código" required>
+        <input class="form-input" name="name" placeholder="Nombre" required>
+        <button class="button button--primary" type="submit">Crear puerta</button>
+      </form>
+      <p id="door-msg" class="console-msg"></p>
+    </div>
+  </section>
+  <section class="card">
+    <header class="card__header"><h2 class="card__title">Nueva zona</h2></header>
+    <div class="card__body">
+      <form id="zone-form" class="form-inline">
+        <input class="form-input" name="site" placeholder="ID sede" required>
+        <input class="form-input" name="ring_code" placeholder="Ring (00,10,11)" maxlength="2" required>
+        <input class="form-input" name="name" placeholder="Nombre" required>
+        <button class="button button--primary" type="submit">Crear zona</button>
+      </form>
+      <p id="zone-msg" class="console-msg"></p>
+    </div>
+  </section>
+</div>
+
+<section class="card">
+  <header class="card__header"><h2 class="card__title">Puertas</h2></header>
+  <div class="card__body card__body--scroll">
+    <table class="table-clean"><thead><tr><th>ID</th><th>Sede</th><th>Código</th><th>Nombre</th></tr></thead><tbody id="doors-body"></tbody></table>
+  </div>
+</section>
+
+<section class="card">
+  <header class="card__header"><h2 class="card__title">Zonas</h2></header>
+  <div class="card__body card__body--scroll">
+    <table class="table-clean"><thead><tr><th>ID</th><th>Sede</th><th>Ring</th><th>Nombre</th><th>Nivel</th><th>Orden</th></tr></thead><tbody id="zones-body"></tbody></table>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const getCookie = (n) => document.cookie.split(';').map(v=>v.trim()).find(v=>v.startsWith(n+'='))?.split('=')[1] || '';
+async function api(url, options={}) { const r=await fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')},...options}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+function draw(id, data, fn, emptyCols){document.getElementById(id).innerHTML=(data.map(fn).join('')||`<tr><td colspan="${emptyCols}">Sin datos</td></tr>`)}
+async function load(){
+  const [doors, zones] = await Promise.all([api('/api/access-doors/'), api('/api/access-zones/')]);
+  draw('doors-body', doors.results || doors, d=>`<tr><td>${d.id}</td><td>${d.site}</td><td>${d.code}</td><td>${d.name}</td></tr>`, 4);
+  draw('zones-body', zones.results || zones, z=>`<tr><td>${z.id}</td><td>${z.site}</td><td>${z.ring_code}</td><td>${z.name}</td><td>${z.ring_level}</td><td>${z.ring_order}</td></tr>`, 6);
+}
+
+document.getElementById('door-form').addEventListener('submit', async (e)=>{e.preventDefault(); const f=new FormData(e.target); try{await api('/api/access-doors/',{method:'POST',body:JSON.stringify({site:Number(f.get('site')), code:f.get('code'), name:f.get('name'), is_active:true})}); e.target.reset(); document.getElementById('door-msg').textContent='Puerta creada'; load();}catch(_){document.getElementById('door-msg').textContent='Error al crear puerta';}});
+document.getElementById('zone-form').addEventListener('submit', async (e)=>{e.preventDefault(); const f=new FormData(e.target); try{await api('/api/access-zones/',{method:'POST',body:JSON.stringify({site:Number(f.get('site')), ring_code:f.get('ring_code'), name:f.get('name'), is_active:true})}); e.target.reset(); document.getElementById('zone-msg').textContent='Zona creada'; load();}catch(_){document.getElementById('zone-msg').textContent='Error al crear zona';}});
+load();
+</script>
+{% endblock %}

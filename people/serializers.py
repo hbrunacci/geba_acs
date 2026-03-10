@@ -1,6 +1,15 @@
 from rest_framework import serializers
 
-from .models import GuestInvitation, GuestType, Person, PersonType
+from .models import (
+    DocumentType,
+    GuestInvitation,
+    GuestType,
+    Person,
+    PersonCategory,
+    PersonCategoryDocumentRequirement,
+    PersonDocument,
+    PersonType,
+)
 
 
 class PersonSerializer(serializers.ModelSerializer):
@@ -17,6 +26,7 @@ class PersonSerializer(serializers.ModelSerializer):
             "credential_code",
             "facial_enrolled",
             "person_type",
+            "person_category",
             "guest_type",
             "is_active",
             "created_at",
@@ -61,3 +71,48 @@ class GuestInvitationSerializer(serializers.ModelSerializer):
                 {"event": "El evento no admite invitados de este tipo."}
             )
         return attrs
+
+
+class PersonCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PersonCategory
+        fields = ["id", "code", "name", "description", "is_active"]
+
+
+class DocumentTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DocumentType
+        fields = ["id", "code", "name", "description", "requires_expiration", "is_active"]
+
+
+class PersonCategoryDocumentRequirementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PersonCategoryDocumentRequirement
+        fields = [
+            "id",
+            "person_category",
+            "document_type",
+            "is_mandatory",
+            "requires_expiration",
+            "max_validity_days",
+        ]
+
+
+class PersonDocumentSerializer(serializers.ModelSerializer):
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PersonDocument
+        fields = [
+            "id",
+            "person",
+            "document_type",
+            "document_number",
+            "file_url",
+            "issued_at",
+            "expires_at",
+            "status",
+        ]
+
+    def get_status(self, obj):
+        return obj.get_status()

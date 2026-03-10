@@ -37,6 +37,18 @@ class AccessDeviceType(models.TextChoices):
     DOOR = "door", "Puerta"
 
 
+class DoorDeviceType(models.TextChoices):
+    TURNSTILE = "turnstile", "Molinete"
+    FACIAL = "facial", "Facial"
+    CREDENTIAL_READER = "credential_reader", "Lector de credenciales"
+
+
+class DeviceDirection(models.TextChoices):
+    ENTRY = "entry", "Entrada"
+    EXIT = "exit", "Salida"
+    BOTH = "both", "Ambos"
+
+
 class AccessDevice(models.Model):
     access_point = models.ForeignKey(
         "institutions.AccessPoint",
@@ -57,6 +69,76 @@ class AccessDevice(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.get_device_type_display()})"
+
+
+class AccessDoor(models.Model):
+    site = models.ForeignKey("institutions.Site", on_delete=models.CASCADE, related_name="doors")
+    name = models.CharField(max_length=255)
+    code = models.CharField(max_length=32)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["site__name", "name"]
+        unique_together = ("site", "code")
+
+    def __str__(self):
+        return f"{self.site.name} - {self.name}"
+
+
+class DoorDevice(models.Model):
+    door = models.ForeignKey("institutions.AccessDoor", on_delete=models.CASCADE, related_name="devices")
+    device_type = models.CharField(max_length=32, choices=DoorDeviceType.choices)
+    vendor = models.CharField(max_length=128, blank=True)
+    serial_number = models.CharField(max_length=64, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    direction = models.CharField(max_length=8, choices=DeviceDirection.choices, default=DeviceDirection.ENTRY)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["door__name", "id"]
+
+
+class AccessZone(models.Model):
+    site = models.ForeignKey("institutions.Site", on_delete=models.CASCADE, related_name="zones")
+    name = models.CharField(max_length=255)
+    ring_code = models.CharField(max_length=2)
+    parent_zone = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="children"
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["site__name", "ring_code"]
+        unique_together = ("site", "ring_code")
+
+    @property
+    def ring_level(self):
+        return int(self.ring_code[0])
+
+    @property
+    def ring_order(self):
+        return int(self.ring_code[1])
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if len(self.ring_code or "") != 2 or not self.ring_code.isdigit():
+            errors["ring_code"] = "El código de anillo debe tener exactamente 2 dígitos."
+        if self.parent_zone and self.parent_zone.site_id != self.site_id:
+            errors["parent_zone"] = "La zona padre debe pertenecer a la misma sede."
+        if self.parent_zone and self.ring_level <= self.parent_zone.ring_level:
+            errors["parent_zone"] = "La zona padre debe estar en un nivel jerárquico anterior."
+        if errors:
+            raise ValidationError(errors)
+
+
+class DoorZoneControl(models.Model):
+    door = models.ForeignKey("institutions.AccessDoor", on_delete=models.CASCADE, related_name="zone_controls")
+    zone = models.ForeignKey("institutions.AccessZone", on_delete=models.CASCADE, related_name="door_controls")
+    control_type = models.CharField(max_length=8, choices=DeviceDirection.choices, default=DeviceDirection.BOTH)
+
+    class Meta:
+        unique_together = ("door", "zone")
 
 
 class Event(models.Model):

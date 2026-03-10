@@ -1,0 +1,52 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Reportes de Accesos{% endblock %}
+{% block header_title %}Reportes por categoría, sede y hora{% endblock %}
+{% block header_subtitle %}Visualización operativa para últimos 5 días.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card__body">
+    <form id="report-form" class="form-inline">
+      <input class="form-input" name="site" placeholder="ID sede" required>
+      <input class="form-input" name="category" placeholder="ID categoría (opcional)">
+      <button class="button button--primary" type="submit">Consultar</button>
+    </form>
+  </div>
+</section>
+
+<div class="dashboard__charts">
+  <section class="card">
+    <header class="card__header"><h2 class="card__title">Accesos por categoría</h2></header>
+    <div class="card__body card__body--scroll"><table class="table-clean"><thead><tr><th>Categoría</th><th>Total</th></tr></thead><tbody id="by-category"></tbody></table></div>
+  </section>
+  <section class="card">
+    <header class="card__header"><h2 class="card__title">Accesos por sede</h2></header>
+    <div class="card__body card__body--scroll"><table class="table-clean"><thead><tr><th>Sede</th><th>Total</th></tr></thead><tbody id="by-site"></tbody></table></div>
+  </section>
+</div>
+
+<section class="card">
+  <header class="card__header"><h2 class="card__title">Mapa de calor (día / hora)</h2></header>
+  <div class="card__body card__body--scroll"><table class="table-clean"><thead><tr><th>Día</th><th>Hora</th><th>Total</th></tr></thead><tbody id="heatmap"></tbody></table></div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function api(url){ const r=await fetch(url,{credentials:'same-origin'}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+function fill(id, arr, mapper, cols){ document.getElementById(id).innerHTML = (arr||[]).map(mapper).join('') || `<tr><td colspan="${cols}">Sin datos</td></tr>`; }
+async function load(site, category){
+  const suffix = category ? `?site=${site}&category=${category}` : `?site=${site}`;
+  const [c,s,h] = await Promise.all([
+    api('/api/reports/access-by-category/' + suffix),
+    api('/api/reports/access-by-site/'),
+    api('/api/reports/access-heatmap/' + suffix),
+  ]);
+  fill('by-category', c.by_category, r => `<tr><td>${r.category__name || 'Sin categoría'}</td><td>${r.total}</td></tr>`, 2);
+  fill('by-site', s.sites, r => `<tr><td>${r.site__name}</td><td>${r.total}</td></tr>`, 2);
+  fill('heatmap', h.heatmap, r => `<tr><td>${r.day}</td><td>${r.hour}:00</td><td>${r.total}</td></tr>`, 3);
+}
+document.getElementById('report-form').addEventListener('submit', (e)=>{ e.preventDefault(); const f = new FormData(e.target); load(f.get('site'), f.get('category')); });
+</script>
+{% endblock %}

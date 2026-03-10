@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from access_control.models import WhitelistEntry
+from access_control.models import AccessEvent, WhitelistEntry
 
 from django.contrib import admin
 
@@ -32,3 +32,10 @@ class WhitelistEntryAdmin(admin.ModelAdmin):
     )
     list_filter = ("is_allowed", "access_point__site")
     search_fields = ("person__last_name", "access_point__name", "event__name")
+
+
+@admin.register(AccessEvent)
+class AccessEventAdmin(admin.ModelAdmin):
+    list_display = ("person", "site", "category", "occurred_at", "source")
+    list_filter = ("site", "category", "source")
+    search_fields = ("person__last_name", "person__first_name")
