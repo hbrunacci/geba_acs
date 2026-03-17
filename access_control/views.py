@@ -5,6 +5,7 @@ from datetime import timedelta
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 from django.db.models import Count
+from django.db.utils import OperationalError
 from django.db.models.functions import ExtractHour, TruncDate
 
 from django.utils.translation import gettext_lazy as _
@@ -219,6 +220,18 @@ class ParkingMovementView(APIView):
     """Registro y consulta de movimientos de estacionamiento."""
 
     def get(self, request):
+        try:
+            items = list(ParkingMovement.objects.all().values("id", "dni", "patente", "movement_type", "ult_cuota_paga", "created_at")[:50])
+        except OperationalError:
+            return Response(
+                {
+                    "detail": (
+                        "La tabla de movimientos de estacionamiento no está disponible. "
+                        "Ejecute las migraciones pendientes."
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         items = list(
             ParkingMovement.objects.all().values(
                 "id",
@@ -263,12 +276,23 @@ class ParkingMovementView(APIView):
             return Response({"detail": "movement_type debe ser 'entry' o 'exit'."}, status=status.HTTP_400_BAD_REQUEST)
 
         cliente = Cliente.objects.filter(doc_nro=dni_value).values("ult_cuota_paga").first()
-        movement = ParkingMovement.objects.create(
-            dni=dni_value,
-            patente=patente,
-            movement_type=movement_type,
-            ult_cuota_paga=cliente.get("ult_cuota_paga") if cliente else None,
-        )
+        try:
+            movement = ParkingMovement.objects.create(
+                dni=dni_value,
+                patente=patente,
+                movement_type=movement_type,
+                ult_cuota_paga=cliente.get("ult_cuota_paga") if cliente else None,
+            )
+        except OperationalError:
+            return Response(
+                {
+                    "detail": (
+                        "La tabla de movimientos de estacionamiento no está disponible. "
+                        "Ejecute las migraciones pendientes."
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         return Response(
             {
