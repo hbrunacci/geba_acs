@@ -146,6 +146,86 @@ class ExternalAccessLogService:
         return self._serialize_rows(rows)
 
 
+class ClientLookupError(RuntimeError):
+    """Error genérico al consultar clientes en MSSQL."""
+
+
+class MSSQLClientLookupService:
+    """Consulta clientes por DNI en MSSQL para completar datos faltantes en local."""
+
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        if config is None:
+            config = getattr(settings, "MSSQL_CLIENT_LOOKUP", {})
+        self.config = config
+        self._validate_config()
+
+    def _validate_config(self) -> None:
+        if not self.config.get("ENABLED", False):
+            raise ClientLookupError("La búsqueda de clientes en MSSQL está deshabilitada.")
+        if pyodbc is None:
+            raise ClientLookupError("El paquete pyodbc no está disponible para buscar clientes en MSSQL.")
+        required = ["HOST", "DATABASE", "USER", "PASSWORD", "TABLE"]
+        missing = [key for key in required if not self.config.get(key)]
+        if missing:
+            raise ClientLookupError(
+                "Faltan parámetros obligatorios para la búsqueda de clientes en MSSQL: "
+                + ", ".join(missing)
+            )
+
+    def _connection_string(self) -> str:
+        driver = self.config.get("DRIVER") or "{ODBC Driver 18 for SQL Server}"
+        host = self.config["HOST"]
+        port = self.config.get("PORT")
+        server = f"{host},{port}" if port else host
+        params = {
+            "DRIVER": driver,
+            "SERVER": server,
+            "DATABASE": self.config["DATABASE"],
+            "UID": self.config["USER"],
+            "PWD": self.config["PASSWORD"],
+        }
+        return ";".join(f"{key}={value}" for key, value in params.items() if value) + ";"
+
+    def fetch_by_dni(self, dni: int) -> dict[str, Any] | None:
+        query = f"SELECT TOP 1 Id_Cliente, Doc_Nro, Ult_Cuota_Paga FROM {self.config['TABLE']} WHERE Doc_Nro = ? ORDER BY Ult_Cuota_Paga DESC"
+        try:
+            connection = pyodbc.connect(self._connection_string())  # type: ignore[union-attr]
+        except Exception as exc:  # pragma: no cover
+            raise ClientLookupError("No se pudo conectar a MSSQL para buscar cliente: " + str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute(query, dni)
+            row = cursor.fetchone()
+        except Exception as exc:  # pragma: no cover
+            raise ClientLookupError("Error al consultar cliente en MSSQL: " + str(exc)) from exc
+        finally:
+            try:
+                connection.close()
+            except Exception:  # pragma: no cover
+                pass
+
+        if not row:
+            return None
+
+        ult_cuota_paga = row[2]
+        if isinstance(ult_cuota_paga, datetime):
+            ult_cuota_value = ult_cuota_paga
+        elif ult_cuota_paga:
+            ult_cuota_value = parse_datetime(str(ult_cuota_paga))
+        else:
+            ult_cuota_value = None
+
+        if ult_cuota_value and timezone.is_naive(ult_cuota_value):
+            ult_cuota_value = timezone.make_aware(ult_cuota_value, timezone.get_current_timezone())
+
+        return {
+            "id_cliente": int(row[0]) if row[0] is not None else None,
+            "doc_nro": int(row[1]) if row[1] is not None else dni,
+            "ult_cuota_paga": ult_cuota_value,
+        }
+
+
 class ExternalAccessLogSynchronizer:
     """Sincroniza registros desde el servicio externo hacia la base local."""
 
@@ -280,4 +360,6 @@ __all__ = [
     "ExternalAccessLogService",
     "ExternalAccessLogError",
     "ExternalAccessLogSynchronizer",
+    "MSSQLClientLookupService",
+    "ClientLookupError",
 ]

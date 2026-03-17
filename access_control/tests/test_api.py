@@ -1,4 +1,5 @@
 from datetime import date, time
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.urls import reverse
@@ -332,7 +333,33 @@ class ParkingMovementAPITestCase(BaseAPITestCase):
         response = self.client.get(self.lookup_url, {"dni": 30111222})
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["found"])
+        self.assertEqual(response.data["source"], "local")
         self.assertIn("ult_cuota_paga", response.data)
+
+    def test_lookup_falls_back_to_mssql_when_not_found_locally(self):
+        self.authenticate()
+        Cliente.objects.all().delete()
+        mssql_payload = {
+            "id_cliente": 999,
+            "doc_nro": 30222333,
+            "ult_cuota_paga": timezone.now(),
+        }
+        with patch("access_control.views.MSSQLClientLookupService.fetch_by_dni", return_value=mssql_payload):
+            response = self.client.get(self.lookup_url, {"dni": 30222333})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["found"])
+        self.assertEqual(response.data["source"], "mssql")
+        self.assertEqual(response.data["id_cliente"], 999)
+
+    def test_lookup_returns_not_found_when_mssql_has_no_data(self):
+        self.authenticate()
+        Cliente.objects.all().delete()
+        with patch("access_control.views.MSSQLClientLookupService.fetch_by_dni", return_value=None):
+            response = self.client.get(self.lookup_url, {"dni": 30222333})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["found"])
 
     def test_create_movement_stores_registry(self):
         self.authenticate()

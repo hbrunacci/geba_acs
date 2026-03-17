@@ -19,6 +19,8 @@ from access_control.serializers import AccessEventSerializer, ExternalAccessLogE
 from rest_framework import status, viewsets
 from people.models import Cliente
 
+from access_control.services import ClientLookupError, MSSQLClientLookupService
+
 
 @login_required
 def biostar_devices_console(request):
@@ -160,12 +162,22 @@ class ParkingClienteLookupView(APIView):
             return Response({"detail": "El parámetro 'dni' debe ser numérico."}, status=status.HTTP_400_BAD_REQUEST)
 
         cliente = Cliente.objects.filter(doc_nro=dni_value).values("id_cliente", "doc_nro", "ult_cuota_paga").first()
+        source = "local"
+
+        if not cliente:
+            try:
+                cliente = MSSQLClientLookupService().fetch_by_dni(dni_value)
+                source = "mssql"
+            except ClientLookupError:
+                cliente = None
+
         if not cliente:
             return Response({"found": False, "dni": dni_value, "ult_cuota_paga": None})
 
         ult_cuota_paga = cliente.get("ult_cuota_paga")
         return Response({
             "found": True,
+            "source": source,
             "dni": cliente.get("doc_nro"),
             "id_cliente": cliente.get("id_cliente"),
             "ult_cuota_paga": ult_cuota_paga.isoformat() if ult_cuota_paga else None,
