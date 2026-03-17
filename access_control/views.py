@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 from django.db.models import Count
@@ -20,6 +22,26 @@ from rest_framework import status, viewsets
 from people.models import Cliente
 
 from access_control.services import ClientLookupError, MSSQLClientLookupService
+
+
+def _parking_quota_access_status(ult_cuota_paga):
+    if not ult_cuota_paga:
+        return {
+            "can_enter": False,
+            "access_until": None,
+        }
+
+    if timezone.is_aware(ult_cuota_paga):
+        quota_date = timezone.localtime(ult_cuota_paga).date()
+    else:
+        quota_date = ult_cuota_paga.date()
+    access_start = quota_date.replace(day=1)
+    access_until = access_start + timedelta(days=60)
+    can_enter = timezone.localdate() <= access_until
+    return {
+        "can_enter": can_enter,
+        "access_until": access_until,
+    }
 
 
 @login_required
@@ -175,12 +197,15 @@ class ParkingClienteLookupView(APIView):
             return Response({"found": False, "dni": dni_value, "ult_cuota_paga": None})
 
         ult_cuota_paga = cliente.get("ult_cuota_paga")
+        access_status = _parking_quota_access_status(ult_cuota_paga)
         return Response({
             "found": True,
             "source": source,
             "dni": cliente.get("doc_nro"),
             "id_cliente": cliente.get("id_cliente"),
             "ult_cuota_paga": ult_cuota_paga.isoformat() if ult_cuota_paga else None,
+            "can_enter": access_status["can_enter"],
+            "access_until": access_status["access_until"].isoformat() if access_status["access_until"] else None,
         })
 
 
