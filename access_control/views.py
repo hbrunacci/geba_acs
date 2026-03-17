@@ -44,6 +44,12 @@ def _parking_quota_access_status(ult_cuota_paga):
     }
 
 
+def _parking_stay_duration_seconds(stay_duration):
+    if stay_duration is None:
+        return None
+    return int(stay_duration.total_seconds())
+
+
 @login_required
 def biostar_devices_console(request):
     """Consola web para ver lectores BioStar."""
@@ -213,7 +219,18 @@ class ParkingMovementView(APIView):
     """Registro y consulta de movimientos de estacionamiento."""
 
     def get(self, request):
-        items = list(ParkingMovement.objects.all().values("id", "dni", "patente", "movement_type", "ult_cuota_paga", "created_at")[:50])
+        items = list(
+            ParkingMovement.objects.all().values(
+                "id",
+                "dni",
+                "patente",
+                "movement_type",
+                "ult_cuota_paga",
+                "created_at",
+                "exit_at",
+                "stay_duration",
+            )[:100]
+        )
         payload = []
         for item in items:
             payload.append({
@@ -223,6 +240,8 @@ class ParkingMovementView(APIView):
                 "movement_type": item["movement_type"],
                 "ult_cuota_paga": item["ult_cuota_paga"].isoformat() if item["ult_cuota_paga"] else None,
                 "created_at": item["created_at"].isoformat() if item["created_at"] else None,
+                "exit_at": item["exit_at"].isoformat() if item["exit_at"] else None,
+                "stay_duration_seconds": _parking_stay_duration_seconds(item["stay_duration"]),
             })
         return Response(payload)
 
@@ -259,6 +278,38 @@ class ParkingMovementView(APIView):
                 "movement_type": movement.movement_type,
                 "ult_cuota_paga": movement.ult_cuota_paga.isoformat() if movement.ult_cuota_paga else None,
                 "created_at": movement.created_at.isoformat(),
+                "exit_at": movement.exit_at.isoformat() if movement.exit_at else None,
+                "stay_duration_seconds": _parking_stay_duration_seconds(movement.stay_duration),
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class ParkingMovementMarkExitView(APIView):
+    """Marca la salida de un ingreso y calcula permanencia."""
+
+    def post(self, request, movement_id):
+        movement = ParkingMovement.objects.filter(id=movement_id).first()
+        if not movement:
+            return Response({"detail": "Movimiento no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        if movement.movement_type != ParkingMovement.MovementType.ENTRY:
+            return Response({"detail": "Solo se puede marcar salida para ingresos."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if movement.exit_at:
+            return Response({"detail": "Este ingreso ya tiene salida registrada."}, status=status.HTTP_400_BAD_REQUEST)
+
+        now = timezone.now()
+        movement.exit_at = now
+        movement.stay_duration = now - movement.created_at
+        movement.save(update_fields=["exit_at", "stay_duration"])
+
+        return Response({
+            "id": movement.id,
+            "dni": movement.dni,
+            "patente": movement.patente,
+            "movement_type": movement.movement_type,
+            "created_at": movement.created_at.isoformat() if movement.created_at else None,
+            "exit_at": movement.exit_at.isoformat() if movement.exit_at else None,
+            "stay_duration_seconds": _parking_stay_duration_seconds(movement.stay_duration),
+        })

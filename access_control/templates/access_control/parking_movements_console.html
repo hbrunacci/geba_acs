@@ -53,16 +53,10 @@
   <section class="card shadow-sm border-0 mt-4">
     <div class="card-header bg-white border-0 pt-4 px-4 px-lg-5">
       <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
-        <h5 class="mb-0">Últimos movimientos</h5>
+        <h5 class="mb-0">Ingresos en curso (sin salida)</h5>
         <div class="w-100 w-md-auto" style="max-width: 320px;">
           <label class="form-label small text-muted mb-1" for="movements-plate-filter">Buscar por patente</label>
-          <input
-            id="movements-plate-filter"
-            class="form-control"
-            type="text"
-            placeholder="Ej: AA123BB"
-            autocomplete="off"
-          />
+          <input id="movements-plate-filter" class="form-control" type="text" placeholder="Ej: AA123BB" autocomplete="off" />
         </div>
       </div>
     </div>
@@ -71,7 +65,30 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light">
             <tr>
-              <th>Fecha/Hora</th>
+              <th>Hora ingreso</th>
+              <th>DNI</th>
+              <th>Patente</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="open-movements-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card shadow-sm border-0 mt-4">
+    <div class="card-header bg-white border-0 pt-4 px-4 px-lg-5">
+      <h5 class="mb-0">Últimos movimientos</h5>
+    </div>
+    <div class="card-body px-4 px-lg-5 pb-4">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Hora ingreso</th>
+              <th>Hora salida</th>
+              <th>Tiempo permanencia</th>
               <th>DNI</th>
               <th>Patente</th>
               <th>Movimiento</th>
@@ -82,7 +99,7 @@
         </table>
       </div>
     </div>
-</section>
+  </section>
 </div>
 
 <script>
@@ -95,21 +112,18 @@
   const clearButton = document.getElementById('clear-form');
   const messageBox = document.getElementById('parking-message');
   const quotaBox = document.getElementById('quota-box');
+  const body = document.getElementById('movements-body');
+  const openBody = document.getElementById('open-movements-body');
+  const plateFilterInput = document.getElementById('movements-plate-filter');
+  let allMovements = [];
 
   function setQuotaStatus(message, canEnter) {
     quotaBox.className = 'small mt-2 fw-semibold';
-    if (canEnter === true) {
-      quotaBox.classList.add('text-success');
-    } else if (canEnter === false) {
-      quotaBox.classList.add('text-danger');
-    } else {
-      quotaBox.classList.add('text-muted');
-    }
+    if (canEnter === true) quotaBox.classList.add('text-success');
+    else if (canEnter === false) quotaBox.classList.add('text-danger');
+    else quotaBox.classList.add('text-muted');
     quotaBox.textContent = message;
   }
-  const body = document.getElementById('movements-body');
-  const plateFilterInput = document.getElementById('movements-plate-filter');
-  let allMovements = [];
 
   function showMessage(text, kind) {
     messageBox.className = 'alert alert-' + (kind || 'info') + ' mt-3';
@@ -132,9 +146,7 @@
       ...options
     });
     const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.detail || ('HTTP ' + response.status));
-    }
+    if (!response.ok) throw new Error(payload.detail || ('HTTP ' + response.status));
     return payload;
   }
 
@@ -143,15 +155,25 @@
     return value.replace('T', ' ').slice(0, 19);
   }
 
+  function formatDuration(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return '-';
+    const total = Math.floor(seconds);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    return h + 'h ' + m + 'm';
+  }
+
   function renderRows(items) {
     if (!items.length) {
-      body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No hay movimientos para la patente buscada.</td></tr>';
+      body.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No hay movimientos para la patente buscada.</td></tr>';
       return;
     }
 
     body.innerHTML = items.map(item => `
       <tr>
         <td>${formatDate(item.created_at)}</td>
+        <td>${formatDate(item.exit_at)}</td>
+        <td>${formatDuration(item.stay_duration_seconds)}</td>
         <td>${item.dni}</td>
         <td>${item.patente}</td>
         <td>${item.movement_type === 'entry' ? 'Ingreso' : 'Salida'}</td>
@@ -160,24 +182,54 @@
     `).join('');
   }
 
-  function applyPlateFilter() {
-    const term = (plateFilterInput.value || '').trim().toLowerCase();
-    if (!term) {
-      renderRows(allMovements);
+  function renderOpenRows(items) {
+    if (!items.length) {
+      openBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">No hay ingresos pendientes de salida.</td></tr>';
       return;
     }
 
-    const filtered = allMovements.filter(item => String(item.patente || '').toLowerCase().includes(term));
+    openBody.innerHTML = items.map(item => `
+      <tr>
+        <td>${formatDate(item.created_at)}</td>
+        <td>${item.dni}</td>
+        <td>${item.patente}</td>
+        <td><button class="btn btn-sm btn-success" data-movement-id="${item.id}">Marcar salida</button></td>
+      </tr>
+    `).join('');
+  }
+
+  function applyPlateFilter() {
+    const term = (plateFilterInput.value || '').trim().toLowerCase();
+    const filtered = !term
+      ? allMovements
+      : allMovements.filter(item => String(item.patente || '').toLowerCase().includes(term));
+
     renderRows(filtered);
+    renderOpenRows(filtered.filter(item => item.movement_type === 'entry' && !item.exit_at));
   }
 
   async function loadMovements() {
-    const rows = await fetchJSON('/api/parking/movements/');
-    allMovements = rows;
+    allMovements = await fetchJSON('/api/parking/movements/');
     applyPlateFilter();
   }
 
   plateFilterInput.addEventListener('input', applyPlateFilter);
+
+  openBody.addEventListener('click', async (event) => {
+    const target = event.target;
+    if (!target.matches('button[data-movement-id]')) return;
+    const movementId = target.getAttribute('data-movement-id');
+    try {
+      target.disabled = true;
+      await fetchJSON('/api/parking/movements/' + movementId + '/mark-exit/', { method: 'POST', body: '{}' });
+      showMessage('Salida registrada correctamente.', 'success');
+      await loadMovements();
+    } catch (error) {
+      showMessage(error.message, 'danger');
+    } finally {
+      target.disabled = false;
+    }
+  });
 
   lookupButton.addEventListener('click', async () => {
     try {
@@ -203,15 +255,8 @@
 
   saveButton.addEventListener('click', async () => {
     try {
-      const payload = {
-        dni: dniInput.value,
-        patente: plateInput.value,
-        movement_type: typeInput.value
-      };
-      await fetchJSON('/api/parking/movements/', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
+      const payload = { dni: dniInput.value, patente: plateInput.value, movement_type: typeInput.value };
+      await fetchJSON('/api/parking/movements/', { method: 'POST', body: JSON.stringify(payload) });
       showMessage('Movimiento guardado correctamente.', 'success');
       await loadMovements();
     } catch (error) {
