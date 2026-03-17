@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, datetime, time
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -335,6 +335,34 @@ class ParkingMovementAPITestCase(BaseAPITestCase):
         self.assertTrue(response.data["found"])
         self.assertEqual(response.data["source"], "local")
         self.assertIn("ult_cuota_paga", response.data)
+        self.assertIn("can_enter", response.data)
+        self.assertIn("access_until", response.data)
+
+    def test_lookup_marks_member_as_enabled_within_60_days(self):
+        self.authenticate()
+        Cliente.objects.filter(doc_nro=30111222).update(
+            ult_cuota_paga=timezone.make_aware(datetime(2024, 1, 20, 8, 0, 0))
+        )
+
+        with patch("access_control.views.timezone.localdate", return_value=date(2024, 2, 25)):
+            response = self.client.get(self.lookup_url, {"dni": 30111222})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["can_enter"])
+        self.assertEqual(response.data["access_until"], "2024-03-01")
+
+    def test_lookup_marks_member_as_disabled_after_60_days(self):
+        self.authenticate()
+        Cliente.objects.filter(doc_nro=30111222).update(
+            ult_cuota_paga=timezone.make_aware(datetime(2024, 1, 20, 8, 0, 0))
+        )
+
+        with patch("access_control.views.timezone.localdate", return_value=date(2024, 3, 2)):
+            response = self.client.get(self.lookup_url, {"dni": 30111222})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["can_enter"])
+        self.assertEqual(response.data["access_until"], "2024-03-01")
 
     def test_lookup_falls_back_to_mssql_when_not_found_locally(self):
         self.authenticate()

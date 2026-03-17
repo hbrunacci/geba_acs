@@ -95,6 +95,18 @@
   const clearButton = document.getElementById('clear-form');
   const messageBox = document.getElementById('parking-message');
   const quotaBox = document.getElementById('quota-box');
+
+  function setQuotaStatus(message, canEnter) {
+    quotaBox.className = 'small mt-2 fw-semibold';
+    if (canEnter === true) {
+      quotaBox.classList.add('text-success');
+    } else if (canEnter === false) {
+      quotaBox.classList.add('text-danger');
+    } else {
+      quotaBox.classList.add('text-muted');
+    }
+    quotaBox.textContent = message;
+  }
   const body = document.getElementById('movements-body');
   const plateFilterInput = document.getElementById('movements-plate-filter');
   let allMovements = [];
@@ -176,12 +188,14 @@
       }
       const result = await fetchJSON('/api/parking/client-lookup/?dni=' + encodeURIComponent(dni));
       if (!result.found) {
-        quotaBox.textContent = 'Cliente no encontrado para el DNI ingresado.';
+        setQuotaStatus('Cliente no encontrado para el DNI ingresado.', null);
         showMessage('No se encontró cliente.', 'warning');
         return;
       }
-      quotaBox.textContent = 'Última cuota paga: ' + formatDate(result.ult_cuota_paga);
-      showMessage('Cliente encontrado.', 'success');
+      const statusText = result.can_enter ? 'Puede ingresar a la institución.' : 'No puede ingresar a la institución.';
+      const accessUntil = result.access_until ? ' (Vigente hasta: ' + formatDate(result.access_until) + ')' : '';
+      setQuotaStatus('Última cuota paga: ' + formatDate(result.ult_cuota_paga) + ' · ' + statusText + accessUntil, result.can_enter);
+      showMessage('Cliente encontrado.', result.can_enter ? 'success' : 'warning');
     } catch (error) {
       showMessage(error.message, 'danger');
     }
@@ -209,7 +223,7 @@
     dniInput.value = '';
     plateInput.value = '';
     typeInput.value = 'entry';
-    quotaBox.textContent = '';
+    setQuotaStatus('', null);
     messageBox.classList.add('d-none');
     dniInput.focus();
   });
