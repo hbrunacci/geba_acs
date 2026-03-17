@@ -5,44 +5,44 @@
 {% block header_subtitle %}Administrá la estructura física y jerárquica de acceso.{% endblock %}
 
 {% block content %}
-<div class="dashboard__charts">
-  <section class="card">
+<div class="row g-3 mb-3">
+  <section class="card shadow-sm border-0 col-12 col-xl-6">
     <header class="card__header"><h2 class="card__title">Nueva puerta</h2></header>
     <div class="card__body">
-      <form id="door-form" class="form-inline">
-        <input class="form-input" name="site" placeholder="ID sede" required>
-        <input class="form-input" name="code" placeholder="Código" required>
-        <input class="form-input" name="name" placeholder="Nombre" required>
-        <button class="button button--primary" type="submit">Crear puerta</button>
+      <form id="door-form" class="row g-2">
+        <input class="form-control" name="site" placeholder="ID sede" required>
+        <input class="form-control" name="code" placeholder="Código" required>
+        <input class="form-control" name="name" placeholder="Nombre" required>
+        <button class="btn btn-primary" type="submit">Crear puerta</button>
       </form>
       <p id="door-msg" class="console-msg"></p>
     </div>
   </section>
-  <section class="card">
+  <section class="card shadow-sm border-0 col-12 col-xl-6">
     <header class="card__header"><h2 class="card__title">Nueva zona</h2></header>
     <div class="card__body">
-      <form id="zone-form" class="form-inline">
-        <input class="form-input" name="site" placeholder="ID sede" required>
-        <input class="form-input" name="ring_code" placeholder="Ring (00,10,11)" maxlength="2" required>
-        <input class="form-input" name="name" placeholder="Nombre" required>
-        <button class="button button--primary" type="submit">Crear zona</button>
+      <form id="zone-form" class="row g-2">
+        <input class="form-control" name="site" placeholder="ID sede" required>
+        <input class="form-control" name="ring_code" placeholder="Ring (00,10,11)" maxlength="2" required>
+        <input class="form-control" name="name" placeholder="Nombre" required>
+        <button class="btn btn-primary" type="submit">Crear zona</button>
       </form>
       <p id="zone-msg" class="console-msg"></p>
     </div>
   </section>
 </div>
 
-<section class="card">
+<section class="card shadow-sm border-0">
   <header class="card__header"><h2 class="card__title">Puertas</h2></header>
-  <div class="card__body card__body--scroll">
-    <table class="table-clean"><thead><tr><th>ID</th><th>Sede</th><th>Código</th><th>Nombre</th></tr></thead><tbody id="doors-body"></tbody></table>
+  <div class="card__body card__body--scroll table-responsive">
+    <table class="table table-striped table-sm align-middle"><thead><tr><th>ID</th><th>Sede</th><th>Código</th><th>Nombre</th></tr></thead><tbody id="doors-body"></tbody></table>
   </div>
 </section>
 
-<section class="card">
+<section class="card shadow-sm border-0">
   <header class="card__header"><h2 class="card__title">Zonas</h2></header>
-  <div class="card__body card__body--scroll">
-    <table class="table-clean"><thead><tr><th>ID</th><th>Sede</th><th>Ring</th><th>Nombre</th><th>Nivel</th><th>Orden</th></tr></thead><tbody id="zones-body"></tbody></table>
+  <div class="card__body card__body--scroll table-responsive">
+    <table class="table table-striped table-sm align-middle"><thead><tr><th>ID</th><th>Sede</th><th>Ring</th><th>Nombre</th><th>Nivel</th><th>Orden</th></tr></thead><tbody id="zones-body"></tbody></table>
   </div>
 </section>
 {% endblock %}

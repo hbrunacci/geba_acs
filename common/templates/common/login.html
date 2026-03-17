@@ -3,46 +3,44 @@
 {% block page_title %}Iniciar sesión{% endblock page_title %}
 
 {% block unauthenticated %}
-<section class="public-card" aria-labelledby="login-title">
-  <h1 class="public-card__title" id="login-title">Ingresá a la plataforma</h1>
-  <p class="public-card__body">
-    Utilizá tus credenciales para acceder al panel de control.
-  </p>
-  <form method="post" novalidate class="form" aria-describedby="login-help">
-    {% csrf_token %}
-    {% if form.non_field_errors %}
-    <div class="form-error" role="alert">
-      {% for error in form.non_field_errors %}
-      <p>{{ error }}</p>
-      {% endfor %}
-    </div>
-    {% endif %}
-    <div class="form-field">
-      <label class="form-label" for="{{ form.username.id_for_label }}">Usuario</label>
-      {{ form.username }}
-      {% if form.username.errors %}
-      <div class="form-error" role="alert">
-        {% for error in form.username.errors %}
-        <p>{{ error }}</p>
+<section class="public-card card shadow-sm border-0 col-12 col-md-8 col-lg-5" aria-labelledby="login-title">
+  <div class="card-body p-4 p-lg-5">
+    <h1 class="h4 mb-2" id="login-title">Ingresá a la plataforma</h1>
+    <p class="text-muted">
+      Utilizá tus credenciales para acceder al panel de control.
+    </p>
+    <form method="post" novalidate aria-describedby="login-help" class="d-grid gap-3">
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+      <div class="alert alert-danger" role="alert">
+        {% for error in form.non_field_errors %}
+        <p class="mb-0">{{ error }}</p>
         {% endfor %}
       </div>
       {% endif %}
-    </div>
-    <div class="form-field">
-      <label class="form-label" for="{{ form.password.id_for_label }}">Contraseña</label>
-      {{ form.password }}
-      {% if form.password.errors %}
-      <div class="form-error" role="alert">
-        {% for error in form.password.errors %}
-        <p>{{ error }}</p>
-        {% endfor %}
+      <div>
+        <label class="form-label" for="{{ form.username.id_for_label }}">Usuario</label>
+        {{ form.username }}
+        {% if form.username.errors %}
+        <div class="text-danger small mt-1" role="alert">
+          {% for error in form.username.errors %}<p class="mb-0">{{ error }}</p>{% endfor %}
+        </div>
+        {% endif %}
       </div>
-      {% endif %}
-    </div>
-    <p id="login-help" class="form-help">Las credenciales son provistas por la administración.</p>
-    <div class="form-actions">
-      <button type="submit" class="button button--primary">Iniciar sesión</button>
-    </div>
-  </form>
+      <div>
+        <label class="form-label" for="{{ form.password.id_for_label }}">Contraseña</label>
+        {{ form.password }}
+        {% if form.password.errors %}
+        <div class="text-danger small mt-1" role="alert">
+          {% for error in form.password.errors %}<p class="mb-0">{{ error }}</p>{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      <p id="login-help" class="small text-muted mb-0">Las credenciales son provistas por la administración.</p>
+      <div>
+        <button type="submit" class="btn btn-primary w-100">Iniciar sesión</button>
+      </div>
+    </form>
+  </div>
 </section>
 {% endblock unauthenticated %}
