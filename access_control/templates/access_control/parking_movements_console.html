@@ -52,7 +52,19 @@
 
   <section class="card shadow-sm border-0 mt-4">
     <div class="card-header bg-white border-0 pt-4 px-4 px-lg-5">
-      <h5 class="mb-0">Últimos movimientos</h5>
+      <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+        <h5 class="mb-0">Últimos movimientos</h5>
+        <div class="w-100 w-md-auto" style="max-width: 320px;">
+          <label class="form-label small text-muted mb-1" for="movements-plate-filter">Buscar por patente</label>
+          <input
+            id="movements-plate-filter"
+            class="form-control"
+            type="text"
+            placeholder="Ej: AA123BB"
+            autocomplete="off"
+          />
+        </div>
+      </div>
     </div>
     <div class="card-body px-4 px-lg-5 pb-4">
       <div class="table-responsive">
@@ -84,6 +96,8 @@
   const messageBox = document.getElementById('parking-message');
   const quotaBox = document.getElementById('quota-box');
   const body = document.getElementById('movements-body');
+  const plateFilterInput = document.getElementById('movements-plate-filter');
+  let allMovements = [];
 
   function showMessage(text, kind) {
     messageBox.className = 'alert alert-' + (kind || 'info') + ' mt-3';
@@ -118,6 +132,11 @@
   }
 
   function renderRows(items) {
+    if (!items.length) {
+      body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No hay movimientos para la patente buscada.</td></tr>';
+      return;
+    }
+
     body.innerHTML = items.map(item => `
       <tr>
         <td>${formatDate(item.created_at)}</td>
@@ -129,10 +148,24 @@
     `).join('');
   }
 
+  function applyPlateFilter() {
+    const term = (plateFilterInput.value || '').trim().toLowerCase();
+    if (!term) {
+      renderRows(allMovements);
+      return;
+    }
+
+    const filtered = allMovements.filter(item => String(item.patente || '').toLowerCase().includes(term));
+    renderRows(filtered);
+  }
+
   async function loadMovements() {
     const rows = await fetchJSON('/api/parking/movements/');
-    renderRows(rows);
+    allMovements = rows;
+    applyPlateFilter();
   }
+
+  plateFilterInput.addEventListener('input', applyPlateFilter);
 
   lookupButton.addEventListener('click', async () => {
     try {
