@@ -203,3 +203,27 @@ class AccessEvent(models.Model):
 
     def __str__(self):
         return f"{self.person} @ {self.site} ({self.occurred_at:%Y-%m-%d %H:%M})"
+
+
+class ParkingMovement(models.Model):
+    class MovementType(models.TextChoices):
+        ENTRY = "entry", "Ingreso"
+        EXIT = "exit", "Salida"
+
+    dni = models.BigIntegerField()
+    patente = models.CharField(max_length=16)
+    movement_type = models.CharField(max_length=10, choices=MovementType.choices)
+    ult_cuota_paga = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=("dni", "-created_at")),
+            models.Index(fields=("patente", "-created_at")),
+        ]
+        verbose_name = "Movimiento de estacionamiento"
+        verbose_name_plural = "Movimientos de estacionamiento"
+
+    def __str__(self) -> str:
+        return f"{self.get_movement_type_display()} {self.patente} ({self.dni})"

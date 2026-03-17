@@ -5,10 +5,17 @@ from access_control.views import (
     biostar_devices_console,
     biostar_users_console,
     external_access_console,
+    parking_movements_console,
 )
 
 
 urlpatterns = [
+
+    path(
+        "parking-movements/",
+        parking_movements_console,
+        name="parking_movements_console",
+    ),
     path(
         "external-access/",
         external_access_console,

@@ -58,6 +58,9 @@
           <li class="nav__item{% if current_url == 'external_access_console' %} nav__item--active{% endif %}">
             <a href="{% url 'external_access_console' %}">Movimientos externos</a>
           </li>
+          <li class="nav__item{% if current_url == 'parking_movements_console' %} nav__item--active{% endif %}">
+            <a href="{% url 'parking_movements_console' %}">Estacionamiento</a>
+          </li>
         </ul>
         {% endwith %}
         {% endblock sidebar %}

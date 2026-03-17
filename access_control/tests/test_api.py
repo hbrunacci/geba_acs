@@ -6,9 +6,9 @@ from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from access_control.models import ExternalAccessLogEntry
+from access_control.models import ExternalAccessLogEntry, ParkingMovement
 from access_control.models.models import AccessEvent
-from people.models import GuestType, PersonType
+from people.models import Cliente, GuestType, PersonType
 
 
 class BaseAPITestCase(APITestCase):
@@ -313,3 +313,38 @@ class AccessReportsAPITestCase(BaseAPITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["site"], self.site_id)
         self.assertTrue(response.data["heatmap"])
+
+
+class ParkingMovementAPITestCase(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.lookup_url = reverse("parking_client_lookup")
+        self.movements_url = reverse("parking_movements_api")
+        Cliente.objects.create(id_cliente=1, doc_nro=30111222, ult_cuota_paga=timezone.now())
+
+    def test_lookup_requires_dni(self):
+        self.authenticate()
+        response = self.client.get(self.lookup_url)
+        self.assertEqual(response.status_code, 400)
+
+    def test_lookup_returns_ult_cuota_paga(self):
+        self.authenticate()
+        response = self.client.get(self.lookup_url, {"dni": 30111222})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["found"])
+        self.assertIn("ult_cuota_paga", response.data)
+
+    def test_create_movement_stores_registry(self):
+        self.authenticate()
+        payload = {"dni": 30111222, "patente": "aa123bb", "movement_type": "entry"}
+        response = self.client.post(self.movements_url, payload, format="json")
+        self.assertEqual(response.status_code, 201)
+        movement = ParkingMovement.objects.get(id=response.data["id"])
+        self.assertEqual(movement.patente, "AA123BB")
+        self.assertEqual(movement.movement_type, "entry")
+
+    def test_create_movement_validates_type(self):
+        self.authenticate()
+        payload = {"dni": 30111222, "patente": "AA123BB", "movement_type": "invalid"}
+        response = self.client.post(self.movements_url, payload, format="json")
+        self.assertEqual(response.status_code, 400)
