@@ -2,6 +2,7 @@ from datetime import date, datetime, time
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db.utils import OperationalError
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
@@ -403,3 +404,21 @@ class ParkingMovementAPITestCase(BaseAPITestCase):
         payload = {"dni": 30111222, "patente": "AA123BB", "movement_type": "invalid"}
         response = self.client.post(self.movements_url, payload, format="json")
         self.assertEqual(response.status_code, 400)
+
+    def test_list_movements_returns_service_unavailable_when_table_missing(self):
+        self.authenticate()
+        with patch("access_control.views.ParkingMovement.objects") as mocked_manager:
+            mocked_manager.all.return_value.values.side_effect = OperationalError("no such table")
+            response = self.client.get(self.movements_url)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("migraciones", response.data["detail"])
+
+    def test_create_movement_returns_service_unavailable_when_table_missing(self):
+        self.authenticate()
+        payload = {"dni": 30111222, "patente": "AA123BB", "movement_type": "entry"}
+        with patch("access_control.views.ParkingMovement.objects.create", side_effect=OperationalError("no such table")):
+            response = self.client.post(self.movements_url, payload, format="json")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("migraciones", response.data["detail"])
