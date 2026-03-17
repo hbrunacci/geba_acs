@@ -18,6 +18,8 @@ from access_control.views import (
     AccessEventViewSet,
     AccessHeatmapReportView,
     ExternalAccessLogView,
+    ParkingClienteLookupView,
+    ParkingMovementView,
     WhitelistEntryViewSet,
 )
 
@@ -26,6 +28,9 @@ router.register(r"whitelist", WhitelistEntryViewSet)
 router.register(r"access-events", AccessEventViewSet)
 
 urlpatterns = router.urls + [
+
+    path("parking/client-lookup/", ParkingClienteLookupView.as_view(), name="parking_client_lookup"),
+    path("parking/movements/", ParkingMovementView.as_view(), name="parking_movements_api"),
     path("biostar/devices/", BioStarDeviceListAPI.as_view(), name="biostar_devices_list_api"),
     path("biostar/devices/sync/", BioStarDeviceSyncAPI.as_view(), name="biostar_devices_sync_api"),
     path(
