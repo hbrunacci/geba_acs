@@ -5,6 +5,7 @@ from .services import (
     ExternalAccessLogSynchronizer,
     MSSQLClientLookupService,
 )
+from .anses_verification_service import AnsesVerificationError, AnsesVerificationService
 
 __all__ = [
     "ExternalAccessLogError",
@@ -12,4 +13,6 @@ __all__ = [
     "ExternalAccessLogSynchronizer",
     "MSSQLClientLookupService",
     "ClientLookupError",
+    "AnsesVerificationError",
+    "AnsesVerificationService",
 ]

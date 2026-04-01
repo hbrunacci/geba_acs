@@ -2,6 +2,8 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from access_control.api.v1.api_views import (
+    AnsesCandidatesAPI,
+    AnsesVerifyAPI,
     BioStarDeviceListAPI,
     BioStarDeviceSyncAPI,
     BioStarDeviceUserdataAPI,
@@ -66,4 +68,6 @@ urlpatterns = router.urls + [
     path("reports/access-by-category/", AccessByCategoryReportView.as_view(), name="report_access_by_category"),
     path("reports/access-by-site/", AccessBySiteReportView.as_view(), name="report_access_by_site"),
     path("reports/access-heatmap/", AccessHeatmapReportView.as_view(), name="report_access_heatmap"),
+    path("anses/candidates/", AnsesCandidatesAPI.as_view(), name="anses_candidates_api"),
+    path("anses/verify/", AnsesVerifyAPI.as_view(), name="anses_verify_api"),
 ]

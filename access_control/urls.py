@@ -2,6 +2,7 @@ from django.urls import path
 
 from access_control.views import (
     access_reports_console,
+    anses_verification_console,
     biostar_devices_console,
     biostar_users_console,
     external_access_console,
@@ -25,6 +26,11 @@ urlpatterns = [
         "reports-console/",
         access_reports_console,
         name="access_reports_console",
+    ),
+    path(
+        "anses-verification/",
+        anses_verification_console,
+        name="anses_verification_console",
     ),
     path(
         "biostar/devices/",

@@ -26,7 +26,13 @@ from access_control.serializers import BioStarDeviceSerializer, BioStarUserSeria
 
 from access_control.services.biostar2_client import BioStar2Client
 
-from access_control.services import ExternalAccessLogError, ExternalAccessLogSynchronizer
+from access_control.services import (
+    AnsesVerificationError,
+    AnsesVerificationService,
+    ClientLookupError,
+    ExternalAccessLogError,
+    ExternalAccessLogSynchronizer,
+)
 
 from django.core.management import call_command
 
@@ -375,3 +381,67 @@ class WhitelistBatchCreateAPI(views.APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class AnsesCandidatesAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        limit_param = request.query_params.get("limit", 50)
+        try:
+            limit = int(limit_param)
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "El parámetro 'limit' debe ser numérico."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if limit <= 0 or limit > 500:
+            return Response(
+                {"detail": "El parámetro 'limit' debe estar entre 1 y 500."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            items = AnsesVerificationService().fetch_candidates(limit=limit)
+        except (AnsesVerificationError, ClientLookupError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response(
+                {"detail": "Error inesperado al consultar candidatos para ANSES."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response({"count": len(items), "results": items}, status=status.HTTP_200_OK)
+
+
+class AnsesVerifyAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        dni_list = request.data.get("dni_list")
+        headless = bool(request.data.get("headless", True))
+        no_download = bool(request.data.get("no_download", True))
+        if not isinstance(dni_list, list) or not dni_list:
+            return Response(
+                {"detail": "Debe enviar 'dni_list' con al menos un DNI."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            dnis = [int(item) for item in dni_list]
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "Todos los DNIs deben ser numéricos."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            result = AnsesVerificationService().run_verification(
+                dnis,
+                headless=headless,
+                no_download=no_download,
+            )
+        except (AnsesVerificationError, ClientLookupError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response(
+                {"detail": "Error inesperado al ejecutar verificación ANSES."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response(result, status=status.HTTP_200_OK)

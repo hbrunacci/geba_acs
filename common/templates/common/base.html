@@ -67,6 +67,9 @@
           <li class="nav__item{% if current_url == 'parking_movements_console' %} nav__item--active{% endif %}">
             <a href="{% url 'parking_movements_console' %}">Estacionamiento</a>
           </li>
+          <li class="nav__item{% if current_url == 'anses_verification_console' %} nav__item--active{% endif %}">
+            <a href="{% url 'anses_verification_console' %}">Verificar situacion anses</a>
+          </li>
         </ul>
         {% endwith %}
         {% endblock sidebar %}

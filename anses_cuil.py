@@ -233,6 +233,13 @@ def parse_args() -> argparse.Namespace:
         default=10,
         help="Cantidad de personas a traer de MSSQL cuando se usa --from-mssql.",
     )
+    parser.add_argument(
+        "--dni",
+        action="append",
+        type=int,
+        dest="dnis",
+        help="DNI puntual a consultar. Repetir el flag para múltiples DNIs.",
+    )
     return parser.parse_args()
 
 
@@ -316,6 +323,63 @@ def fetch_people_from_mssql(limit: int) -> list[PersonData]:
     return people
 
 
+def fetch_people_by_dnis(dnis: list[int]) -> list[PersonData]:
+    if pyodbc is None:
+        raise RuntimeError("El paquete pyodbc no está instalado.")
+    if not dnis:
+        return []
+    clean_dnis = sorted({int(dni) for dni in dnis if int(dni) > 0})
+    placeholders = ", ".join("?" for _ in clean_dnis)
+    config = _mssql_config_from_env()
+    query = f"""
+    SELECT
+        Doc_Nro,
+        Nombre,
+        Apellido,
+        Sexo,
+        Fecha_Nac
+    FROM {config["TABLE"]}
+    WHERE Activo = 1
+      AND Fecha_Nac IS NOT NULL
+      AND Doc_Nro IN ({placeholders})
+      AND DATEDIFF(YEAR, Fecha_Nac, CAST(GETDATE() AS date)) > 90
+    ORDER BY Fecha_Nac ASC
+    """
+    try:
+        connection = pyodbc.connect(_connection_string(config))  # type: ignore[union-attr]
+        cursor = connection.cursor()
+        cursor.execute(query, clean_dnis)
+        rows = cursor.fetchall()
+    except Exception as exc:
+        raise RuntimeError(f"No se pudo consultar MSSQL por DNI: {exc}") from exc
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+    people: list[PersonData] = []
+    for doc_nro, nombre, apellido, sexo, fecha_nac in rows:
+        if not doc_nro or not nombre or not apellido or not fecha_nac:
+            continue
+        if isinstance(fecha_nac, datetime):
+            fecha_final = fecha_nac.date()
+        elif isinstance(fecha_nac, date):
+            fecha_final = fecha_nac
+        else:
+            continue
+        people.append(
+            PersonData(
+                doc_nro=int(doc_nro),
+                nombre=str(nombre).strip(),
+                apellido=str(apellido).strip(),
+                sexo=str(sexo or "M"),
+                fecha_nacimiento=fecha_final,
+            )
+        )
+    return people
+
+
 def main() -> int:
     """
     Punto de entrada principal del script.
@@ -324,7 +388,16 @@ def main() -> int:
         Código de salida del proceso.
     """
     args = parse_args()
-    if args.from_mssql:
+    if args.dnis:
+        try:
+            people = fetch_people_by_dnis(args.dnis)
+        except Exception as exc:
+            print(f"ERROR: {exc}")
+            return 2
+        if not people:
+            print("No se encontraron personas activas de más de 90 años para los DNIs indicados.")
+            return 1
+    elif args.from_mssql:
         try:
             people = fetch_people_from_mssql(args.mssql_limit)
         except Exception as exc:
