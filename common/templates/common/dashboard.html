@@ -8,10 +8,10 @@ Monitoreá la actividad de la plataforma y accedé rápidamente a filtros, repor
 {% endblock header_subtitle %}
 
 {% block header_actions %}
-<button class="button button--primary" type="button" data-open-modal="create">
+<button class="btn btn-primary" type="button" data-open-modal="create">
   <span aria-hidden="true">＋</span> Nuevo registro
 </button>
-<button class="button" type="button" data-action="export">Exportar</button>
+<button class="btn btn-outline-secondary" type="button" data-action="export">Exportar</button>
 {% endblock header_actions %}
 
 {% block filter_panel %}
@@ -20,7 +20,7 @@ Monitoreá la actividad de la plataforma y accedé rápidamente a filtros, repor
 
 {% block content %}
 <section class="dashboard__metrics" aria-label="Indicadores principales">
-  <div class="dashboard__grid">
+  <div class="dashboard__grid row g-3">
     {% include "common/components/stat_card.html" with stat_title="Total entidades" stat_value=total_entities|default:"0" stat_meta=last_update_text|default:"Última actualización: sin datos" %}
     {% include "common/components/stat_card.html" with stat_title="Usuarios activos" stat_value=active_users|default:"0" stat_meta=active_users_delta|default:"Variación semanal" %}
     {% include "common/components/stat_card.html" with stat_title="Alertas" stat_value=alerts|default:"0" stat_meta=alerts_delta|default:"Sin cambios" %}
@@ -29,21 +29,21 @@ Monitoreá la actividad de la plataforma y accedé rápidamente a filtros, repor
 </section>
 
 <section class="dashboard__charts" aria-label="Visualizaciones de datos">
-  <div class="card">
+  <div class="card shadow-sm border-0">
     <header class="card__header">
       <h2 class="card__title">Distribución por tipo</h2>
-      <button class="button button--ghost" type="button">Ver detalle</button>
+      <button class="btn btn-outline-secondary btn-sm" type="button">Ver detalle</button>
     </header>
     <div class="card__body card__body--chart" data-chart="donut">
       {% block chart_primary %}<canvas data-chart-target="primary"></canvas>{% endblock chart_primary %}
     </div>
   </div>
-  <div class="card">
+  <div class="card shadow-sm border-0">
     <header class="card__header">
       <h2 class="card__title">Evolución mensual</h2>
       <div class="card__actions">
-        <button class="button button--ghost" type="button" data-action="toggle-view">Serie</button>
-        <button class="button button--ghost" type="button" data-action="download">Descargar</button>
+        <button class="btn btn-outline-secondary btn-sm" type="button" data-action="toggle-view">Serie</button>
+        <button class="btn btn-outline-secondary btn-sm" type="button" data-action="download">Descargar</button>
       </div>
     </header>
     <div class="card__body card__body--chart" data-chart="bar">
@@ -53,12 +53,12 @@ Monitoreá la actividad de la plataforma y accedé rápidamente a filtros, repor
 </section>
 
 <section class="dashboard__table" aria-label="Listado principal">
-  <div class="card">
+  <div class="card shadow-sm border-0">
     <header class="card__header">
       <h2 class="card__title">Listado de entidades</h2>
       <div class="card__actions">
-        <button class="button" type="button" data-action="bulk-edit" disabled>Editar seleccionados</button>
-        <button class="button" type="button" data-action="bulk-delete" disabled>Eliminar seleccionados</button>
+        <button class="btn btn-outline-secondary" type="button" data-action="bulk-edit" disabled>Editar seleccionados</button>
+        <button class="btn btn-outline-secondary" type="button" data-action="bulk-delete" disabled>Eliminar seleccionados</button>
       </div>
     </header>
     <div class="card__body card__body--scroll">
@@ -74,16 +74,16 @@ Monitoreá la actividad de la plataforma y accedé rápidamente a filtros, repor
   <div class="modal__content">
     <header class="modal__header">
       <h2 class="modal__title" id="create-title">Nuevo registro</h2>
-      <button class="modal__close" type="button" data-close-modal aria-label="Cerrar">×</button>
+      <button class="btn-close" type="button" data-close-modal aria-label="Cerrar"></button>
     </header>
     <div class="modal__body">
       {% block create_modal_body %}
       <p>Utilizá este espacio para crear un nuevo elemento en la plataforma.</p>
       {% endblock create_modal_body %}
     </div>
-    <footer class="modal__footer">
-      <button class="button" type="button" data-close-modal>Cancelar</button>
-      <button class="button button--primary" type="submit">Guardar</button>
+    <footer class="modal__footer d-flex gap-2 justify-content-end">
+      <button class="btn btn-outline-secondary" type="button" data-close-modal>Cancelar</button>
+      <button class="btn btn-primary" type="submit">Guardar</button>
     </footer>
   </div>
 </div>

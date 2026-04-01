@@ -5,6 +5,7 @@ from datetime import timedelta
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 from django.db.models import Count
+from django.db.utils import OperationalError
 from django.db.models.functions import ExtractHour, TruncDate
 
 from django.utils.translation import gettext_lazy as _
@@ -42,6 +43,12 @@ def _parking_quota_access_status(ult_cuota_paga):
         "can_enter": can_enter,
         "access_until": access_until,
     }
+
+
+def _parking_stay_duration_seconds(stay_duration):
+    if stay_duration is None:
+        return None
+    return int(stay_duration.total_seconds())
 
 
 @login_required
@@ -213,7 +220,30 @@ class ParkingMovementView(APIView):
     """Registro y consulta de movimientos de estacionamiento."""
 
     def get(self, request):
-        items = list(ParkingMovement.objects.all().values("id", "dni", "patente", "movement_type", "ult_cuota_paga", "created_at")[:50])
+        try:
+            items = list(ParkingMovement.objects.all().values("id", "dni", "patente", "movement_type", "ult_cuota_paga", "created_at")[:50])
+        except OperationalError:
+            return Response(
+                {
+                    "detail": (
+                        "La tabla de movimientos de estacionamiento no está disponible. "
+                        "Ejecute las migraciones pendientes."
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        items = list(
+            ParkingMovement.objects.all().values(
+                "id",
+                "dni",
+                "patente",
+                "movement_type",
+                "ult_cuota_paga",
+                "created_at",
+                "exit_at",
+                "stay_duration",
+            )[:100]
+        )
         payload = []
         for item in items:
             payload.append({
@@ -223,6 +253,8 @@ class ParkingMovementView(APIView):
                 "movement_type": item["movement_type"],
                 "ult_cuota_paga": item["ult_cuota_paga"].isoformat() if item["ult_cuota_paga"] else None,
                 "created_at": item["created_at"].isoformat() if item["created_at"] else None,
+                "exit_at": item["exit_at"].isoformat() if item["exit_at"] else None,
+                "stay_duration_seconds": _parking_stay_duration_seconds(item["stay_duration"]),
             })
         return Response(payload)
 
@@ -244,12 +276,23 @@ class ParkingMovementView(APIView):
             return Response({"detail": "movement_type debe ser 'entry' o 'exit'."}, status=status.HTTP_400_BAD_REQUEST)
 
         cliente = Cliente.objects.filter(doc_nro=dni_value).values("ult_cuota_paga").first()
-        movement = ParkingMovement.objects.create(
-            dni=dni_value,
-            patente=patente,
-            movement_type=movement_type,
-            ult_cuota_paga=cliente.get("ult_cuota_paga") if cliente else None,
-        )
+        try:
+            movement = ParkingMovement.objects.create(
+                dni=dni_value,
+                patente=patente,
+                movement_type=movement_type,
+                ult_cuota_paga=cliente.get("ult_cuota_paga") if cliente else None,
+            )
+        except OperationalError:
+            return Response(
+                {
+                    "detail": (
+                        "La tabla de movimientos de estacionamiento no está disponible. "
+                        "Ejecute las migraciones pendientes."
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         return Response(
             {
@@ -259,6 +302,38 @@ class ParkingMovementView(APIView):
                 "movement_type": movement.movement_type,
                 "ult_cuota_paga": movement.ult_cuota_paga.isoformat() if movement.ult_cuota_paga else None,
                 "created_at": movement.created_at.isoformat(),
+                "exit_at": movement.exit_at.isoformat() if movement.exit_at else None,
+                "stay_duration_seconds": _parking_stay_duration_seconds(movement.stay_duration),
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class ParkingMovementMarkExitView(APIView):
+    """Marca la salida de un ingreso y calcula permanencia."""
+
+    def post(self, request, movement_id):
+        movement = ParkingMovement.objects.filter(id=movement_id).first()
+        if not movement:
+            return Response({"detail": "Movimiento no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        if movement.movement_type != ParkingMovement.MovementType.ENTRY:
+            return Response({"detail": "Solo se puede marcar salida para ingresos."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if movement.exit_at:
+            return Response({"detail": "Este ingreso ya tiene salida registrada."}, status=status.HTTP_400_BAD_REQUEST)
+
+        now = timezone.now()
+        movement.exit_at = now
+        movement.stay_duration = now - movement.created_at
+        movement.save(update_fields=["exit_at", "stay_duration"])
+
+        return Response({
+            "id": movement.id,
+            "dni": movement.dni,
+            "patente": movement.patente,
+            "movement_type": movement.movement_type,
+            "created_at": movement.created_at.isoformat() if movement.created_at else None,
+            "exit_at": movement.exit_at.isoformat() if movement.exit_at else None,
+            "stay_duration_seconds": _parking_stay_duration_seconds(movement.stay_duration),
+        })

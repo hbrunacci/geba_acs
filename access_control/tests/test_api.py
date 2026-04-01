@@ -1,7 +1,8 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db.utils import OperationalError
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
@@ -321,6 +322,7 @@ class ParkingMovementAPITestCase(BaseAPITestCase):
         super().setUp()
         self.lookup_url = reverse("parking_client_lookup")
         self.movements_url = reverse("parking_movements_api")
+        self.mark_exit_url_name = "parking_movement_mark_exit_api"
         Cliente.objects.create(id_cliente=1, doc_nro=30111222, ult_cuota_paga=timezone.now())
 
     def test_lookup_requires_dni(self):
@@ -397,9 +399,67 @@ class ParkingMovementAPITestCase(BaseAPITestCase):
         movement = ParkingMovement.objects.get(id=response.data["id"])
         self.assertEqual(movement.patente, "AA123BB")
         self.assertEqual(movement.movement_type, "entry")
+        self.assertIsNone(movement.exit_at)
+        self.assertIsNone(movement.stay_duration)
+
+
+    def test_mark_exit_updates_exit_time_and_stay_duration(self):
+        self.authenticate()
+        movement = ParkingMovement.objects.create(
+            dni=30111222,
+            patente="AA123BB",
+            movement_type=ParkingMovement.MovementType.ENTRY,
+        )
+
+        with patch("access_control.views.timezone.now", return_value=movement.created_at + timedelta(minutes=95)):
+            response = self.client.post(
+                reverse(self.mark_exit_url_name, kwargs={"movement_id": movement.id}),
+                {},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        movement.refresh_from_db()
+        self.assertIsNotNone(movement.exit_at)
+        self.assertEqual(int(movement.stay_duration.total_seconds()), 95 * 60)
+        self.assertEqual(response.data["stay_duration_seconds"], 95 * 60)
+
+    def test_mark_exit_rejects_non_entry_movement(self):
+        self.authenticate()
+        movement = ParkingMovement.objects.create(
+            dni=30111222,
+            patente="AA123BB",
+            movement_type=ParkingMovement.MovementType.EXIT,
+        )
+
+        response = self.client.post(
+            reverse(self.mark_exit_url_name, kwargs={"movement_id": movement.id}),
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
 
     def test_create_movement_validates_type(self):
         self.authenticate()
         payload = {"dni": 30111222, "patente": "AA123BB", "movement_type": "invalid"}
         response = self.client.post(self.movements_url, payload, format="json")
         self.assertEqual(response.status_code, 400)
+
+    def test_list_movements_returns_service_unavailable_when_table_missing(self):
+        self.authenticate()
+        with patch("access_control.views.ParkingMovement.objects") as mocked_manager:
+            mocked_manager.all.return_value.values.side_effect = OperationalError("no such table")
+            response = self.client.get(self.movements_url)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("migraciones", response.data["detail"])
+
+    def test_create_movement_returns_service_unavailable_when_table_missing(self):
+        self.authenticate()
+        payload = {"dni": 30111222, "patente": "AA123BB", "movement_type": "entry"}
+        with patch("access_control.views.ParkingMovement.objects.create", side_effect=OperationalError("no such table")):
+            response = self.client.post(self.movements_url, payload, format="json")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("migraciones", response.data["detail"])

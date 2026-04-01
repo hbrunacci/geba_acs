@@ -214,6 +214,8 @@ class ParkingMovement(models.Model):
     patente = models.CharField(max_length=16)
     movement_type = models.CharField(max_length=10, choices=MovementType.choices)
     ult_cuota_paga = models.DateTimeField(null=True, blank=True)
+    exit_at = models.DateTimeField(null=True, blank=True)
+    stay_duration = models.DurationField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

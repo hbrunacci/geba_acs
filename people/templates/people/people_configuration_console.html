@@ -5,46 +5,46 @@
 {% block header_subtitle %}Configurá categorías y tipos documentales con vencimiento.{% endblock %}
 
 {% block content %}
-<div class="dashboard__charts">
-  <section class="card">
+<div class="row g-3 mb-3">
+  <section class="card shadow-sm border-0 col-12 col-xl-6">
     <header class="card__header"><h2 class="card__title">Nueva categoría</h2></header>
     <div class="card__body">
-      <form id="category-form" class="form-inline">
-        <input class="form-input" name="code" placeholder="Código (ej: profesor)" required>
-        <input class="form-input" name="name" placeholder="Nombre" required>
-        <button class="button button--primary" type="submit">Guardar</button>
+      <form id="category-form" class="row g-2">
+        <input class="form-control" name="code" placeholder="Código (ej: profesor)" required>
+        <input class="form-control" name="name" placeholder="Nombre" required>
+        <button class="btn btn-primary" type="submit">Guardar</button>
       </form>
       <p id="category-msg" class="console-msg"></p>
     </div>
   </section>
-  <section class="card">
+  <section class="card shadow-sm border-0 col-12 col-xl-6">
     <header class="card__header"><h2 class="card__title">Nuevo tipo documental</h2></header>
     <div class="card__body">
-      <form id="doctype-form" class="form-inline">
-        <input class="form-input" name="code" placeholder="Código (ej: apto_medico)" required>
-        <input class="form-input" name="name" placeholder="Nombre" required>
+      <form id="doctype-form" class="row g-2">
+        <input class="form-control" name="code" placeholder="Código (ej: apto_medico)" required>
+        <input class="form-control" name="name" placeholder="Nombre" required>
         <label><input type="checkbox" name="requires_expiration"> Requiere vencimiento</label>
-        <button class="button button--primary" type="submit">Guardar</button>
+        <button class="btn btn-primary" type="submit">Guardar</button>
       </form>
       <p id="doctype-msg" class="console-msg"></p>
     </div>
   </section>
 </div>
 
-<section class="card">
+<section class="card shadow-sm border-0">
   <header class="card__header"><h2 class="card__title">Categorías registradas</h2></header>
-  <div class="card__body card__body--scroll">
-    <table class="table-clean">
+  <div class="card__body card__body--scroll table-responsive">
+    <table class="table table-striped table-sm align-middle">
       <thead><tr><th>ID</th><th>Código</th><th>Nombre</th><th>Activa</th></tr></thead>
       <tbody id="categories-body"></tbody>
     </table>
   </div>
 </section>
 
-<section class="card">
+<section class="card shadow-sm border-0">
   <header class="card__header"><h2 class="card__title">Tipos documentales registrados</h2></header>
-  <div class="card__body card__body--scroll">
-    <table class="table-clean">
+  <div class="card__body card__body--scroll table-responsive">
+    <table class="table table-striped table-sm align-middle">
       <thead><tr><th>ID</th><th>Código</th><th>Nombre</th><th>Vence</th></tr></thead>
       <tbody id="doctypes-body"></tbody>
     </table>
