@@ -18,7 +18,10 @@ Notas:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
 
 from selenium import webdriver
@@ -29,10 +32,26 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
+try:  # pragma: no cover - depende del entorno
+    import pyodbc  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    pyodbc = None  # type: ignore
+
 
 URL = "https://servicioswww.anses.gob.ar/C2-ConstaCUIL"
 ERROR_TEXT = "ACERCATE A UNA OFICINA DE ANSES CON DOCUMENTACIÓN QUE ACREDITE IDENTIDAD"
 SUCCESS_TEXT = "DESCARGAR CONSTANCIA"
+
+
+@dataclass(frozen=True)
+class PersonData:
+    """Datos mínimos requeridos por el formulario de ANSES."""
+
+    doc_nro: int
+    nombre: str
+    apellido: str
+    sexo: str
+    fecha_nacimiento: date
 
 
 def build_driver(download_dir: Path, headless: bool) -> webdriver.Chrome:
@@ -81,7 +100,11 @@ def build_driver(download_dir: Path, headless: bool) -> webdriver.Chrome:
     return driver
 
 
-def complete_form(driver: webdriver.Chrome, wait: WebDriverWait) -> None:
+def complete_form(
+    driver: webdriver.Chrome,
+    wait: WebDriverWait,
+    person: PersonData,
+) -> None:
     """
     Completa el formulario con los datos indicados por el usuario.
 
@@ -97,24 +120,26 @@ def complete_form(driver: webdriver.Chrome, wait: WebDriverWait) -> None:
 
     numero_doc = wait.until(EC.visibility_of_element_located((By.ID, "NumeroDoc")))
     numero_doc.clear()
-    numero_doc.send_keys("28206285")
+    numero_doc.send_keys(str(person.doc_nro))
 
     nombre = wait.until(EC.visibility_of_element_located((By.ID, "Nombre")))
     nombre.clear()
-    nombre.send_keys("Romina")
+    nombre.send_keys(person.nombre)
 
     apellido = wait.until(EC.visibility_of_element_located((By.ID, "Apellido")))
     apellido.clear()
-    apellido.send_keys("Areco")
+    apellido.send_keys(person.apellido)
 
-    sexo_m = wait.until(EC.element_to_be_clickable((By.ID, "SexoF")))
-    sexo_m.click()
+    sexo = (person.sexo or "").upper().strip()
+    sexo_id = "SexoF" if sexo == "F" else "SexoM"
+    sexo_element = wait.until(EC.element_to_be_clickable((By.ID, sexo_id)))
+    sexo_element.click()
 
     fecha_nacimiento = wait.until(
         EC.visibility_of_element_located((By.ID, "FechaNacimiento"))
     )
     fecha_nacimiento.clear()
-    fecha_nacimiento.send_keys("1980-07-09")
+    fecha_nacimiento.send_keys(person.fecha_nacimiento.isoformat())
 
     submit_button = wait.until(EC.element_to_be_clickable((By.ID, "submit")))
     submit_button.click()
@@ -197,7 +222,98 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Solo consulta; no hace clic en 'Descargar constancia'.",
     )
+    parser.add_argument(
+        "--from-mssql",
+        action="store_true",
+        help="Obtiene 10+ personas activas >90 años desde MSSQL y ejecuta ANSES.",
+    )
+    parser.add_argument(
+        "--mssql-limit",
+        type=int,
+        default=10,
+        help="Cantidad de personas a traer de MSSQL cuando se usa --from-mssql.",
+    )
     return parser.parse_args()
+
+
+def _mssql_config_from_env() -> dict[str, str | int]:
+    port = int(os.getenv("MSSQL_CLIENT_LOOKUP_PORT", os.getenv("MSSQL_ACCESS_LOG_PORT", "1433")))
+    return {
+        "HOST": os.getenv("MSSQL_CLIENT_LOOKUP_HOST", os.getenv("MSSQL_ACCESS_LOG_HOST", "192.168.0.6")),
+        "PORT": port,
+        "DATABASE": os.getenv("MSSQL_CLIENT_LOOKUP_DATABASE", os.getenv("MSSQL_ACCESS_LOG_DATABASE", "xsys_geba")),
+        "USER": os.getenv("MSSQL_CLIENT_LOOKUP_USER", os.getenv("MSSQL_ACCESS_LOG_USER", "sa")),
+        "PASSWORD": os.getenv("MSSQL_CLIENT_LOOKUP_PASSWORD", os.getenv("MSSQL_ACCESS_LOG_PASSWORD", "kvy2012*.")),
+        "TABLE": os.getenv("MSSQL_CLIENT_LOOKUP_TABLE", "Clientes"),
+        "DRIVER": os.getenv("MSSQL_CLIENT_LOOKUP_DRIVER", os.getenv("MSSQL_ACCESS_LOG_DRIVER", "{ODBC Driver 18 for SQL Server}")),
+    }
+
+
+def _connection_string(config: dict[str, str | int]) -> str:
+    server = f"{config['HOST']},{config['PORT']}"
+    return (
+        f"DRIVER={config['DRIVER']};"
+        f"SERVER={server};"
+        f"DATABASE={config['DATABASE']};"
+        f"UID={config['USER']};"
+        f"PWD={config['PASSWORD']};"
+    )
+
+
+def fetch_people_from_mssql(limit: int) -> list[PersonData]:
+    if pyodbc is None:
+        raise RuntimeError("El paquete pyodbc no está instalado.")
+    if limit <= 0:
+        raise RuntimeError("--mssql-limit debe ser un entero positivo.")
+
+    config = _mssql_config_from_env()
+    query = f"""
+    SELECT TOP {limit}
+        Doc_Nro,
+        Nombre,
+        Apellido,
+        Sexo,
+        Fecha_Nac
+    FROM {config["TABLE"]}
+    WHERE Activo = 1
+      AND Fecha_Nac IS NOT NULL
+      AND Doc_Nro IS NOT NULL
+      AND DATEDIFF(YEAR, Fecha_Nac, CAST(GETDATE() AS date)) > 90
+    ORDER BY Fecha_Nac ASC
+    """
+    try:
+        connection = pyodbc.connect(_connection_string(config))  # type: ignore[union-attr]
+        cursor = connection.cursor()
+        cursor.execute(query)
+        rows = cursor.fetchall()
+    except Exception as exc:
+        raise RuntimeError(f"No se pudo consultar MSSQL: {exc}") from exc
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+    people: list[PersonData] = []
+    for doc_nro, nombre, apellido, sexo, fecha_nac in rows:
+        if not doc_nro or not nombre or not apellido or not fecha_nac:
+            continue
+        if isinstance(fecha_nac, datetime):
+            fecha_final = fecha_nac.date()
+        elif isinstance(fecha_nac, date):
+            fecha_final = fecha_nac
+        else:
+            continue
+        people.append(
+            PersonData(
+                doc_nro=int(doc_nro),
+                nombre=str(nombre).strip(),
+                apellido=str(apellido).strip(),
+                sexo=str(sexo or "M"),
+                fecha_nacimiento=fecha_final,
+            )
+        )
+    return people
 
 
 def main() -> int:
@@ -208,25 +324,47 @@ def main() -> int:
         Código de salida del proceso.
     """
     args = parse_args()
+    if args.from_mssql:
+        try:
+            people = fetch_people_from_mssql(args.mssql_limit)
+        except Exception as exc:
+            print(f"ERROR: {exc}")
+            return 2
+        if not people:
+            print("No se encontraron personas activas de más de 90 años.")
+            return 1
+    else:
+        people = [
+            PersonData(
+                doc_nro=28206285,
+                nombre="Romina",
+                apellido="Areco",
+                sexo="F",
+                fecha_nacimiento=date(1980, 7, 9),
+            )
+        ]
+
     driver = build_driver(download_dir=args.download_dir, headless=args.headless)
     wait = WebDriverWait(driver, args.timeout)
+    errors = 0
 
     try:
-        complete_form(driver, wait)
-        result = wait_for_result(driver, wait)
+        for person in people:
+            complete_form(driver, wait, person)
+            result = wait_for_result(driver, wait)
 
-        if result == "error":
-            print("ERROR: ANSES devolvió el mensaje de validación de identidad.")
-            print(ERROR_TEXT)
-            return 1
+            if result == "error":
+                errors += 1
+                print(f"ERROR DNI {person.doc_nro}: {ERROR_TEXT}")
+                continue
 
-        print("OK: La constancia fue generada correctamente.")
+            print(f"OK DNI {person.doc_nro}: constancia generada.")
+            if not args.no_download:
+                download_constancia(driver, wait)
+                print(f"Descarga iniciada en: {args.download_dir.resolve()}")
 
-        if not args.no_download:
-            download_constancia(driver, wait)
-            print(f"Descarga iniciada en: {args.download_dir.resolve()}")
-
-        return 0
+        print(f"Resultado final: {len(people) - errors}/{len(people)} exitosos.")
+        return 0 if errors == 0 else 1
 
     except TimeoutException as exc:
         print(f"ERROR: Tiempo de espera agotado. Detalle: {exc}")
