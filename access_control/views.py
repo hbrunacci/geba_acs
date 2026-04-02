@@ -82,6 +82,12 @@ def access_reports_console(request):
     return render(request, "access_control/access_reports_console.html")
 
 
+@login_required
+def anses_verification_console(request):
+    """Consola para verificar situación ANSES de socios de +90 años."""
+    return render(request, "access_control/anses_verification_console.html")
+
+
 class WhitelistEntryViewSet(viewsets.ModelViewSet):
     queryset = WhitelistEntry.objects.select_related(
         "person",

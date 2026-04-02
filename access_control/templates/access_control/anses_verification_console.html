@@ -1,0 +1,163 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Verificar situacion anses{% endblock page_title %}
+{% block header_title %}Verificar situacion anses{% endblock header_title %}
+{% block header_subtitle %}
+  Listado de socios activos mayores a 90 años y ejecución de verificación ANSES para uno o varios seleccionados.
+{% endblock header_subtitle %}
+
+{% block content %}
+<section class="card">
+  <div class="card__body">
+    <div class="d-flex flex-wrap gap-2 align-items-end">
+      <div>
+        <label class="form-label" for="anses-limit">Cantidad</label>
+        <input id="anses-limit" class="form-control form-control-sm" type="number" min="1" max="500" value="50" />
+      </div>
+      <button id="anses-load" class="btn btn-outline-primary btn-sm" type="button">Cargar listado</button>
+      <button id="anses-verify-selected" class="btn btn-primary btn-sm" type="button">Verificar seleccionados</button>
+      <button id="anses-verify-all" class="btn btn-secondary btn-sm" type="button">Verificar todos los listados</button>
+    </div>
+    <div id="anses-msg" class="alert d-none mt-3" role="alert"></div>
+  </div>
+</section>
+
+<section class="card mt-4">
+  <div class="card__header">
+    <h5 class="card__title">Socios candidatos (+90)</h5>
+  </div>
+  <div class="card__body">
+    <div class="table-responsive">
+      <table class="table table-sm table-striped">
+        <thead>
+          <tr>
+            <th><input id="anses-select-all" type="checkbox" /></th>
+            <th>ID Cliente</th>
+            <th>DNI</th>
+            <th>Apellido</th>
+            <th>Nombre</th>
+            <th>Sexo</th>
+            <th>Fecha Nac.</th>
+            <th>Edad</th>
+          </tr>
+        </thead>
+        <tbody id="anses-candidates-body"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="card mt-4">
+  <div class="card__header">
+    <h5 class="card__title">Resultado de ejecución</h5>
+  </div>
+  <div class="card__body">
+    <pre id="anses-output" class="small mb-0"></pre>
+  </div>
+</section>
+
+<script>
+(function() {
+  const msgEl = document.getElementById("anses-msg");
+  const bodyEl = document.getElementById("anses-candidates-body");
+  const outputEl = document.getElementById("anses-output");
+  const limitEl = document.getElementById("anses-limit");
+  const selectAllEl = document.getElementById("anses-select-all");
+
+  function showMsg(text, kind) {
+    msgEl.className = "alert alert-" + (kind || "info") + " mt-3";
+    msgEl.textContent = text;
+    msgEl.classList.remove("d-none");
+  }
+
+  function getCookie(name) {
+    const item = document.cookie.split(";").map(v => v.trim()).find(v => v.startsWith(name + "="));
+    return item ? decodeURIComponent(item.split("=")[1]) : "";
+  }
+
+  async function fetchJSON(url, options) {
+    const resp = await fetch(url, {
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCookie("csrftoken"),
+      },
+      ...options,
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.detail || ("HTTP " + resp.status));
+    }
+    return data;
+  }
+
+  function renderRows(items) {
+    bodyEl.innerHTML = items.map(item => `
+      <tr>
+        <td><input class="anses-check" type="checkbox" data-dni="${item.doc_nro || ""}" /></td>
+        <td>${item.id_cliente ?? ""}</td>
+        <td>${item.doc_nro ?? ""}</td>
+        <td>${item.apellido || ""}</td>
+        <td>${item.nombre || ""}</td>
+        <td>${item.sexo || ""}</td>
+        <td>${item.fecha_nac || ""}</td>
+        <td>${item.edad ?? ""}</td>
+      </tr>
+    `).join("");
+  }
+
+  function selectedDnis() {
+    return [...document.querySelectorAll(".anses-check:checked")]
+      .map(el => Number(el.dataset.dni))
+      .filter(v => !Number.isNaN(v) && v > 0);
+  }
+
+  function listedDnis() {
+    return [...document.querySelectorAll(".anses-check")]
+      .map(el => Number(el.dataset.dni))
+      .filter(v => !Number.isNaN(v) && v > 0);
+  }
+
+  async function loadCandidates() {
+    try {
+      showMsg("Consultando candidatos en MSSQL...", "info");
+      const limit = Number(limitEl.value) || 50;
+      const data = await fetchJSON(`/api/anses/candidates/?limit=${limit}`);
+      renderRows(data.results || []);
+      showMsg(`Listado cargado: ${data.count || 0} registros.`, "success");
+    } catch (err) {
+      showMsg("No se pudo cargar el listado: " + err.message, "danger");
+    }
+  }
+
+  async function runVerification(dnis) {
+    if (!dnis.length) {
+      showMsg("No hay DNIs para verificar.", "warning");
+      return;
+    }
+    try {
+      showMsg(`Ejecutando verificación para ${dnis.length} socio(s)...`, "info");
+      const data = await fetchJSON("/api/anses/verify/", {
+        method: "POST",
+        body: JSON.stringify({ dni_list: dnis, headless: true, no_download: true }),
+      });
+      outputEl.textContent = `Comando: ${data.command}\nCódigo: ${data.returncode}\n\nSTDOUT:\n${data.stdout || ""}\n\nSTDERR:\n${data.stderr || ""}`;
+      showMsg("Verificación finalizada.", data.returncode === 0 ? "success" : "warning");
+    } catch (err) {
+      showMsg("Error al ejecutar verificación: " + err.message, "danger");
+    }
+  }
+
+  document.getElementById("anses-load").addEventListener("click", loadCandidates);
+  document.getElementById("anses-verify-selected").addEventListener("click", () => runVerification(selectedDnis()));
+  document.getElementById("anses-verify-all").addEventListener("click", () => runVerification(listedDnis()));
+  selectAllEl.addEventListener("change", () => {
+    document.querySelectorAll(".anses-check").forEach(el => {
+      el.checked = selectAllEl.checked;
+    });
+  });
+
+  loadCandidates();
+})();
+</script>
+{% endblock content %}
