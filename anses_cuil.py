@@ -41,6 +41,12 @@ except ModuleNotFoundError:  # pragma: no cover
 URL = "https://servicioswww.anses.gob.ar/C2-ConstaCUIL"
 ERROR_TEXT = "ACERCATE A UNA OFICINA DE ANSES CON DOCUMENTACIÓN QUE ACREDITE IDENTIDAD"
 SUCCESS_TEXT = "DESCARGAR CONSTANCIA"
+VALIDATION_ERROR_TEXTS = (
+    "completá este campo",
+    "ingresá",
+    "verificá",
+    "dato inválido",
+)
 
 
 @dataclass(frozen=True)
@@ -73,6 +79,9 @@ def build_driver(download_dir: Path, headless: bool) -> webdriver.Chrome:
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--lang=es-AR")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
     options.add_experimental_option(
         "prefs",
         {
@@ -142,7 +151,11 @@ def complete_form(
     fecha_nacimiento.send_keys(person.fecha_nacimiento.isoformat())
 
     submit_button = wait.until(EC.element_to_be_clickable((By.ID, "submit")))
-    submit_button.click()
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_button)
+    try:
+        submit_button.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", submit_button)
 
 
 def wait_for_result(driver: webdriver.Chrome, wait: WebDriverWait) -> str:
@@ -159,6 +172,7 @@ def wait_for_result(driver: webdriver.Chrome, wait: WebDriverWait) -> str:
     wait.until(
         lambda d: ERROR_TEXT.lower() in d.page_source.lower()
         or SUCCESS_TEXT.lower() in d.page_source.lower()
+        or any(text in d.page_source.lower() for text in VALIDATION_ERROR_TEXTS)
     )
 
     page = driver.page_source.lower()
@@ -166,6 +180,11 @@ def wait_for_result(driver: webdriver.Chrome, wait: WebDriverWait) -> str:
         return "error"
     if SUCCESS_TEXT.lower() in page:
         return "success"
+    if any(text in page for text in VALIDATION_ERROR_TEXTS):
+        raise RuntimeError(
+            "ANSES devolvió un mensaje de validación en pantalla. "
+            "Revisá nombre, apellido, sexo y fecha de nacimiento."
+        )
 
     raise TimeoutException("No se pudo determinar el resultado de la consulta.")
 
@@ -388,6 +407,9 @@ def main() -> int:
         Código de salida del proceso.
     """
     args = parse_args()
+    # Asegura que la carpeta de salida exista incluso antes de inicializar Selenium.
+    args.download_dir.mkdir(parents=True, exist_ok=True)
+
     if args.dnis:
         try:
             people = fetch_people_by_dnis(args.dnis)
@@ -440,7 +462,20 @@ def main() -> int:
         return 0 if errors == 0 else 1
 
     except TimeoutException as exc:
-        print(f"ERROR: Tiempo de espera agotado. Detalle: {exc}")
+        snapshot_path = args.download_dir / "anses_timeout_snapshot.html"
+        try:
+            args.download_dir.mkdir(parents=True, exist_ok=True)
+            snapshot_path.write_text(driver.page_source, encoding="utf-8")
+            extra = f" Se guardó snapshot HTML en: {snapshot_path.resolve()}"
+        except Exception:
+            extra = ""
+        print(
+            "ERROR: Tiempo de espera agotado."
+            f" URL actual: {driver.current_url}. Detalle: {exc}.{extra}"
+        )
+        return 2
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}")
         return 2
     except Exception as exc:  # pragma: no cover
         print(f"ERROR INESPERADO: {exc}")
