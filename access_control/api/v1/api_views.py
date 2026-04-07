@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.settings import api_settings
 
-from access_control.models.models import ExternalAccessLogEntry, WhitelistEntry
+from access_control.models.models import AnsesVerificationRecord, ExternalAccessLogEntry, WhitelistEntry
 from access_control.serializers import (
     ExternalAccessLogEntrySerializer,
     WhitelistBatchCreateSerializer,
@@ -387,21 +387,56 @@ class AnsesCandidatesAPI(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        limit_param = request.query_params.get("limit", 50)
+        page_param = request.query_params.get("page", 1)
+        page_size_param = request.query_params.get("page_size", 50)
+        min_age_param = request.query_params.get("min_age", 90)
+        max_age_param = request.query_params.get("max_age", 120)
+        exclude_consulted_param = (request.query_params.get("exclude_consulted") or "").strip().lower()
+        exclude_consulted = exclude_consulted_param in {"1", "true", "yes", "si"}
+
         try:
-            limit = int(limit_param)
+            page = int(page_param)
+        except (TypeError, ValueError):
+            return Response({"detail": "El parámetro 'page' debe ser numérico."}, status=status.HTTP_400_BAD_REQUEST)
+        if page <= 0:
+            return Response(
+                {"detail": "El parámetro 'page' debe ser mayor a cero."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            page_size = int(page_size_param)
         except (TypeError, ValueError):
             return Response(
-                {"detail": "El parámetro 'limit' debe ser numérico."},
+                {"detail": "El parámetro 'page_size' debe ser numérico."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if limit <= 0 or limit > 500:
+        if page_size != 50:
             return Response(
-                {"detail": "El parámetro 'limit' debe estar entre 1 y 500."},
+                {"detail": "El parámetro 'page_size' debe ser 50."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            items = AnsesVerificationService().fetch_candidates(limit=limit)
+            min_age = int(min_age_param)
+            max_age = int(max_age_param)
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "Los parámetros 'min_age' y 'max_age' deben ser numéricos."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if min_age < 0 or max_age < 0 or min_age > max_age:
+            return Response(
+                {"detail": "Rango de edades inválido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        offset = (page - 1) * page_size
+        try:
+            payload = AnsesVerificationService().fetch_candidates(
+                min_age=min_age,
+                max_age=max_age,
+                limit=page_size,
+                offset=offset,
+            )
         except (AnsesVerificationError, ClientLookupError) as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception:
@@ -409,26 +444,60 @@ class AnsesCandidatesAPI(views.APIView):
                 {"detail": "Error inesperado al consultar candidatos para ANSES."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-        return Response({"count": len(items), "results": items}, status=status.HTTP_200_OK)
+        consulted_ids = set()
+        if exclude_consulted:
+            consulted_ids = set(
+                AnsesVerificationRecord.objects.filter(requested_by=request.user).values_list("id_cliente", flat=True)
+            )
+
+        all_items = payload.get("results", [])
+        if exclude_consulted:
+            items = [item for item in all_items if item.get("id_cliente") not in consulted_ids]
+        else:
+            items = all_items
+        for item in items:
+            item["consulted"] = item.get("id_cliente") in consulted_ids if consulted_ids else False
+        return Response(
+            {
+                "count": payload.get("count", len(items)),
+                "page": page,
+                "page_size": page_size,
+                "results": items,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class AnsesVerifyAPI(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
+        clients = request.data.get("clients") or []
         dni_list = request.data.get("dni_list")
         headless = bool(request.data.get("headless", True))
         no_download = bool(request.data.get("no_download", True))
-        if not isinstance(dni_list, list) or not dni_list:
+        if clients and not isinstance(clients, list):
             return Response(
-                {"detail": "Debe enviar 'dni_list' con al menos un DNI."},
+                {"detail": "El parámetro 'clients' debe ser una lista."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not clients and (not isinstance(dni_list, list) or not dni_list):
+            return Response(
+                {"detail": "Debe enviar 'clients' o 'dni_list' con al menos un DNI."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            dnis = [int(item) for item in dni_list]
+            if clients:
+                pairs: list[tuple[int, int]] = []
+                for item in clients:
+                    pairs.append((int(item["id_cliente"]), int(item["doc_nro"])))
+                dnis = [pair[1] for pair in pairs]
+            else:
+                pairs = []
+                dnis = [int(item) for item in dni_list]
         except (TypeError, ValueError):
             return Response(
-                {"detail": "Todos los DNIs deben ser numéricos."},
+                {"detail": "Los clientes y DNIs deben ser numéricos."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
@@ -437,6 +506,13 @@ class AnsesVerifyAPI(views.APIView):
                 headless=headless,
                 no_download=no_download,
             )
+            if pairs:
+                for id_cliente, dni in pairs:
+                    AnsesVerificationRecord.objects.update_or_create(
+                        requested_by=request.user,
+                        id_cliente=id_cliente,
+                        defaults={"dni": dni},
+                    )
         except (AnsesVerificationError, ClientLookupError) as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception:
