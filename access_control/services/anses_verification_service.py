@@ -36,19 +36,22 @@ class AnsesVerificationService:
         table = self.config["TABLE"]
         query = f"""
         SELECT TOP {limit}
-            Id_Cliente,
-            Doc_Nro,
-            Nombre,
-            Apellido,
-            Sexo,
-            Fecha_Nac,
-            DATEDIFF(YEAR, Fecha_Nac, CAST(GETDATE() AS date)) AS Edad
-        FROM {table}
-        WHERE Activo = 1
-          AND Fecha_Nac IS NOT NULL
-          AND Doc_Nro IS NOT NULL
-          AND DATEDIFF(YEAR, Fecha_Nac, CAST(GETDATE() AS date)) > 90
-        ORDER BY Fecha_Nac ASC
+            c.Id_Cliente,
+            c.Doc_Nro,
+            c.Nombre,
+            c.Apellido,
+            c.Sexo,
+            c.Fecha_Nac,
+            DATEDIFF(YEAR, c.Fecha_Nac, CAST(GETDATE() AS date)) AS Edad
+        FROM {table} c
+        INNER JOIN Clientes_Tipos ct
+            ON ct.Id_Tipo_Cli = c.Id_Tipo_Cli
+        WHERE c.Activo = 1
+          AND c.Fecha_Nac IS NOT NULL
+          AND c.Doc_Nro IS NOT NULL
+          AND ct.Descripcion LIKE '%vitalicio%'
+          AND DATEDIFF(YEAR, c.Fecha_Nac, CAST(GETDATE() AS date)) > 90
+        ORDER BY c.Fecha_Nac ASC
         """
         try:
             connection = pyodbc.connect(self._connection_string())  # type: ignore[union-attr]
