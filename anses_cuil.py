@@ -58,6 +58,33 @@ class PersonData:
     apellido: str
     sexo: str
     fecha_nacimiento: date
+    fecha_nacimiento_original: str
+
+
+def _parse_fecha_nacimiento(fecha_nac: object) -> tuple[date, str] | None:
+    """
+    Normaliza la fecha de nacimiento obtenida desde MSSQL y conserva su formato original.
+
+    Devuelve una tupla con:
+      - fecha normalizada como `date`
+      - valor original formateado en string para trazabilidad
+    """
+    if isinstance(fecha_nac, datetime):
+        fecha = fecha_nac.date()
+        return fecha, fecha_nac.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(fecha_nac, date):
+        return fecha_nac, fecha_nac.isoformat()
+    if isinstance(fecha_nac, str):
+        raw = fecha_nac.strip()
+        if not raw:
+            return None
+        formatos = ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d", "%d-%m-%Y", "%Y%m%d", "%d%m%Y")
+        for fmt in formatos:
+            try:
+                return datetime.strptime(raw, fmt).date(), raw
+            except ValueError:
+                continue
+    return None
 
 
 def build_driver(download_dir: Path, headless: bool) -> webdriver.Chrome:
@@ -144,11 +171,14 @@ def complete_form(
     sexo_element = wait.until(EC.element_to_be_clickable((By.ID, sexo_id)))
     sexo_element.click()
 
-    fecha_nacimiento = wait.until(
-        EC.visibility_of_element_located((By.ID, "FechaNacimiento"))
-    )
+    fecha_nacimiento = wait.until(EC.visibility_of_element_located((By.ID, "FechaNacimiento")))
     fecha_nacimiento.clear()
-    fecha_nacimiento.send_keys(person.fecha_nacimiento.isoformat())
+    fecha_form_input = person.fecha_nacimiento.strftime("%d/%m/%Y")
+    print(
+        f"DNI {person.doc_nro}: fecha_nac origen='{person.fecha_nacimiento_original}' "
+        f"-> carga ANSES='{fecha_form_input}'"
+    )
+    fecha_nacimiento.send_keys(fecha_form_input)
 
     submit_button = wait.until(EC.element_to_be_clickable((By.ID, "submit")))
     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_button)
@@ -324,12 +354,10 @@ def fetch_people_from_mssql(limit: int) -> list[PersonData]:
     for doc_nro, nombre, apellido, sexo, fecha_nac in rows:
         if not doc_nro or not nombre or not apellido or not fecha_nac:
             continue
-        if isinstance(fecha_nac, datetime):
-            fecha_final = fecha_nac.date()
-        elif isinstance(fecha_nac, date):
-            fecha_final = fecha_nac
-        else:
+        parsed_date = _parse_fecha_nacimiento(fecha_nac)
+        if parsed_date is None:
             continue
+        fecha_final, fecha_original = parsed_date
         people.append(
             PersonData(
                 doc_nro=int(doc_nro),
@@ -337,6 +365,7 @@ def fetch_people_from_mssql(limit: int) -> list[PersonData]:
                 apellido=str(apellido).strip(),
                 sexo=str(sexo or "M"),
                 fecha_nacimiento=fecha_final,
+                fecha_nacimiento_original=fecha_original,
             )
         )
     return people
@@ -381,12 +410,10 @@ def fetch_people_by_dnis(dnis: list[int]) -> list[PersonData]:
     for doc_nro, nombre, apellido, sexo, fecha_nac in rows:
         if not doc_nro or not nombre or not apellido or not fecha_nac:
             continue
-        if isinstance(fecha_nac, datetime):
-            fecha_final = fecha_nac.date()
-        elif isinstance(fecha_nac, date):
-            fecha_final = fecha_nac
-        else:
+        parsed_date = _parse_fecha_nacimiento(fecha_nac)
+        if parsed_date is None:
             continue
+        fecha_final, fecha_original = parsed_date
         people.append(
             PersonData(
                 doc_nro=int(doc_nro),
@@ -394,6 +421,7 @@ def fetch_people_by_dnis(dnis: list[int]) -> list[PersonData]:
                 apellido=str(apellido).strip(),
                 sexo=str(sexo or "M"),
                 fecha_nacimiento=fecha_final,
+                fecha_nacimiento_original=fecha_original,
             )
         )
     return people
@@ -436,6 +464,7 @@ def main() -> int:
                 apellido="Areco",
                 sexo="F",
                 fecha_nacimiento=date(1980, 7, 9),
+                fecha_nacimiento_original="1980-07-09",
             )
         ]
 
