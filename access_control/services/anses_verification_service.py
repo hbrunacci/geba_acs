@@ -27,15 +27,39 @@ class AnsesVerificationService:
     def _connection_string(self) -> str:
         return self.lookup_service._connection_string()
 
-    def fetch_candidates(self, limit: int = 50) -> list[dict[str, Any]]:
+    def fetch_candidates(
+        self,
+        *,
+        min_age: int = 90,
+        max_age: int = 120,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        if not isinstance(min_age, int) or not isinstance(max_age, int):
+            raise AnsesVerificationError("Los parámetros de edad deben ser numéricos.")
+        if min_age < 0 or max_age < 0 or min_age > max_age:
+            raise AnsesVerificationError("Rango de edades inválido.")
         if not isinstance(limit, int) or limit <= 0:
             raise AnsesVerificationError("El parámetro limit debe ser un entero positivo.")
+        if not isinstance(offset, int) or offset < 0:
+            raise AnsesVerificationError("El parámetro offset debe ser un entero mayor o igual a cero.")
         if pyodbc is None:
             raise AnsesVerificationError("El paquete pyodbc no está disponible.")
 
         table = self.config["TABLE"]
+        count_query = f"""
+        SELECT COUNT(1)
+        FROM {table} c
+        INNER JOIN Clientes_Tipos ct
+            ON ct.Id_Tipo_Cli = c.Id_Tipo_Cli
+        WHERE c.Activo = 1
+          AND c.Fecha_Nac IS NOT NULL
+          AND c.Doc_Nro IS NOT NULL
+          AND ct.Descripcion LIKE '%vitalicio%'
+          AND DATEDIFF(YEAR, c.Fecha_Nac, CAST(GETDATE() AS date)) BETWEEN ? AND ?
+        """
         query = f"""
-        SELECT TOP {limit}
+        SELECT
             c.Id_Cliente,
             c.Doc_Nro,
             c.Nombre,
@@ -50,13 +74,17 @@ class AnsesVerificationService:
           AND c.Fecha_Nac IS NOT NULL
           AND c.Doc_Nro IS NOT NULL
           AND ct.Descripcion LIKE '%vitalicio%'
-          AND DATEDIFF(YEAR, c.Fecha_Nac, CAST(GETDATE() AS date)) > 90
+          AND DATEDIFF(YEAR, c.Fecha_Nac, CAST(GETDATE() AS date)) BETWEEN ? AND ?
         ORDER BY c.Fecha_Nac ASC
+        OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         """
         try:
             connection = pyodbc.connect(self._connection_string())  # type: ignore[union-attr]
             cursor = connection.cursor()
-            cursor.execute(query)
+            cursor.execute(count_query, min_age, max_age)
+            total_row = cursor.fetchone()
+            total = int(total_row[0]) if total_row and total_row[0] is not None else 0
+            cursor.execute(query, min_age, max_age, offset, limit)
             rows = cursor.fetchall()
         except Exception as exc:
             raise AnsesVerificationError(f"No se pudo consultar MSSQL: {exc}") from exc
@@ -66,7 +94,7 @@ class AnsesVerificationService:
             except Exception:
                 pass
 
-        result: list[dict[str, Any]] = []
+        items: list[dict[str, Any]] = []
         for row in rows:
             fecha_nac = row[5]
             if isinstance(fecha_nac, datetime):
@@ -75,7 +103,7 @@ class AnsesVerificationService:
                 fecha_nac_value = str(fecha_nac)
             else:
                 fecha_nac_value = ""
-            result.append(
+            items.append(
                 {
                     "id_cliente": int(row[0]) if row[0] is not None else None,
                     "doc_nro": int(row[1]) if row[1] is not None else None,
@@ -86,7 +114,7 @@ class AnsesVerificationService:
                     "edad": int(row[6]) if row[6] is not None else None,
                 }
             )
-        return result
+        return {"count": total, "results": items}
 
     def run_verification(self, dnis: list[int], *, headless: bool = True, no_download: bool = True) -> dict[str, Any]:
         if not dnis:

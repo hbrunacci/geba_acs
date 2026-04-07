@@ -268,14 +268,17 @@ class AnsesVerificationServiceTestCase(SimpleTestCase):
     def test_fetch_candidates_filters_only_vitalicio(self):
         connect_mock = MagicMock()
         cursor_mock = MagicMock()
+        cursor_mock.fetchone.return_value = [2]
         cursor_mock.fetchall.return_value = []
         connect_mock.return_value.cursor.return_value = cursor_mock
         self._install_pyodbc_stub(connect_mock)
 
         service = AnsesVerificationService(config=self.config)
-        service.fetch_candidates(limit=10)
+        service.fetch_candidates(min_age=85, max_age=100, limit=50, offset=0)
 
-        executed_query = cursor_mock.execute.call_args[0][0]
+        executed_query = cursor_mock.execute.call_args_list[1][0][0]
         self.assertIn("INNER JOIN Clientes_Tipos ct", executed_query)
         self.assertIn("ct.Id_Tipo_Cli = c.Id_Tipo_Cli", executed_query)
         self.assertIn("ct.Descripcion LIKE '%vitalicio%'", executed_query)
+        self.assertIn("BETWEEN ? AND ?", executed_query)
+        self.assertIn("OFFSET ? ROWS FETCH NEXT ? ROWS ONLY", executed_query)

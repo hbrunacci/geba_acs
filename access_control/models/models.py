@@ -229,3 +229,34 @@ class ParkingMovement(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_movement_type_display()} {self.patente} ({self.dni})"
+
+
+class AnsesVerificationRecord(models.Model):
+    id_cliente = models.BigIntegerField()
+    dni = models.BigIntegerField()
+    requested_by = models.ForeignKey(
+        "auth.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="anses_verification_records",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=("requested_by", "id_cliente")),
+            models.Index(fields=("requested_by", "-created_at")),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("requested_by", "id_cliente"),
+                name="uniq_anses_record_user_client",
+            )
+        ]
+        verbose_name = "Consulta ANSES"
+        verbose_name_plural = "Consultas ANSES"
+
+    def __str__(self) -> str:
+        return f"Cliente {self.id_cliente} (DNI {self.dni})"

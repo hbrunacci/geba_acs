@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from access_control.models import ExternalAccessLogEntry, ParkingMovement
+from access_control.models import AnsesVerificationRecord, ExternalAccessLogEntry, ParkingMovement
 from access_control.models.models import AccessEvent
 from people.models import Cliente, GuestType, PersonType
 
@@ -463,3 +463,47 @@ class ParkingMovementAPITestCase(BaseAPITestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertIn("migraciones", response.data["detail"])
+
+
+class AnsesVerificationAPITestCase(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.authenticate()
+        self.candidates_url = reverse("anses_candidates_api")
+        self.verify_url = reverse("anses_verify_api")
+
+    @patch("access_control.api.v1.api_views.AnsesVerificationService")
+    def test_candidates_pagination_with_age_range(self, service_cls):
+        service = service_cls.return_value
+        service.fetch_candidates.return_value = {
+            "count": 123,
+            "results": [
+                {
+                    "id_cliente": 10,
+                    "doc_nro": 30111222,
+                    "nombre": "Ana",
+                    "apellido": "Perez",
+                    "sexo": "F",
+                    "fecha_nac": "1930-01-01",
+                    "edad": 96,
+                }
+            ],
+        }
+        response = self.client.get(self.candidates_url, {"page": 2, "page_size": 50, "min_age": 95, "max_age": 100})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 123)
+        self.assertEqual(response.data["page"], 2)
+        service.fetch_candidates.assert_called_once_with(min_age=95, max_age=100, limit=50, offset=50)
+
+    @patch("access_control.api.v1.api_views.AnsesVerificationService")
+    def test_verify_clients_persists_consulted_by_user(self, service_cls):
+        service_cls.return_value.run_verification.return_value = {"returncode": 0}
+        payload = {"clients": [{"id_cliente": 101, "doc_nro": 30111222}], "headless": True, "no_download": True}
+
+        response = self.client.post(self.verify_url, payload, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            AnsesVerificationRecord.objects.filter(requested_by=self.user, id_cliente=101, dni=30111222).exists()
+        )
