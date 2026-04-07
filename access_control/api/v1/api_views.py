@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import re
+import threading
+import uuid
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import ValidationError
@@ -35,6 +39,146 @@ from access_control.services import (
 )
 
 from django.core.management import call_command
+
+ANSES_ERROR_MESSAGE = "ACERCATE A UNA OFICINA DE ANSES CON DOCUMENTACIÓN QUE ACREDITE IDENTIDAD"
+ANSES_SUCCESS_SNIPPET = "constancia generada."
+ANSES_RESULT_PATTERN = re.compile(r"^(?:OK|ERROR) DNI (?P<dni>\d+): (?P<message>.+)$", re.MULTILINE)
+
+ANSES_BACKGROUND_JOBS: dict[str, dict] = {}
+ANSES_BACKGROUND_LOCK = threading.Lock()
+
+
+def _map_anses_status(message: str) -> str:
+    lowered = (message or "").strip().lower()
+    if ANSES_SUCCESS_SNIPPET in lowered:
+        return AnsesVerificationRecord.VerificationStatus.GENERATED
+    if ANSES_ERROR_MESSAGE.lower() in lowered:
+        return AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED
+    return AnsesVerificationRecord.VerificationStatus.UNKNOWN
+
+
+def _extract_anses_messages(stdout: str) -> dict[int, str]:
+    messages_by_dni: dict[int, str] = {}
+    for match in ANSES_RESULT_PATTERN.finditer(stdout or ""):
+        dni = int(match.group("dni"))
+        message = (match.group("message") or "").strip()
+        if message:
+            messages_by_dni[dni] = message
+    return messages_by_dni
+
+
+def _save_anses_records(*, user, pairs: list[tuple[int, int]], stdout: str) -> None:
+    messages_by_dni = _extract_anses_messages(stdout)
+    checked_at = timezone.now()
+    for id_cliente, dni in pairs:
+        message = messages_by_dni.get(dni, "").strip()
+        AnsesVerificationRecord.objects.update_or_create(
+            requested_by=user,
+            id_cliente=id_cliente,
+            defaults={
+                "dni": dni,
+                "verification_status": _map_anses_status(message),
+                "verification_message": message,
+                "last_checked_at": checked_at,
+            },
+        )
+
+
+def _fetch_all_anses_candidates(*, min_age: int, max_age: int) -> list[dict]:
+    service = AnsesVerificationService()
+    items: list[dict] = []
+    offset = 0
+    batch_size = 500
+    while True:
+        payload = service.fetch_candidates(min_age=min_age, max_age=max_age, limit=batch_size, offset=offset)
+        rows = payload.get("results", [])
+        if not rows:
+            break
+        items.extend(rows)
+        offset += len(rows)
+        if len(rows) < batch_size:
+            break
+    return items
+
+
+def _apply_candidate_filters(
+    *,
+    items: list[dict],
+    records_map: dict[int, AnsesVerificationRecord],
+    exclude_consulted: bool,
+    verification_status: str,
+) -> list[dict]:
+    filtered: list[dict] = []
+    for item in items:
+        id_cliente = item.get("id_cliente")
+        record = records_map.get(id_cliente) if id_cliente is not None else None
+        consulted = record is not None
+        if exclude_consulted and consulted:
+            continue
+        if verification_status and verification_status != "all":
+            record_status = record.verification_status if record else ""
+            if verification_status == "pending":
+                if consulted:
+                    continue
+            elif record_status != verification_status:
+                continue
+        item["consulted"] = consulted
+        item["verification_status"] = record.verification_status if record else ""
+        item["verification_message"] = record.verification_message if record else ""
+        filtered.append(item)
+    return filtered
+
+
+def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: int, exclude_consulted: bool, verification_status: str) -> None:
+    User = get_user_model()
+    user = User.objects.filter(id=user_id).first()
+    if user is None:
+        with ANSES_BACKGROUND_LOCK:
+            ANSES_BACKGROUND_JOBS[job_id]["status"] = "failed"
+            ANSES_BACKGROUND_JOBS[job_id]["error"] = "Usuario inválido."
+            ANSES_BACKGROUND_JOBS[job_id]["finished_at"] = timezone.now().isoformat()
+        return
+    try:
+        with ANSES_BACKGROUND_LOCK:
+            ANSES_BACKGROUND_JOBS[job_id]["status"] = "running"
+        all_items = _fetch_all_anses_candidates(min_age=min_age, max_age=max_age)
+        records_qs = AnsesVerificationRecord.objects.filter(requested_by=user)
+        records_map = {record.id_cliente: record for record in records_qs}
+        clients = _apply_candidate_filters(
+            items=all_items,
+            records_map=records_map,
+            exclude_consulted=exclude_consulted,
+            verification_status=verification_status,
+        )
+        pairs = [
+            (int(item["id_cliente"]), int(item["doc_nro"]))
+            for item in clients
+            if item.get("id_cliente") is not None and item.get("doc_nro") is not None
+        ]
+        with ANSES_BACKGROUND_LOCK:
+            ANSES_BACKGROUND_JOBS[job_id]["total"] = len(pairs)
+        if not pairs:
+            with ANSES_BACKGROUND_LOCK:
+                ANSES_BACKGROUND_JOBS[job_id]["status"] = "completed"
+                ANSES_BACKGROUND_JOBS[job_id]["finished_at"] = timezone.now().isoformat()
+            return
+        service = AnsesVerificationService()
+        chunk_size = 50
+        for index in range(0, len(pairs), chunk_size):
+            chunk = pairs[index : index + chunk_size]
+            dnis = [dni for _, dni in chunk]
+            result = service.run_verification(dnis, headless=True, no_download=True)
+            _save_anses_records(user=user, pairs=chunk, stdout=result.get("stdout", ""))
+            with ANSES_BACKGROUND_LOCK:
+                ANSES_BACKGROUND_JOBS[job_id]["processed"] += len(chunk)
+        with ANSES_BACKGROUND_LOCK:
+            ANSES_BACKGROUND_JOBS[job_id]["status"] = "completed"
+            ANSES_BACKGROUND_JOBS[job_id]["finished_at"] = timezone.now().isoformat()
+    except Exception as exc:
+        with ANSES_BACKGROUND_LOCK:
+            ANSES_BACKGROUND_JOBS[job_id]["status"] = "failed"
+            ANSES_BACKGROUND_JOBS[job_id]["error"] = str(exc)
+            ANSES_BACKGROUND_JOBS[job_id]["finished_at"] = timezone.now().isoformat()
 
 
 
@@ -392,7 +536,20 @@ class AnsesCandidatesAPI(views.APIView):
         min_age_param = request.query_params.get("min_age", 90)
         max_age_param = request.query_params.get("max_age", 120)
         exclude_consulted_param = (request.query_params.get("exclude_consulted") or "").strip().lower()
+        verification_status = (request.query_params.get("verification_status") or "all").strip().lower()
         exclude_consulted = exclude_consulted_param in {"1", "true", "yes", "si"}
+        allowed_status_filters = {
+            "all",
+            "pending",
+            AnsesVerificationRecord.VerificationStatus.GENERATED,
+            AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
+            AnsesVerificationRecord.VerificationStatus.UNKNOWN,
+        }
+        if verification_status not in allowed_status_filters:
+            return Response(
+                {"detail": "El parámetro 'verification_status' es inválido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             page = int(page_param)
@@ -429,14 +586,38 @@ class AnsesCandidatesAPI(views.APIView):
                 {"detail": "Rango de edades inválido."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        offset = (page - 1) * page_size
         try:
-            payload = AnsesVerificationService().fetch_candidates(
-                min_age=min_age,
-                max_age=max_age,
-                limit=page_size,
-                offset=offset,
-            )
+            has_local_filters = exclude_consulted or verification_status != "all"
+            if has_local_filters:
+                all_items = _fetch_all_anses_candidates(min_age=min_age, max_age=max_age)
+                records_qs = AnsesVerificationRecord.objects.filter(requested_by=request.user)
+                records_map = {record.id_cliente: record for record in records_qs}
+                filtered = _apply_candidate_filters(
+                    items=all_items,
+                    records_map=records_map,
+                    exclude_consulted=exclude_consulted,
+                    verification_status=verification_status,
+                )
+                total_count = len(filtered)
+                offset = (page - 1) * page_size
+                items = filtered[offset : offset + page_size]
+            else:
+                offset = (page - 1) * page_size
+                payload = AnsesVerificationService().fetch_candidates(
+                    min_age=min_age,
+                    max_age=max_age,
+                    limit=page_size,
+                    offset=offset,
+                )
+                records_qs = AnsesVerificationRecord.objects.filter(requested_by=request.user)
+                records_map = {record.id_cliente: record for record in records_qs}
+                items = _apply_candidate_filters(
+                    items=payload.get("results", []),
+                    records_map=records_map,
+                    exclude_consulted=False,
+                    verification_status="all",
+                )
+                total_count = payload.get("count", len(items))
         except (AnsesVerificationError, ClientLookupError) as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception:
@@ -444,22 +625,9 @@ class AnsesCandidatesAPI(views.APIView):
                 {"detail": "Error inesperado al consultar candidatos para ANSES."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-        consulted_ids = set()
-        if exclude_consulted:
-            consulted_ids = set(
-                AnsesVerificationRecord.objects.filter(requested_by=request.user).values_list("id_cliente", flat=True)
-            )
-
-        all_items = payload.get("results", [])
-        if exclude_consulted:
-            items = [item for item in all_items if item.get("id_cliente") not in consulted_ids]
-        else:
-            items = all_items
-        for item in items:
-            item["consulted"] = item.get("id_cliente") in consulted_ids if consulted_ids else False
         return Response(
             {
-                "count": payload.get("count", len(items)),
+                "count": total_count,
                 "page": page,
                 "page_size": page_size,
                 "results": items,
@@ -507,12 +675,7 @@ class AnsesVerifyAPI(views.APIView):
                 no_download=no_download,
             )
             if pairs:
-                for id_cliente, dni in pairs:
-                    AnsesVerificationRecord.objects.update_or_create(
-                        requested_by=request.user,
-                        id_cliente=id_cliente,
-                        defaults={"dni": dni},
-                    )
+                _save_anses_records(user=request.user, pairs=pairs, stdout=result.get("stdout", ""))
         except (AnsesVerificationError, ClientLookupError) as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception:
@@ -521,3 +684,66 @@ class AnsesVerifyAPI(views.APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(result, status=status.HTTP_200_OK)
+
+
+class AnsesVerifyFilteredAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            min_age = int(request.data.get("min_age", 90))
+            max_age = int(request.data.get("max_age", 120))
+        except (TypeError, ValueError):
+            return Response({"detail": "Los parámetros de edad deben ser numéricos."}, status=status.HTTP_400_BAD_REQUEST)
+        if min_age < 0 or max_age < 0 or min_age > max_age:
+            return Response({"detail": "Rango de edades inválido."}, status=status.HTTP_400_BAD_REQUEST)
+        exclude_consulted = bool(request.data.get("exclude_consulted", False))
+        verification_status = (request.data.get("verification_status") or "all").strip().lower()
+        allowed_status_filters = {
+            "all",
+            "pending",
+            AnsesVerificationRecord.VerificationStatus.GENERATED,
+            AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
+            AnsesVerificationRecord.VerificationStatus.UNKNOWN,
+        }
+        if verification_status not in allowed_status_filters:
+            return Response(
+                {"detail": "El parámetro 'verification_status' es inválido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        job_id = uuid.uuid4().hex
+        with ANSES_BACKGROUND_LOCK:
+            ANSES_BACKGROUND_JOBS[job_id] = {
+                "status": "pending",
+                "total": 0,
+                "processed": 0,
+                "error": "",
+                "started_at": timezone.now().isoformat(),
+                "finished_at": "",
+            }
+        thread = threading.Thread(
+            target=_run_anses_filtered_job,
+            kwargs={
+                "job_id": job_id,
+                "user_id": request.user.id,
+                "min_age": min_age,
+                "max_age": max_age,
+                "exclude_consulted": exclude_consulted,
+                "verification_status": verification_status,
+            },
+            daemon=True,
+        )
+        thread.start()
+        return Response({"job_id": job_id, "status": "pending"}, status=status.HTTP_202_ACCEPTED)
+
+
+class AnsesVerifyFilteredStatusAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, job_id: str):
+        with ANSES_BACKGROUND_LOCK:
+            job = ANSES_BACKGROUND_JOBS.get(job_id)
+        if not job:
+            return Response({"detail": "Proceso no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(job, status=status.HTTP_200_OK)

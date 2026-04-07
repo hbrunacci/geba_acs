@@ -232,8 +232,20 @@ class ParkingMovement(models.Model):
 
 
 class AnsesVerificationRecord(models.Model):
+    class VerificationStatus(models.TextChoices):
+        GENERATED = "generated", "Constancia generada"
+        OFFICE_REQUIRED = "office_required", "Validar identidad en oficina ANSES"
+        UNKNOWN = "unknown", "Resultado no identificado"
+
     id_cliente = models.BigIntegerField()
     dni = models.BigIntegerField()
+    verification_status = models.CharField(
+        max_length=32,
+        choices=VerificationStatus.choices,
+        default=VerificationStatus.UNKNOWN,
+    )
+    verification_message = models.CharField(max_length=255, blank=True, default="")
+    last_checked_at = models.DateTimeField(null=True, blank=True)
     requested_by = models.ForeignKey(
         "auth.User",
         on_delete=models.SET_NULL,
