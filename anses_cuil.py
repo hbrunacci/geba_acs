@@ -407,6 +407,9 @@ def main() -> int:
         Código de salida del proceso.
     """
     args = parse_args()
+    # Asegura que la carpeta de salida exista incluso antes de inicializar Selenium.
+    args.download_dir.mkdir(parents=True, exist_ok=True)
+
     if args.dnis:
         try:
             people = fetch_people_by_dnis(args.dnis)
@@ -461,7 +464,7 @@ def main() -> int:
     except TimeoutException as exc:
         snapshot_path = args.download_dir / "anses_timeout_snapshot.html"
         try:
-            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            args.download_dir.mkdir(parents=True, exist_ok=True)
             snapshot_path.write_text(driver.page_source, encoding="utf-8")
             extra = f" Se guardó snapshot HTML en: {snapshot_path.resolve()}"
         except Exception:
