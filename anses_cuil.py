@@ -93,8 +93,8 @@ def build_driver(download_dir: Path, headless: bool) -> webdriver.Chrome:
         },
     )
 
-    if headless:
-        options.add_argument("--headless=new")
+    #if headless:
+    #    options.add_argument("--headless=new")
 
     driver = webdriver.Chrome(service=ChromeService(), options=options)
 
