@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 import threading
+import time
 import uuid
 import zipfile
 from datetime import datetime
@@ -207,19 +208,19 @@ def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: in
                 ANSES_BACKGROUND_JOBS[job_id]["finished_at"] = timezone.now().isoformat()
             return
         service = AnsesVerificationService()
-        chunk_size = 50
-        for index in range(0, len(pairs), chunk_size):
-            chunk = pairs[index : index + chunk_size]
-            dnis = [dni for _, dni in chunk]
+        for index, pair in enumerate(pairs):
+            dnis = [pair[1]]
             result = service.run_verification(dnis, headless=True, no_download=True)
             _save_anses_records(
                 user=user,
-                pairs=chunk,
+                pairs=[pair],
                 stdout=result.get("stdout", ""),
                 candidates_map=candidates_map,
             )
             with ANSES_BACKGROUND_LOCK:
-                ANSES_BACKGROUND_JOBS[job_id]["processed"] += len(chunk)
+                ANSES_BACKGROUND_JOBS[job_id]["processed"] += 1
+            if index < len(pairs) - 1:
+                time.sleep(1)
         with ANSES_BACKGROUND_LOCK:
             ANSES_BACKGROUND_JOBS[job_id]["status"] = "completed"
             ANSES_BACKGROUND_JOBS[job_id]["finished_at"] = timezone.now().isoformat()
