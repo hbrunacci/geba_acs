@@ -253,6 +253,10 @@ class AnsesVerificationRecord(models.Model):
         blank=True,
         related_name="anses_verification_records",
     )
+    apellido = models.CharField(max_length=100, blank=True, default="")
+    nombre = models.CharField(max_length=100, blank=True, default="")
+    fecha_nacimiento = models.DateField(null=True, blank=True)
+    edad = models.PositiveSmallIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
