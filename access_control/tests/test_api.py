@@ -12,6 +12,7 @@ from rest_framework.test import APITestCase
 
 from access_control.models import AnsesVerificationRecord, ExternalAccessLogEntry, ParkingMovement
 from access_control.models.models import AccessEvent
+from access_control.api.v1 import api_views
 from people.models import Cliente, GuestType, PersonType
 
 
@@ -589,3 +590,53 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         self.assertIn("<t>1930-01-01</t>", sheet_xml)
         self.assertIn("<t>Si</t>", sheet_xml)
         self.assertIn("<t>constancia generada.</t>", sheet_xml)
+
+    @patch("access_control.api.v1.api_views.time.sleep")
+    @patch("access_control.api.v1.api_views._save_anses_records")
+    @patch("access_control.api.v1.api_views.AnsesVerificationService")
+    @patch("access_control.api.v1.api_views._apply_candidate_filters")
+    @patch("access_control.api.v1.api_views._fetch_all_anses_candidates")
+    def test_background_filtered_job_processes_clients_one_by_one_with_pause(
+        self,
+        fetch_candidates_mock,
+        apply_filters_mock,
+        service_cls,
+        save_records_mock,
+        sleep_mock,
+    ):
+        job_id = "job-secuencial"
+        api_views.ANSES_BACKGROUND_JOBS[job_id] = {
+            "status": "pending",
+            "total": 0,
+            "processed": 0,
+            "error": "",
+            "started_at": timezone.now().isoformat(),
+            "finished_at": "",
+        }
+        fetch_candidates_mock.return_value = [{"id_cliente": 1, "doc_nro": 30111111}]
+        apply_filters_mock.return_value = [
+            {"id_cliente": 1, "doc_nro": 30111111},
+            {"id_cliente": 2, "doc_nro": 30222222},
+            {"id_cliente": 3, "doc_nro": 30333333},
+        ]
+        service = service_cls.return_value
+        service.run_verification.return_value = {"stdout": "OK"}
+
+        api_views._run_anses_filtered_job(
+            job_id=job_id,
+            user_id=self.user.id,
+            min_age=90,
+            max_age=120,
+            exclude_consulted=False,
+            verification_status="all",
+        )
+
+        self.assertEqual(service.run_verification.call_args_list[0].args[0], [30111111])
+        self.assertEqual(service.run_verification.call_args_list[1].args[0], [30222222])
+        self.assertEqual(service.run_verification.call_args_list[2].args[0], [30333333])
+        self.assertEqual(service.run_verification.call_count, 3)
+        self.assertEqual(save_records_mock.call_count, 3)
+        self.assertEqual(sleep_mock.call_count, 2)
+        self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["processed"], 3)
+        self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["status"], "completed")
+        del api_views.ANSES_BACKGROUND_JOBS[job_id]
