@@ -28,7 +28,7 @@ from rest_framework import permissions, status, views
 
 from access_control.models import BioStarDevice, BioStarUser
 from institutions.models import AccessPoint, Event
-from people.models import Person, PersonType
+from people.models import Cliente, Person, PersonType
 from access_control.serializers import BioStarDeviceSerializer, BioStarUserSerializer
 
 from access_control.services.biostar2_client import BioStar2Client
@@ -752,6 +752,17 @@ class AnsesVerifyFilteredStatusAPI(views.APIView):
         return Response(job, status=status.HTTP_200_OK)
 
 
+def _calculate_age(fecha_nac) -> str:
+    if not fecha_nac:
+        return ""
+    birth_date = fecha_nac.date() if hasattr(fecha_nac, "date") else fecha_nac
+    today = timezone.localdate()
+    years = today.year - birth_date.year
+    if (today.month, today.day) < (birth_date.month, birth_date.day):
+        years -= 1
+    return str(years)
+
+
 class AnsesProcessedExportAPI(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -763,27 +774,40 @@ class AnsesProcessedExportAPI(views.APIView):
         timestamp = timezone.localtime(timezone.now()).strftime("%Y%m%d_%H%M%S")
         filename = f"vitalicios_procesados_{timestamp}.xls"
 
+        clientes_map = {
+            cliente.id_cliente: cliente
+            for cliente in Cliente.objects.filter(id_cliente__in=[record.id_cliente for record in records])
+        }
+
         buffer = StringIO()
         writer = csv.writer(buffer, delimiter="\t", lineterminator="\n")
         writer.writerow(
             [
-                "ID Cliente",
-                "DNI",
-                "Estado ANSES",
-                "Mensaje ANSES",
-                "Última consulta",
+                "Numero",
+                "Apellido",
+                "Nombre",
+                "Fecha Nacimiento",
+                "Edad",
+                "Procesado",
+                "Fecha de ultimo procesamiento",
+                "Resultado",
             ]
         )
         for record in records:
+            cliente = clientes_map.get(record.id_cliente)
+            fecha_nac = cliente.fecha_nac.date().isoformat() if cliente and cliente.fecha_nac else ""
             writer.writerow(
                 [
                     record.id_cliente,
-                    record.dni,
-                    record.get_verification_status_display(),
-                    record.verification_message,
+                    cliente.apellido if cliente and cliente.apellido else "",
+                    cliente.nombre if cliente and cliente.nombre else "",
+                    fecha_nac,
+                    _calculate_age(cliente.fecha_nac if cliente else None),
+                    "Si",
                     timezone.localtime(record.last_checked_at).strftime("%Y-%m-%d %H:%M:%S")
                     if record.last_checked_at
                     else "",
+                    record.verification_message or record.get_verification_status_display(),
                 ]
             )
 
