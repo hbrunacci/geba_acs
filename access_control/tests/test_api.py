@@ -502,14 +502,53 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
     @patch("access_control.api.v1.api_views.AnsesVerificationService")
     def test_verify_clients_persists_consulted_by_user(self, service_cls):
         service_cls.return_value.run_verification.return_value = {"returncode": 0}
-        payload = {"clients": [{"id_cliente": 101, "doc_nro": 30111222}], "headless": True, "no_download": True}
+        payload = {
+            "clients": [
+                {
+                    "id_cliente": 101,
+                    "doc_nro": 30111222,
+                    "apellido": "Pérez",
+                    "nombre": "Ana",
+                    "fecha_nac": "1930-01-01",
+                    "edad": 96,
+                }
+            ],
+            "headless": True,
+            "no_download": True,
+        }
 
         response = self.client.post(self.verify_url, payload, format="json")
 
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(
-            AnsesVerificationRecord.objects.filter(requested_by=self.user, id_cliente=101, dni=30111222).exists()
+        record = AnsesVerificationRecord.objects.filter(requested_by=self.user, id_cliente=101, dni=30111222).first()
+        self.assertIsNotNone(record)
+        self.assertEqual(record.apellido, "Pérez")
+        self.assertEqual(record.nombre, "Ana")
+        self.assertEqual(record.fecha_nacimiento.isoformat(), "1930-01-01")
+        self.assertEqual(record.edad, 96)
+
+    def test_export_processed_records_uses_local_snapshot_when_cliente_is_missing(self):
+        AnsesVerificationRecord.objects.create(
+            requested_by=self.user,
+            id_cliente=7100,
+            dni=30222444,
+            verification_status=AnsesVerificationRecord.VerificationStatus.GENERATED,
+            verification_message="constancia generada.",
+            apellido="Gomez",
+            nombre="Lidia",
+            fecha_nacimiento=datetime(1932, 3, 10).date(),
+            edad=94,
         )
+        response = self.client.get(self.export_url)
+
+        self.assertEqual(response.status_code, 200)
+        workbook = zipfile.ZipFile(BytesIO(response.content))
+        sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        self.assertIn("<t>7100</t>", sheet_xml)
+        self.assertIn("<t>Gomez</t>", sheet_xml)
+        self.assertIn("<t>Lidia</t>", sheet_xml)
+        self.assertIn("<t>1932-03-10</t>", sheet_xml)
+        self.assertIn("<t>94</t>", sheet_xml)
 
     def test_export_processed_records_as_excel_file(self):
         Cliente.objects.create(
