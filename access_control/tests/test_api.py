@@ -510,6 +510,13 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         )
 
     def test_export_processed_records_as_excel_compatible_file(self):
+        Cliente.objects.create(
+            id_cliente=7001,
+            apellido="Perez",
+            nombre="Ana",
+            fecha_nac=timezone.make_aware(datetime(1930, 1, 1)),
+            doc_nro=30222333,
+        )
         AnsesVerificationRecord.objects.create(
             requested_by=self.user,
             id_cliente=7001,
@@ -524,5 +531,10 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         self.assertEqual(response["Content-Type"], "application/vnd.ms-excel; charset=utf-8")
         self.assertIn("attachment; filename=", response["Content-Disposition"])
         body = response.content.decode("utf-8-sig")
-        self.assertIn("ID Cliente\tDNI\tEstado ANSES\tMensaje ANSES\tÚltima consulta", body)
-        self.assertIn("7001\t30222333\tConstancia generada\tconstancia generada.", body)
+        self.assertIn(
+            "Numero\tApellido\tNombre\tFecha Nacimiento\tEdad\tProcesado\tFecha de ultimo procesamiento\tResultado",
+            body,
+        )
+        self.assertIn("7001\tPerez\tAna\t1930-01-01", body)
+        self.assertIn("\tSi\t", body)
+        self.assertIn("\tconstancia generada.", body)
