@@ -5,6 +5,7 @@ import re
 import threading
 import uuid
 import zipfile
+from datetime import datetime
 from io import BytesIO
 from xml.sax.saxutils import escape
 
@@ -14,6 +15,7 @@ from django.db.models import Q
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.settings import api_settings
@@ -71,10 +73,43 @@ def _extract_anses_messages(stdout: str) -> dict[int, str]:
     return messages_by_dni
 
 
-def _save_anses_records(*, user, pairs: list[tuple[int, int]], stdout: str) -> None:
+def _parse_candidate_birth_date(value):
+    if not value:
+        return None
+    if hasattr(value, "date"):
+        return value.date()
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        return parse_date(value.strip())
+    return None
+
+
+def _normalize_candidate_age(value) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0:
+        return None
+    return parsed
+
+
+def _save_anses_records(
+    *,
+    user,
+    pairs: list[tuple[int, int]],
+    stdout: str,
+    candidates_map: dict[int, dict] | None = None,
+) -> None:
     messages_by_dni = _extract_anses_messages(stdout)
     checked_at = timezone.now()
+    candidates_map = candidates_map or {}
     for id_cliente, dni in pairs:
+        candidate = candidates_map.get(id_cliente) or {}
+        fecha_nacimiento = _parse_candidate_birth_date(candidate.get("fecha_nac"))
         message = messages_by_dni.get(dni, "").strip()
         AnsesVerificationRecord.objects.update_or_create(
             requested_by=user,
@@ -84,6 +119,10 @@ def _save_anses_records(*, user, pairs: list[tuple[int, int]], stdout: str) -> N
                 "verification_status": _map_anses_status(message),
                 "verification_message": message,
                 "last_checked_at": checked_at,
+                "apellido": str(candidate.get("apellido") or "").strip(),
+                "nombre": str(candidate.get("nombre") or "").strip(),
+                "fecha_nacimiento": fecha_nacimiento,
+                "edad": _normalize_candidate_age(candidate.get("edad")),
             },
         )
 
@@ -159,6 +198,7 @@ def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: in
             for item in clients
             if item.get("id_cliente") is not None and item.get("doc_nro") is not None
         ]
+        candidates_map = {int(item["id_cliente"]): item for item in clients if item.get("id_cliente") is not None}
         with ANSES_BACKGROUND_LOCK:
             ANSES_BACKGROUND_JOBS[job_id]["total"] = len(pairs)
         if not pairs:
@@ -172,7 +212,12 @@ def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: in
             chunk = pairs[index : index + chunk_size]
             dnis = [dni for _, dni in chunk]
             result = service.run_verification(dnis, headless=True, no_download=True)
-            _save_anses_records(user=user, pairs=chunk, stdout=result.get("stdout", ""))
+            _save_anses_records(
+                user=user,
+                pairs=chunk,
+                stdout=result.get("stdout", ""),
+                candidates_map=candidates_map,
+            )
             with ANSES_BACKGROUND_LOCK:
                 ANSES_BACKGROUND_JOBS[job_id]["processed"] += len(chunk)
         with ANSES_BACKGROUND_LOCK:
@@ -661,11 +706,16 @@ class AnsesVerifyAPI(views.APIView):
         try:
             if clients:
                 pairs: list[tuple[int, int]] = []
+                candidates_map: dict[int, dict] = {}
                 for item in clients:
-                    pairs.append((int(item["id_cliente"]), int(item["doc_nro"])))
+                    id_cliente = int(item["id_cliente"])
+                    doc_nro = int(item["doc_nro"])
+                    pairs.append((id_cliente, doc_nro))
+                    candidates_map[id_cliente] = item
                 dnis = [pair[1] for pair in pairs]
             else:
                 pairs = []
+                candidates_map = {}
                 dnis = [int(item) for item in dni_list]
         except (TypeError, ValueError):
             return Response(
@@ -679,7 +729,12 @@ class AnsesVerifyAPI(views.APIView):
                 no_download=no_download,
             )
             if pairs:
-                _save_anses_records(user=request.user, pairs=pairs, stdout=result.get("stdout", ""))
+                _save_anses_records(
+                    user=request.user,
+                    pairs=pairs,
+                    stdout=result.get("stdout", ""),
+                    candidates_map=candidates_map,
+                )
         except (AnsesVerificationError, ClientLookupError) as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception:
@@ -847,14 +902,23 @@ class AnsesProcessedExportAPI(views.APIView):
         rows = []
         for record in records:
             cliente = clientes_map.get(record.id_cliente)
-            fecha_nac = cliente.fecha_nac.date().isoformat() if cliente and cliente.fecha_nac else ""
+            apellido = (cliente.apellido if cliente and cliente.apellido else record.apellido) or ""
+            nombre = (cliente.nombre if cliente and cliente.nombre else record.nombre) or ""
+            fecha_nac = ""
+            edad = ""
+            if cliente and cliente.fecha_nac:
+                fecha_nac = cliente.fecha_nac.date().isoformat()
+                edad = _calculate_age(cliente.fecha_nac)
+            elif record.fecha_nacimiento:
+                fecha_nac = record.fecha_nacimiento.isoformat()
+                edad = str(record.edad) if record.edad is not None else _calculate_age(record.fecha_nacimiento)
             rows.append(
                 [
                     str(record.id_cliente),
-                    cliente.apellido if cliente and cliente.apellido else "",
-                    cliente.nombre if cliente and cliente.nombre else "",
+                    apellido,
+                    nombre,
                     fecha_nac,
-                    _calculate_age(cliente.fecha_nac if cliente else None),
+                    edad,
                     "Si",
                     timezone.localtime(record.last_checked_at).strftime("%Y-%m-%d %H:%M:%S")
                     if record.last_checked_at
