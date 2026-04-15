@@ -1,5 +1,7 @@
 from datetime import date, datetime, time, timedelta
 from unittest.mock import patch
+import zipfile
+from io import BytesIO
 
 from django.contrib.auth import get_user_model
 from django.db.utils import OperationalError
@@ -509,7 +511,7 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
             AnsesVerificationRecord.objects.filter(requested_by=self.user, id_cliente=101, dni=30111222).exists()
         )
 
-    def test_export_processed_records_as_excel_compatible_file(self):
+    def test_export_processed_records_as_excel_file(self):
         Cliente.objects.create(
             id_cliente=7001,
             apellido="Perez",
@@ -528,13 +530,23 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         response = self.client.get(self.export_url)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Content-Type"], "application/vnd.ms-excel; charset=utf-8")
-        self.assertIn("attachment; filename=", response["Content-Disposition"])
-        body = response.content.decode("utf-8-sig")
-        self.assertIn(
-            "Numero\tApellido\tNombre\tFecha Nacimiento\tEdad\tProcesado\tFecha de ultimo procesamiento\tResultado",
-            body,
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-        self.assertIn("7001\tPerez\tAna\t1930-01-01", body)
-        self.assertIn("\tSi\t", body)
-        self.assertIn("\tconstancia generada.", body)
+        self.assertIn(".xlsx", response["Content-Disposition"])
+        self.assertIn("attachment; filename=", response["Content-Disposition"])
+        workbook = zipfile.ZipFile(BytesIO(response.content))
+        sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        self.assertIn("<t>Numero</t>", sheet_xml)
+        self.assertIn("<t>Apellido</t>", sheet_xml)
+        self.assertIn("<t>Nombre</t>", sheet_xml)
+        self.assertIn("<t>Fecha Nacimiento</t>", sheet_xml)
+        self.assertIn("<t>Edad</t>", sheet_xml)
+        self.assertIn("<t>Procesado</t>", sheet_xml)
+        self.assertIn("<t>7001</t>", sheet_xml)
+        self.assertIn("<t>Perez</t>", sheet_xml)
+        self.assertIn("<t>Ana</t>", sheet_xml)
+        self.assertIn("<t>1930-01-01</t>", sheet_xml)
+        self.assertIn("<t>Si</t>", sheet_xml)
+        self.assertIn("<t>constancia generada.</t>", sheet_xml)

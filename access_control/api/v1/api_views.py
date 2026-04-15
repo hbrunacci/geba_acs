@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import csv
 import re
 import threading
 import uuid
-from io import StringIO
+import zipfile
+from io import BytesIO
+from xml.sax.saxutils import escape
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -766,39 +767,90 @@ def _calculate_age(fecha_nac) -> str:
 class AnsesProcessedExportAPI(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @staticmethod
+    def _xlsx_header_row(cells: list[str]) -> str:
+        values = []
+        for index, value in enumerate(cells):
+            column = chr(65 + index)
+            safe_value = escape(str(value or ""))
+            values.append(f'<c r="{column}1" t="inlineStr"><is><t>{safe_value}</t></is></c>')
+        return f'<row r="1">{"".join(values)}</row>'
+
+    @staticmethod
+    def _xlsx_data_row(row_index: int, cells: list[str]) -> str:
+        values = []
+        for index, value in enumerate(cells):
+            column = chr(65 + index)
+            safe_value = escape(str(value or ""))
+            values.append(f'<c r="{column}{row_index}" t="inlineStr"><is><t>{safe_value}</t></is></c>')
+        return f'<row r="{row_index}">{"".join(values)}</row>'
+
+    def _build_xlsx(self, headers: list[str], rows: list[list[str]]) -> bytes:
+        workbook_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Vitalicios procesados" sheetId="1" r:id="rId1"/></sheets>
+</workbook>"""
+        workbook_rels_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>"""
+        root_rels_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>"""
+        content_types_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>"""
+
+        header_row = self._xlsx_header_row(headers)
+        data_rows = [self._xlsx_data_row(index, row) for index, row in enumerate(rows, start=2)]
+        worksheet_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>{header_row}{"".join(data_rows)}</sheetData>
+</worksheet>"""
+
+        output = BytesIO()
+        with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("[Content_Types].xml", content_types_xml)
+            archive.writestr("_rels/.rels", root_rels_xml)
+            archive.writestr("xl/workbook.xml", workbook_xml)
+            archive.writestr("xl/_rels/workbook.xml.rels", workbook_rels_xml)
+            archive.writestr("xl/worksheets/sheet1.xml", worksheet_xml)
+        return output.getvalue()
+
     def get(self, request):
         records = (
             AnsesVerificationRecord.objects.filter(requested_by=request.user)
             .order_by("-last_checked_at", "-created_at")
         )
         timestamp = timezone.localtime(timezone.now()).strftime("%Y%m%d_%H%M%S")
-        filename = f"vitalicios_procesados_{timestamp}.xls"
+        filename = f"vitalicios_procesados_{timestamp}.xlsx"
 
-        clientes_map = {
-            cliente.id_cliente: cliente
-            for cliente in Cliente.objects.filter(id_cliente__in=[record.id_cliente for record in records])
-        }
+        record_ids = [record.id_cliente for record in records]
+        clientes_map = Cliente.objects.in_bulk(record_ids, field_name="id_cliente")
 
-        buffer = StringIO()
-        writer = csv.writer(buffer, delimiter="\t", lineterminator="\n")
-        writer.writerow(
-            [
-                "Numero",
-                "Apellido",
-                "Nombre",
-                "Fecha Nacimiento",
-                "Edad",
-                "Procesado",
-                "Fecha de ultimo procesamiento",
-                "Resultado",
-            ]
-        )
+        headers = [
+            "Numero",
+            "Apellido",
+            "Nombre",
+            "Fecha Nacimiento",
+            "Edad",
+            "Procesado",
+            "Fecha de ultimo procesamiento",
+            "Resultado",
+        ]
+        rows = []
         for record in records:
             cliente = clientes_map.get(record.id_cliente)
             fecha_nac = cliente.fecha_nac.date().isoformat() if cliente and cliente.fecha_nac else ""
-            writer.writerow(
+            rows.append(
                 [
-                    record.id_cliente,
+                    str(record.id_cliente),
                     cliente.apellido if cliente and cliente.apellido else "",
                     cliente.nombre if cliente and cliente.nombre else "",
                     fecha_nac,
@@ -811,7 +863,10 @@ class AnsesProcessedExportAPI(views.APIView):
                 ]
             )
 
-        content = "\ufeff" + buffer.getvalue()
-        response = HttpResponse(content, content_type="application/vnd.ms-excel; charset=utf-8")
+        content = self._build_xlsx(headers=headers, rows=rows)
+        response = HttpResponse(
+            content,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
