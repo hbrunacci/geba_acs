@@ -640,3 +640,53 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["processed"], 3)
         self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["status"], "completed")
         del api_views.ANSES_BACKGROUND_JOBS[job_id]
+
+    @patch("access_control.api.v1.api_views.time.sleep")
+    @patch("access_control.api.v1.api_views._save_anses_records")
+    @patch("access_control.api.v1.api_views.AnsesVerificationService")
+    @patch("access_control.api.v1.api_views._apply_candidate_filters")
+    @patch("access_control.api.v1.api_views._fetch_all_anses_candidates")
+    def test_background_filtered_job_registers_error_and_continues_when_dni_fails(
+        self,
+        fetch_candidates_mock,
+        apply_filters_mock,
+        service_cls,
+        save_records_mock,
+        _sleep_mock,
+    ):
+        job_id = "job-continua-con-error"
+        api_views.ANSES_BACKGROUND_JOBS[job_id] = {
+            "status": "pending",
+            "total": 0,
+            "processed": 0,
+            "error": "",
+            "started_at": timezone.now().isoformat(),
+            "finished_at": "",
+        }
+        fetch_candidates_mock.return_value = [{"id_cliente": 1, "doc_nro": 30111111}]
+        apply_filters_mock.return_value = [
+            {"id_cliente": 1, "doc_nro": 30111111},
+            {"id_cliente": 2, "doc_nro": 30222222},
+        ]
+        service = service_cls.return_value
+        service.run_verification.side_effect = [Exception("DNI inválido"), {"stdout": "OK"}]
+
+        api_views._run_anses_filtered_job(
+            job_id=job_id,
+            user_id=self.user.id,
+            min_age=90,
+            max_age=120,
+            exclude_consulted=False,
+            verification_status="all",
+        )
+
+        self.assertEqual(service.run_verification.call_count, 2)
+        first_call = save_records_mock.call_args_list[0].kwargs
+        self.assertEqual(first_call["pairs"], [(1, 30111111)])
+        self.assertEqual(first_call["stdout"], "ERROR DNI 30111111: DNI inválido")
+        second_call = save_records_mock.call_args_list[1].kwargs
+        self.assertEqual(second_call["pairs"], [(2, 30222222)])
+        self.assertEqual(second_call["stdout"], "OK")
+        self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["processed"], 2)
+        self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["status"], "completed")
+        del api_views.ANSES_BACKGROUND_JOBS[job_id]

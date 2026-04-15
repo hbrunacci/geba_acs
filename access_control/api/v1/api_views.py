@@ -210,13 +210,12 @@ def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: in
         service = AnsesVerificationService()
         for index, pair in enumerate(pairs):
             dnis = [pair[1]]
-            result = service.run_verification(dnis, headless=True, no_download=True)
-            _save_anses_records(
-                user=user,
-                pairs=[pair],
-                stdout=result.get("stdout", ""),
-                candidates_map=candidates_map,
-            )
+            try:
+                result = service.run_verification(dnis, headless=True, no_download=True)
+                stdout = result.get("stdout", "")
+            except Exception as exc:
+                stdout = f"ERROR DNI {pair[1]}: {exc}"
+            _save_anses_records(user=user, pairs=[pair], stdout=stdout, candidates_map=candidates_map)
             with ANSES_BACKGROUND_LOCK:
                 ANSES_BACKGROUND_JOBS[job_id]["processed"] += 1
             if index < len(pairs) - 1:
