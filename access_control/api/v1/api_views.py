@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import re
 import threading
 import uuid
+from io import StringIO
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import ValidationError
+from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
@@ -747,3 +750,44 @@ class AnsesVerifyFilteredStatusAPI(views.APIView):
         if not job:
             return Response({"detail": "Proceso no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         return Response(job, status=status.HTTP_200_OK)
+
+
+class AnsesProcessedExportAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        records = (
+            AnsesVerificationRecord.objects.filter(requested_by=request.user)
+            .order_by("-last_checked_at", "-created_at")
+        )
+        timestamp = timezone.localtime(timezone.now()).strftime("%Y%m%d_%H%M%S")
+        filename = f"vitalicios_procesados_{timestamp}.xls"
+
+        buffer = StringIO()
+        writer = csv.writer(buffer, delimiter="\t", lineterminator="\n")
+        writer.writerow(
+            [
+                "ID Cliente",
+                "DNI",
+                "Estado ANSES",
+                "Mensaje ANSES",
+                "Última consulta",
+            ]
+        )
+        for record in records:
+            writer.writerow(
+                [
+                    record.id_cliente,
+                    record.dni,
+                    record.get_verification_status_display(),
+                    record.verification_message,
+                    timezone.localtime(record.last_checked_at).strftime("%Y-%m-%d %H:%M:%S")
+                    if record.last_checked_at
+                    else "",
+                ]
+            )
+
+        content = "\ufeff" + buffer.getvalue()
+        response = HttpResponse(content, content_type="application/vnd.ms-excel; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response

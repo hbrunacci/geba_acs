@@ -470,6 +470,7 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         super().setUp()
         self.authenticate()
         self.candidates_url = reverse("anses_candidates_api")
+        self.export_url = reverse("anses_processed_export_api")
         self.verify_url = reverse("anses_verify_api")
 
     @patch("access_control.api.v1.api_views.AnsesVerificationService")
@@ -507,3 +508,21 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         self.assertTrue(
             AnsesVerificationRecord.objects.filter(requested_by=self.user, id_cliente=101, dni=30111222).exists()
         )
+
+    def test_export_processed_records_as_excel_compatible_file(self):
+        AnsesVerificationRecord.objects.create(
+            requested_by=self.user,
+            id_cliente=7001,
+            dni=30222333,
+            verification_status=AnsesVerificationRecord.VerificationStatus.GENERATED,
+            verification_message="constancia generada.",
+        )
+
+        response = self.client.get(self.export_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/vnd.ms-excel; charset=utf-8")
+        self.assertIn("attachment; filename=", response["Content-Disposition"])
+        body = response.content.decode("utf-8-sig")
+        self.assertIn("ID Cliente\tDNI\tEstado ANSES\tMensaje ANSES\tÚltima consulta", body)
+        self.assertIn("7001\t30222333\tConstancia generada\tconstancia generada.", body)
