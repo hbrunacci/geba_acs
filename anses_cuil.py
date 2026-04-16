@@ -48,6 +48,11 @@ VALIDATION_ERROR_TEXTS = (
     "dato inválido",
 )
 
+DOCUMENTO_UNICO_OPTIONS = ("Documento Único", "Documento Unico")
+DOCUMENTO_IDENTIDAD_OPTIONS = ("Documento de Identidad", "Documento identidad")
+LIBRETA_CIVICA_OPTIONS = ("Libreta Cívica", "Libreta Civica")
+LIBRETA_ENROLAMIENTO_OPTIONS = ("Libreta de Enrolamiento", "Libreta Enrolamiento")
+
 
 @dataclass(frozen=True)
 class PersonData:
@@ -152,7 +157,9 @@ def complete_form(
 
     # Tipo de documento: selector con id "TipoDocumento"
     tipo_documento = wait.until(EC.element_to_be_clickable((By.ID, "TipoDocumento")))
-    Select(tipo_documento).select_by_visible_text("Documento Único")
+    selector = Select(tipo_documento)
+    doc_type_label = _select_doc_type(selector=selector, person=person)
+    print(f"DNI {person.doc_nro}: tipo documento ANSES='{doc_type_label}'")
 
     numero_doc = wait.until(EC.visibility_of_element_located((By.ID, "NumeroDoc")))
     numero_doc.clear()
@@ -186,6 +193,42 @@ def complete_form(
         submit_button.click()
     except Exception:
         driver.execute_script("arguments[0].click();", submit_button)
+
+
+def _try_select_by_visible_text(selector: Select, labels: tuple[str, ...]) -> str | None:
+    for label in labels:
+        try:
+            selector.select_by_visible_text(label)
+            return label
+        except Exception:
+            continue
+    return None
+
+
+def _select_doc_type(selector: Select, person: PersonData) -> str:
+    """Selecciona tipo de documento para ANSES según longitud de documento y sexo."""
+    sexo = (person.sexo or "").upper().strip()
+    if person.doc_nro < 10_000_000:
+        prioritized_labels = (
+            LIBRETA_CIVICA_OPTIONS
+            if sexo == "F"
+            else LIBRETA_ENROLAMIENTO_OPTIONS
+        )
+        selected = _try_select_by_visible_text(selector, prioritized_labels)
+        if selected:
+            return selected
+
+        selected = _try_select_by_visible_text(selector, DOCUMENTO_IDENTIDAD_OPTIONS)
+        if selected:
+            return selected
+
+    selected = _try_select_by_visible_text(selector, DOCUMENTO_UNICO_OPTIONS)
+    if selected:
+        return selected
+
+    raise RuntimeError(
+        "No se encontró una opción válida en 'Tipo de documento' para completar el formulario ANSES."
+    )
 
 
 def wait_for_result(driver: webdriver.Chrome, wait: WebDriverWait) -> str:
