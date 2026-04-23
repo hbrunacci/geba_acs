@@ -26,7 +26,6 @@ from rest_framework import status, viewsets
 from people.models import Cliente
 
 from access_control.services import ClientLookupError, MSSQLClientLookupService
-from access_control.services.intelectron.api3000_console import COMMAND_CATALOG
 
 
 MAX_PING_COUNT = 5
@@ -78,14 +77,6 @@ def external_access_console(request):
     return render(request, "access_control/external_access_console.html")
 
 
-
-
-
-
-@login_required
-def api3000_test_console(request):
-    """Consola de pruebas para comandos API-3000."""
-    return render(request, "access_control/api3000_test_console.html", {"command_catalog": COMMAND_CATALOG})
 
 @login_required
 def parking_movements_console(request):
