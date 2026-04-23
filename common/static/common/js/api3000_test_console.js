@@ -8,8 +8,17 @@
   const errorsBox = document.getElementById("form-errors");
   const pingBtn = document.getElementById("ping-btn");
 
+  const lastPing = {
+    ok: false,
+    checkedAt: 0,
+    ip: "",
+    port: 0,
+    sourceNode: 0,
+    destNode: 0,
+  };
+
   function csrfToken() {
-    const item = document.cookie.split(";").map(v => v.trim()).find(v => v.startsWith("csrftoken="));
+    const item = document.cookie.split(";").map((v) => v.trim()).find((v) => v.startsWith("csrftoken="));
     return item ? decodeURIComponent(item.split("=")[1]) : "";
   }
 
@@ -109,6 +118,34 @@
     return data;
   }
 
+  function savePingContext(payload, response) {
+    lastPing.ok = !!response.ok;
+    lastPing.checkedAt = Date.now();
+    lastPing.ip = payload.ip;
+    lastPing.port = payload.port;
+    lastPing.sourceNode = payload.source_node;
+    lastPing.destNode = payload.dest_node;
+  }
+
+  function sameConnection(payload) {
+    return (
+      payload.ip === lastPing.ip
+      && payload.port === lastPing.port
+      && payload.source_node === lastPing.sourceNode
+      && payload.dest_node === lastPing.destNode
+    );
+  }
+
+  function hasValidPing(payload) {
+    if (!lastPing.ok) {
+      return false;
+    }
+    if ((Date.now() - lastPing.checkedAt) > 30_000) {
+      return false;
+    }
+    return sameConnection(payload);
+  }
+
   Object.entries(catalog).forEach(([name, meta]) => {
     const option = document.createElement("option");
     option.value = name;
@@ -124,13 +161,16 @@
       ip: form.ip.value.trim(),
       port: Number(form.port.value),
       source_node: Number(form.source_node.value),
+      dest_node: form.dest_node.value === "" ? null : Number(form.dest_node.value),
     };
     pretty(requestView, { endpoint: "/api/api3000/ping/", payload });
     showErrors({});
     try {
       const data = await postJSON("/api/api3000/ping/", payload);
+      savePingContext(payload, data);
       pretty(responseView, data);
     } catch (error) {
+      lastPing.ok = false;
       pretty(responseView, error.payload || { detail: error.message });
       showErrors(error.payload?.errors || { error: error.message });
     }
@@ -145,6 +185,13 @@
       showErrors(errors);
       pretty(responseView, { ok: false, errors });
       return;
+    }
+
+    if (!hasValidPing(payload)) {
+      const proceed = window.confirm("No hay ping válido para esta conexión en los últimos 30 segundos. ¿Desea continuar?");
+      if (!proceed) {
+        return;
+      }
     }
 
     showErrors({});
