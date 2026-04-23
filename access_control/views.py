@@ -88,6 +88,12 @@ def anses_verification_console(request):
     return render(request, "access_control/anses_verification_console.html")
 
 
+@login_required
+def api3000_test_console(request):
+    """Consola de prueba para integración API3000."""
+    return render(request, "access_control/api3000_test_console.html")
+
+
 class WhitelistEntryViewSet(viewsets.ModelViewSet):
     queryset = WhitelistEntry.objects.select_related(
         "person",
