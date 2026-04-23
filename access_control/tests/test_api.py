@@ -1,5 +1,7 @@
 from datetime import date, datetime, time, timedelta
 from unittest.mock import patch
+import zipfile
+from io import BytesIO
 
 from django.contrib.auth import get_user_model
 from django.db.utils import OperationalError
@@ -8,8 +10,9 @@ from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from access_control.models import ExternalAccessLogEntry, ParkingMovement
+from access_control.models import AnsesVerificationRecord, ExternalAccessLogEntry, ParkingMovement
 from access_control.models.models import AccessEvent
+from access_control.api.v1 import api_views
 from people.models import Cliente, GuestType, PersonType
 
 
@@ -463,3 +466,227 @@ class ParkingMovementAPITestCase(BaseAPITestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertIn("migraciones", response.data["detail"])
+
+
+class AnsesVerificationAPITestCase(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.authenticate()
+        self.candidates_url = reverse("anses_candidates_api")
+        self.export_url = reverse("anses_processed_export_api")
+        self.verify_url = reverse("anses_verify_api")
+
+    @patch("access_control.api.v1.api_views.AnsesVerificationService")
+    def test_candidates_pagination_with_age_range(self, service_cls):
+        service = service_cls.return_value
+        service.fetch_candidates.return_value = {
+            "count": 123,
+            "results": [
+                {
+                    "id_cliente": 10,
+                    "doc_nro": 30111222,
+                    "nombre": "Ana",
+                    "apellido": "Perez",
+                    "sexo": "F",
+                    "fecha_nac": "1930-01-01",
+                    "edad": 96,
+                }
+            ],
+        }
+        response = self.client.get(self.candidates_url, {"page": 2, "page_size": 50, "min_age": 95, "max_age": 100})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 123)
+        self.assertEqual(response.data["page"], 2)
+        service.fetch_candidates.assert_called_once_with(min_age=95, max_age=100, limit=50, offset=50)
+
+    @patch("access_control.api.v1.api_views.AnsesVerificationService")
+    def test_verify_clients_persists_consulted_by_user(self, service_cls):
+        service_cls.return_value.run_verification.return_value = {"returncode": 0}
+        payload = {
+            "clients": [
+                {
+                    "id_cliente": 101,
+                    "doc_nro": 30111222,
+                    "apellido": "Pérez",
+                    "nombre": "Ana",
+                    "fecha_nac": "1930-01-01",
+                    "edad": 96,
+                }
+            ],
+            "headless": True,
+            "no_download": True,
+        }
+
+        response = self.client.post(self.verify_url, payload, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        record = AnsesVerificationRecord.objects.filter(requested_by=self.user, id_cliente=101, dni=30111222).first()
+        self.assertIsNotNone(record)
+        self.assertEqual(record.apellido, "Pérez")
+        self.assertEqual(record.nombre, "Ana")
+        self.assertEqual(record.fecha_nacimiento.isoformat(), "1930-01-01")
+        self.assertEqual(record.edad, 96)
+
+    def test_export_processed_records_uses_local_snapshot_when_cliente_is_missing(self):
+        AnsesVerificationRecord.objects.create(
+            requested_by=self.user,
+            id_cliente=7100,
+            dni=30222444,
+            verification_status=AnsesVerificationRecord.VerificationStatus.GENERATED,
+            verification_message="constancia generada.",
+            apellido="Gomez",
+            nombre="Lidia",
+            fecha_nacimiento=datetime(1932, 3, 10).date(),
+            edad=94,
+        )
+        response = self.client.get(self.export_url)
+
+        self.assertEqual(response.status_code, 200)
+        workbook = zipfile.ZipFile(BytesIO(response.content))
+        sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        self.assertIn("<t>7100</t>", sheet_xml)
+        self.assertIn("<t>Gomez</t>", sheet_xml)
+        self.assertIn("<t>Lidia</t>", sheet_xml)
+        self.assertIn("<t>1932-03-10</t>", sheet_xml)
+        self.assertIn("<t>94</t>", sheet_xml)
+
+    def test_export_processed_records_as_excel_file(self):
+        Cliente.objects.create(
+            id_cliente=7001,
+            apellido="Perez",
+            nombre="Ana",
+            fecha_nac=timezone.make_aware(datetime(1930, 1, 1)),
+            doc_nro=30222333,
+        )
+        AnsesVerificationRecord.objects.create(
+            requested_by=self.user,
+            id_cliente=7001,
+            dni=30222333,
+            verification_status=AnsesVerificationRecord.VerificationStatus.GENERATED,
+            verification_message="constancia generada.",
+        )
+
+        response = self.client.get(self.export_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn(".xlsx", response["Content-Disposition"])
+        self.assertIn("attachment; filename=", response["Content-Disposition"])
+        workbook = zipfile.ZipFile(BytesIO(response.content))
+        sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        self.assertIn("<t>Numero</t>", sheet_xml)
+        self.assertIn("<t>Apellido</t>", sheet_xml)
+        self.assertIn("<t>Nombre</t>", sheet_xml)
+        self.assertIn("<t>Fecha Nacimiento</t>", sheet_xml)
+        self.assertIn("<t>Edad</t>", sheet_xml)
+        self.assertIn("<t>Procesado</t>", sheet_xml)
+        self.assertIn("<t>7001</t>", sheet_xml)
+        self.assertIn("<t>Perez</t>", sheet_xml)
+        self.assertIn("<t>Ana</t>", sheet_xml)
+        self.assertIn("<t>1930-01-01</t>", sheet_xml)
+        self.assertIn("<t>Si</t>", sheet_xml)
+        self.assertIn("<t>constancia generada.</t>", sheet_xml)
+
+    @patch("access_control.api.v1.api_views.time.sleep")
+    @patch("access_control.api.v1.api_views._save_anses_records")
+    @patch("access_control.api.v1.api_views.AnsesVerificationService")
+    @patch("access_control.api.v1.api_views._apply_candidate_filters")
+    @patch("access_control.api.v1.api_views._fetch_all_anses_candidates")
+    def test_background_filtered_job_processes_clients_one_by_one_with_pause(
+        self,
+        fetch_candidates_mock,
+        apply_filters_mock,
+        service_cls,
+        save_records_mock,
+        sleep_mock,
+    ):
+        job_id = "job-secuencial"
+        api_views.ANSES_BACKGROUND_JOBS[job_id] = {
+            "status": "pending",
+            "total": 0,
+            "processed": 0,
+            "error": "",
+            "started_at": timezone.now().isoformat(),
+            "finished_at": "",
+        }
+        fetch_candidates_mock.return_value = [{"id_cliente": 1, "doc_nro": 30111111}]
+        apply_filters_mock.return_value = [
+            {"id_cliente": 1, "doc_nro": 30111111},
+            {"id_cliente": 2, "doc_nro": 30222222},
+            {"id_cliente": 3, "doc_nro": 30333333},
+        ]
+        service = service_cls.return_value
+        service.run_verification.return_value = {"stdout": "OK"}
+
+        api_views._run_anses_filtered_job(
+            job_id=job_id,
+            user_id=self.user.id,
+            min_age=90,
+            max_age=120,
+            exclude_consulted=False,
+            verification_status="all",
+        )
+
+        self.assertEqual(service.run_verification.call_args_list[0].args[0], [30111111])
+        self.assertEqual(service.run_verification.call_args_list[1].args[0], [30222222])
+        self.assertEqual(service.run_verification.call_args_list[2].args[0], [30333333])
+        self.assertEqual(service.run_verification.call_count, 3)
+        self.assertEqual(save_records_mock.call_count, 3)
+        self.assertEqual(sleep_mock.call_count, 2)
+        self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["processed"], 3)
+        self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["status"], "completed")
+        del api_views.ANSES_BACKGROUND_JOBS[job_id]
+
+    @patch("access_control.api.v1.api_views.time.sleep")
+    @patch("access_control.api.v1.api_views._save_anses_records")
+    @patch("access_control.api.v1.api_views.AnsesVerificationService")
+    @patch("access_control.api.v1.api_views._apply_candidate_filters")
+    @patch("access_control.api.v1.api_views._fetch_all_anses_candidates")
+    def test_background_filtered_job_registers_error_and_continues_when_dni_fails(
+        self,
+        fetch_candidates_mock,
+        apply_filters_mock,
+        service_cls,
+        save_records_mock,
+        _sleep_mock,
+    ):
+        job_id = "job-continua-con-error"
+        api_views.ANSES_BACKGROUND_JOBS[job_id] = {
+            "status": "pending",
+            "total": 0,
+            "processed": 0,
+            "error": "",
+            "started_at": timezone.now().isoformat(),
+            "finished_at": "",
+        }
+        fetch_candidates_mock.return_value = [{"id_cliente": 1, "doc_nro": 30111111}]
+        apply_filters_mock.return_value = [
+            {"id_cliente": 1, "doc_nro": 30111111},
+            {"id_cliente": 2, "doc_nro": 30222222},
+        ]
+        service = service_cls.return_value
+        service.run_verification.side_effect = [Exception("DNI inválido"), {"stdout": "OK"}]
+
+        api_views._run_anses_filtered_job(
+            job_id=job_id,
+            user_id=self.user.id,
+            min_age=90,
+            max_age=120,
+            exclude_consulted=False,
+            verification_status="all",
+        )
+
+        self.assertEqual(service.run_verification.call_count, 2)
+        first_call = save_records_mock.call_args_list[0].kwargs
+        self.assertEqual(first_call["pairs"], [(1, 30111111)])
+        self.assertEqual(first_call["stdout"], "ERROR DNI 30111111: DNI inválido")
+        second_call = save_records_mock.call_args_list[1].kwargs
+        self.assertEqual(second_call["pairs"], [(2, 30222222)])
+        self.assertEqual(second_call["stdout"], "OK")
+        self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["processed"], 2)
+        self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["status"], "completed")
+        del api_views.ANSES_BACKGROUND_JOBS[job_id]

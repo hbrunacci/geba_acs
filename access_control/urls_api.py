@@ -3,7 +3,10 @@ from rest_framework.routers import DefaultRouter
 
 from access_control.api.v1.api_views import (
     AnsesCandidatesAPI,
+    AnsesProcessedExportAPI,
     AnsesVerifyAPI,
+    AnsesVerifyFilteredAPI,
+    AnsesVerifyFilteredStatusAPI,
     BioStarDeviceListAPI,
     BioStarDeviceSyncAPI,
     BioStarDeviceUserdataAPI,
@@ -69,5 +72,8 @@ urlpatterns = router.urls + [
     path("reports/access-by-site/", AccessBySiteReportView.as_view(), name="report_access_by_site"),
     path("reports/access-heatmap/", AccessHeatmapReportView.as_view(), name="report_access_heatmap"),
     path("anses/candidates/", AnsesCandidatesAPI.as_view(), name="anses_candidates_api"),
+    path("anses/processed/export/", AnsesProcessedExportAPI.as_view(), name="anses_processed_export_api"),
     path("anses/verify/", AnsesVerifyAPI.as_view(), name="anses_verify_api"),
+    path("anses/verify-filtered/", AnsesVerifyFilteredAPI.as_view(), name="anses_verify_filtered_api"),
+    path("anses/verify-filtered/<str:job_id>/", AnsesVerifyFilteredStatusAPI.as_view(), name="anses_verify_filtered_status_api"),
 ]

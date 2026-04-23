@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from access_control.models import ExternalAccessLogEntry
 from access_control.services import (
+    AnsesVerificationService,
     ExternalAccessLogError,
     ExternalAccessLogService,
     ExternalAccessLogSynchronizer,
@@ -241,3 +242,43 @@ class ExternalAccessLogSynchronizerTestCase(TestCase):
 
         self.assertEqual(synced, 0)
         self.assertEqual(ExternalAccessLogEntry.objects.count(), 0)
+
+
+class AnsesVerificationServiceTestCase(SimpleTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.config = {
+            "ENABLED": True,
+            "HOST": "192.168.0.6",
+            "PORT": 1433,
+            "DATABASE": "xsys_geba",
+            "USER": "sa",
+            "PASSWORD": "secret",
+            "TABLE": "Clientes",
+            "DRIVER": "{ODBC Driver 18 for SQL Server}",
+        }
+
+    def _install_pyodbc_stub(self, connect_mock: MagicMock) -> None:
+        from access_control.services import anses_verification_service
+
+        original = getattr(anses_verification_service, "pyodbc", None)
+        anses_verification_service.pyodbc = SimpleNamespace(connect=connect_mock)
+        self.addCleanup(lambda: setattr(anses_verification_service, "pyodbc", original))
+
+    def test_fetch_candidates_filters_only_vitalicio(self):
+        connect_mock = MagicMock()
+        cursor_mock = MagicMock()
+        cursor_mock.fetchone.return_value = [2]
+        cursor_mock.fetchall.return_value = []
+        connect_mock.return_value.cursor.return_value = cursor_mock
+        self._install_pyodbc_stub(connect_mock)
+
+        service = AnsesVerificationService(config=self.config)
+        service.fetch_candidates(min_age=85, max_age=100, limit=50, offset=0)
+
+        executed_query = cursor_mock.execute.call_args_list[1][0][0]
+        self.assertIn("INNER JOIN Clientes_Tipos ct", executed_query)
+        self.assertIn("ct.Id_Tipo_Cli = c.Id_Tipo_Cli", executed_query)
+        self.assertIn("ct.Descripcion LIKE '%vitalicio%'", executed_query)
+        self.assertIn("BETWEEN ? AND ?", executed_query)
+        self.assertIn("OFFSET ? ROWS FETCH NEXT ? ROWS ONLY", executed_query)

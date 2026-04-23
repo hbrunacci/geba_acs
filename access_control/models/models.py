@@ -229,3 +229,50 @@ class ParkingMovement(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_movement_type_display()} {self.patente} ({self.dni})"
+
+
+class AnsesVerificationRecord(models.Model):
+    class VerificationStatus(models.TextChoices):
+        GENERATED = "generated", "Constancia generada"
+        OFFICE_REQUIRED = "office_required", "Validar identidad en oficina ANSES"
+        UNKNOWN = "unknown", "Resultado no identificado"
+
+    id_cliente = models.BigIntegerField()
+    dni = models.BigIntegerField()
+    verification_status = models.CharField(
+        max_length=32,
+        choices=VerificationStatus.choices,
+        default=VerificationStatus.UNKNOWN,
+    )
+    verification_message = models.CharField(max_length=255, blank=True, default="")
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    requested_by = models.ForeignKey(
+        "auth.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="anses_verification_records",
+    )
+    apellido = models.CharField(max_length=100, blank=True, default="")
+    nombre = models.CharField(max_length=100, blank=True, default="")
+    fecha_nacimiento = models.DateField(null=True, blank=True)
+    edad = models.PositiveSmallIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=("requested_by", "id_cliente")),
+            models.Index(fields=("requested_by", "-created_at")),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("requested_by", "id_cliente"),
+                name="uniq_anses_record_user_client",
+            )
+        ]
+        verbose_name = "Consulta ANSES"
+        verbose_name_plural = "Consultas ANSES"
+
+    def __str__(self) -> str:
+        return f"Cliente {self.id_cliente} (DNI {self.dni})"

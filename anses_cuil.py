@@ -41,6 +41,17 @@ except ModuleNotFoundError:  # pragma: no cover
 URL = "https://servicioswww.anses.gob.ar/C2-ConstaCUIL"
 ERROR_TEXT = "ACERCATE A UNA OFICINA DE ANSES CON DOCUMENTACIÓN QUE ACREDITE IDENTIDAD"
 SUCCESS_TEXT = "DESCARGAR CONSTANCIA"
+VALIDATION_ERROR_TEXTS = (
+    "completá este campo",
+    "ingresá",
+    "verificá",
+    "dato inválido",
+)
+
+DOCUMENTO_UNICO_OPTIONS = ("Documento Único", "Documento Unico")
+DOCUMENTO_IDENTIDAD_OPTIONS = ("Documento de Identidad", "Documento identidad")
+LIBRETA_CIVICA_OPTIONS = ("Libreta Cívica", "Libreta Civica")
+LIBRETA_ENROLAMIENTO_OPTIONS = ("Libreta de Enrolamiento", "Libreta Enrolamiento")
 
 
 @dataclass(frozen=True)
@@ -52,6 +63,33 @@ class PersonData:
     apellido: str
     sexo: str
     fecha_nacimiento: date
+    fecha_nacimiento_original: str
+
+
+def _parse_fecha_nacimiento(fecha_nac: object) -> tuple[date, str] | None:
+    """
+    Normaliza la fecha de nacimiento obtenida desde MSSQL y conserva su formato original.
+
+    Devuelve una tupla con:
+      - fecha normalizada como `date`
+      - valor original formateado en string para trazabilidad
+    """
+    if isinstance(fecha_nac, datetime):
+        fecha = fecha_nac.date()
+        return fecha, fecha_nac.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(fecha_nac, date):
+        return fecha_nac, fecha_nac.isoformat()
+    if isinstance(fecha_nac, str):
+        raw = fecha_nac.strip()
+        if not raw:
+            return None
+        formatos = ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d", "%d-%m-%Y", "%Y%m%d", "%d%m%Y")
+        for fmt in formatos:
+            try:
+                return datetime.strptime(raw, fmt).date(), raw
+            except ValueError:
+                continue
+    return None
 
 
 def build_driver(download_dir: Path, headless: bool) -> webdriver.Chrome:
@@ -73,6 +111,9 @@ def build_driver(download_dir: Path, headless: bool) -> webdriver.Chrome:
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--lang=es-AR")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
     options.add_experimental_option(
         "prefs",
         {
@@ -116,7 +157,9 @@ def complete_form(
 
     # Tipo de documento: selector con id "TipoDocumento"
     tipo_documento = wait.until(EC.element_to_be_clickable((By.ID, "TipoDocumento")))
-    Select(tipo_documento).select_by_visible_text("Documento Único")
+    selector = Select(tipo_documento)
+    doc_type_label = _select_doc_type(selector=selector, person=person)
+    print(f"DNI {person.doc_nro}: tipo documento ANSES='{doc_type_label}'")
 
     numero_doc = wait.until(EC.visibility_of_element_located((By.ID, "NumeroDoc")))
     numero_doc.clear()
@@ -135,14 +178,57 @@ def complete_form(
     sexo_element = wait.until(EC.element_to_be_clickable((By.ID, sexo_id)))
     sexo_element.click()
 
-    fecha_nacimiento = wait.until(
-        EC.visibility_of_element_located((By.ID, "FechaNacimiento"))
-    )
+    fecha_nacimiento = wait.until(EC.visibility_of_element_located((By.ID, "FechaNacimiento")))
     fecha_nacimiento.clear()
-    fecha_nacimiento.send_keys(person.fecha_nacimiento.isoformat())
+    fecha_form_input = person.fecha_nacimiento.strftime("%d/%m/%Y")
+    print(
+        f"DNI {person.doc_nro}: fecha_nac origen='{person.fecha_nacimiento_original}' "
+        f"-> carga ANSES='{fecha_form_input}'"
+    )
+    fecha_nacimiento.send_keys(fecha_form_input)
 
     submit_button = wait.until(EC.element_to_be_clickable((By.ID, "submit")))
-    submit_button.click()
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_button)
+    try:
+        submit_button.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", submit_button)
+
+
+def _try_select_by_visible_text(selector: Select, labels: tuple[str, ...]) -> str | None:
+    for label in labels:
+        try:
+            selector.select_by_visible_text(label)
+            return label
+        except Exception:
+            continue
+    return None
+
+
+def _select_doc_type(selector: Select, person: PersonData) -> str:
+    """Selecciona tipo de documento para ANSES según longitud de documento y sexo."""
+    sexo = (person.sexo or "").upper().strip()
+    if person.doc_nro < 10_000_000:
+        prioritized_labels = (
+            LIBRETA_CIVICA_OPTIONS
+            if sexo == "F"
+            else LIBRETA_ENROLAMIENTO_OPTIONS
+        )
+        selected = _try_select_by_visible_text(selector, prioritized_labels)
+        if selected:
+            return selected
+
+        selected = _try_select_by_visible_text(selector, DOCUMENTO_IDENTIDAD_OPTIONS)
+        if selected:
+            return selected
+
+    selected = _try_select_by_visible_text(selector, DOCUMENTO_UNICO_OPTIONS)
+    if selected:
+        return selected
+
+    raise RuntimeError(
+        "No se encontró una opción válida en 'Tipo de documento' para completar el formulario ANSES."
+    )
 
 
 def wait_for_result(driver: webdriver.Chrome, wait: WebDriverWait) -> str:
@@ -159,6 +245,7 @@ def wait_for_result(driver: webdriver.Chrome, wait: WebDriverWait) -> str:
     wait.until(
         lambda d: ERROR_TEXT.lower() in d.page_source.lower()
         or SUCCESS_TEXT.lower() in d.page_source.lower()
+        or any(text in d.page_source.lower() for text in VALIDATION_ERROR_TEXTS)
     )
 
     page = driver.page_source.lower()
@@ -166,6 +253,11 @@ def wait_for_result(driver: webdriver.Chrome, wait: WebDriverWait) -> str:
         return "error"
     if SUCCESS_TEXT.lower() in page:
         return "success"
+    if any(text in page for text in VALIDATION_ERROR_TEXTS):
+        raise RuntimeError(
+            "ANSES devolvió un mensaje de validación en pantalla. "
+            "Revisá nombre, apellido, sexo y fecha de nacimiento."
+        )
 
     raise TimeoutException("No se pudo determinar el resultado de la consulta.")
 
@@ -305,12 +397,10 @@ def fetch_people_from_mssql(limit: int) -> list[PersonData]:
     for doc_nro, nombre, apellido, sexo, fecha_nac in rows:
         if not doc_nro or not nombre or not apellido or not fecha_nac:
             continue
-        if isinstance(fecha_nac, datetime):
-            fecha_final = fecha_nac.date()
-        elif isinstance(fecha_nac, date):
-            fecha_final = fecha_nac
-        else:
+        parsed_date = _parse_fecha_nacimiento(fecha_nac)
+        if parsed_date is None:
             continue
+        fecha_final, fecha_original = parsed_date
         people.append(
             PersonData(
                 doc_nro=int(doc_nro),
@@ -318,6 +408,7 @@ def fetch_people_from_mssql(limit: int) -> list[PersonData]:
                 apellido=str(apellido).strip(),
                 sexo=str(sexo or "M"),
                 fecha_nacimiento=fecha_final,
+                fecha_nacimiento_original=fecha_original,
             )
         )
     return people
@@ -362,12 +453,10 @@ def fetch_people_by_dnis(dnis: list[int]) -> list[PersonData]:
     for doc_nro, nombre, apellido, sexo, fecha_nac in rows:
         if not doc_nro or not nombre or not apellido or not fecha_nac:
             continue
-        if isinstance(fecha_nac, datetime):
-            fecha_final = fecha_nac.date()
-        elif isinstance(fecha_nac, date):
-            fecha_final = fecha_nac
-        else:
+        parsed_date = _parse_fecha_nacimiento(fecha_nac)
+        if parsed_date is None:
             continue
+        fecha_final, fecha_original = parsed_date
         people.append(
             PersonData(
                 doc_nro=int(doc_nro),
@@ -375,6 +464,7 @@ def fetch_people_by_dnis(dnis: list[int]) -> list[PersonData]:
                 apellido=str(apellido).strip(),
                 sexo=str(sexo or "M"),
                 fecha_nacimiento=fecha_final,
+                fecha_nacimiento_original=fecha_original,
             )
         )
     return people
@@ -388,6 +478,9 @@ def main() -> int:
         Código de salida del proceso.
     """
     args = parse_args()
+    # Asegura que la carpeta de salida exista incluso antes de inicializar Selenium.
+    args.download_dir.mkdir(parents=True, exist_ok=True)
+
     if args.dnis:
         try:
             people = fetch_people_by_dnis(args.dnis)
@@ -414,6 +507,7 @@ def main() -> int:
                 apellido="Areco",
                 sexo="F",
                 fecha_nacimiento=date(1980, 7, 9),
+                fecha_nacimiento_original="1980-07-09",
             )
         ]
 
@@ -440,7 +534,20 @@ def main() -> int:
         return 0 if errors == 0 else 1
 
     except TimeoutException as exc:
-        print(f"ERROR: Tiempo de espera agotado. Detalle: {exc}")
+        snapshot_path = args.download_dir / "anses_timeout_snapshot.html"
+        try:
+            args.download_dir.mkdir(parents=True, exist_ok=True)
+            snapshot_path.write_text(driver.page_source, encoding="utf-8")
+            extra = f" Se guardó snapshot HTML en: {snapshot_path.resolve()}"
+        except Exception:
+            extra = ""
+        print(
+            "ERROR: Tiempo de espera agotado."
+            f" URL actual: {driver.current_url}. Detalle: {exc}.{extra}"
+        )
+        return 2
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}")
         return 2
     except Exception as exc:  # pragma: no cover
         print(f"ERROR INESPERADO: {exc}")

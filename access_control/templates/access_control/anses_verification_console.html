@@ -3,7 +3,7 @@
 {% block page_title %}Verificar situacion anses{% endblock page_title %}
 {% block header_title %}Verificar situacion anses{% endblock header_title %}
 {% block header_subtitle %}
-  Listado de socios activos mayores a 90 años y ejecución de verificación ANSES para uno o varios seleccionados.
+  Listado paginado de socios vitalicios por rango etario y ejecución de verificación ANSES para uno o varios seleccionados.
 {% endblock header_subtitle %}
 
 {% block content %}
@@ -11,12 +11,34 @@
   <div class="card__body">
     <div class="d-flex flex-wrap gap-2 align-items-end">
       <div>
-        <label class="form-label" for="anses-limit">Cantidad</label>
-        <input id="anses-limit" class="form-control form-control-sm" type="number" min="1" max="500" value="50" />
+        <label class="form-label" for="anses-min-age">Edad mínima</label>
+        <input id="anses-min-age" class="form-control form-control-sm" type="number" min="0" value="90" />
+      </div>
+      <div>
+        <label class="form-label" for="anses-max-age">Edad máxima</label>
+        <input id="anses-max-age" class="form-control form-control-sm" type="number" min="0" value="120" />
+      </div>
+      <div class="form-check mb-1">
+        <input id="anses-hide-consulted" class="form-check-input" type="checkbox" />
+        <label class="form-check-label" for="anses-hide-consulted">Ocultar ya consultados</label>
+      </div>
+      <div>
+        <label class="form-label" for="anses-status-filter">Estado ANSES</label>
+        <select id="anses-status-filter" class="form-select form-select-sm">
+          <option value="all">Todos</option>
+          <option value="pending">Pendiente</option>
+          <option value="generated">Constancia generada</option>
+          <option value="office_required">Ir a oficina ANSES</option>
+          <option value="unknown">Sin clasificar</option>
+        </select>
       </div>
       <button id="anses-load" class="btn btn-outline-primary btn-sm" type="button">Cargar listado</button>
       <button id="anses-verify-selected" class="btn btn-primary btn-sm" type="button">Verificar seleccionados</button>
-      <button id="anses-verify-all" class="btn btn-secondary btn-sm" type="button">Verificar todos los listados</button>
+      <button id="anses-verify-all" class="btn btn-secondary btn-sm" type="button">Verificar página actual</button>
+      <button id="anses-verify-filtered" class="btn btn-dark btn-sm" type="button">Verificar total filtrado (2do plano)</button>
+      <a id="anses-download-processed" class="btn btn-success btn-sm" href="/api/anses/processed/export/">
+        Descargar vitalicios procesados (Excel)
+      </a>
     </div>
     <div id="anses-msg" class="alert d-none mt-3" role="alert"></div>
   </div>
@@ -24,7 +46,7 @@
 
 <section class="card mt-4">
   <div class="card__header">
-    <h5 class="card__title">Socios candidatos (+90)</h5>
+    <h5 class="card__title">Socios candidatos (50 por página)</h5>
   </div>
   <div class="card__body">
     <div class="table-responsive">
@@ -39,10 +61,17 @@
             <th>Sexo</th>
             <th>Fecha Nac.</th>
             <th>Edad</th>
+            <th>Estado</th>
+            <th>Mensaje ANSES</th>
           </tr>
         </thead>
         <tbody id="anses-candidates-body"></tbody>
       </table>
+    </div>
+    <div class="d-flex gap-2 mt-3 align-items-center">
+      <button id="anses-prev-page" class="btn btn-outline-secondary btn-sm" type="button">Anterior</button>
+      <span id="anses-page-label" class="small text-muted">Página 1</span>
+      <button id="anses-next-page" class="btn btn-outline-secondary btn-sm" type="button">Siguiente</button>
     </div>
   </div>
 </section>
@@ -61,8 +90,15 @@
   const msgEl = document.getElementById("anses-msg");
   const bodyEl = document.getElementById("anses-candidates-body");
   const outputEl = document.getElementById("anses-output");
-  const limitEl = document.getElementById("anses-limit");
+  const minAgeEl = document.getElementById("anses-min-age");
+  const maxAgeEl = document.getElementById("anses-max-age");
+  const hideConsultedEl = document.getElementById("anses-hide-consulted");
+  const statusFilterEl = document.getElementById("anses-status-filter");
   const selectAllEl = document.getElementById("anses-select-all");
+  const pageLabelEl = document.getElementById("anses-page-label");
+  let currentPage = 1;
+  let totalCount = 0;
+  let backgroundJobTimer = null;
 
   function showMsg(text, kind) {
     msgEl.className = "alert alert-" + (kind || "info") + " mt-3";
@@ -91,10 +127,23 @@
     return data;
   }
 
+  function statusBadge(item) {
+    if (!item.consulted) {
+      return '<span class="badge bg-light text-dark">Pendiente</span>';
+    }
+    if (item.verification_status === "generated") {
+      return '<span class="badge bg-success">Constancia generada</span>';
+    }
+    if (item.verification_status === "office_required") {
+      return '<span class="badge bg-warning text-dark">Oficina ANSES</span>';
+    }
+    return '<span class="badge bg-secondary">Consultado</span>';
+  }
+
   function renderRows(items) {
     bodyEl.innerHTML = items.map(item => `
       <tr>
-        <td><input class="anses-check" type="checkbox" data-dni="${item.doc_nro || ""}" /></td>
+        <td><input class="anses-check" type="checkbox" data-dni="${item.doc_nro || ""}" data-id-cliente="${item.id_cliente || ""}" /></td>
         <td>${item.id_cliente ?? ""}</td>
         <td>${item.doc_nro ?? ""}</td>
         <td>${item.apellido || ""}</td>
@@ -102,62 +151,134 @@
         <td>${item.sexo || ""}</td>
         <td>${item.fecha_nac || ""}</td>
         <td>${item.edad ?? ""}</td>
+        <td>${statusBadge(item)}</td>
+        <td>${item.verification_message || ""}</td>
       </tr>
     `).join("");
   }
 
-  function selectedDnis() {
+  function selectedClients() {
     return [...document.querySelectorAll(".anses-check:checked")]
-      .map(el => Number(el.dataset.dni))
-      .filter(v => !Number.isNaN(v) && v > 0);
+      .map(el => ({ id_cliente: Number(el.dataset.idCliente), doc_nro: Number(el.dataset.dni) }))
+      .filter(v => !Number.isNaN(v.id_cliente) && v.id_cliente > 0 && !Number.isNaN(v.doc_nro) && v.doc_nro > 0);
   }
 
-  function listedDnis() {
+  function listedClients() {
     return [...document.querySelectorAll(".anses-check")]
-      .map(el => Number(el.dataset.dni))
-      .filter(v => !Number.isNaN(v) && v > 0);
+      .map(el => ({ id_cliente: Number(el.dataset.idCliente), doc_nro: Number(el.dataset.dni) }))
+      .filter(v => !Number.isNaN(v.id_cliente) && v.id_cliente > 0 && !Number.isNaN(v.doc_nro) && v.doc_nro > 0);
   }
 
-  async function loadCandidates() {
+  function refreshPager() {
+    const totalPages = Math.max(1, Math.ceil(totalCount / 50));
+    pageLabelEl.textContent = `Página ${currentPage} de ${totalPages} · Total ${totalCount}`;
+    document.getElementById("anses-prev-page").disabled = currentPage <= 1;
+    document.getElementById("anses-next-page").disabled = currentPage >= totalPages;
+  }
+
+  async function loadCandidates(page = 1) {
     try {
       showMsg("Consultando candidatos en MSSQL...", "info");
-      const limit = Number(limitEl.value) || 50;
-      const data = await fetchJSON(`/api/anses/candidates/?limit=${limit}`);
+      currentPage = page;
+      const minAge = Number(minAgeEl.value);
+      const maxAge = Number(maxAgeEl.value);
+      const hideConsulted = hideConsultedEl.checked ? "true" : "false";
+      const verificationStatus = encodeURIComponent(statusFilterEl.value || "all");
+      const data = await fetchJSON(`/api/anses/candidates/?page=${currentPage}&page_size=50&min_age=${minAge}&max_age=${maxAge}&exclude_consulted=${hideConsulted}&verification_status=${verificationStatus}`);
+      totalCount = Number(data.count || 0);
       renderRows(data.results || []);
-      showMsg(`Listado cargado: ${data.count || 0} registros.`, "success");
+      refreshPager();
+      showMsg(`Listado cargado: ${data.results?.length || 0} registros en página, total ${data.count || 0}.`, "success");
     } catch (err) {
       showMsg("No se pudo cargar el listado: " + err.message, "danger");
     }
   }
 
-  async function runVerification(dnis) {
-    if (!dnis.length) {
-      showMsg("No hay DNIs para verificar.", "warning");
+  async function runVerification(clients) {
+    if (!clients.length) {
+      showMsg("No hay socios para verificar.", "warning");
       return;
     }
     try {
-      showMsg(`Ejecutando verificación para ${dnis.length} socio(s)...`, "info");
+      showMsg(`Ejecutando verificación para ${clients.length} socio(s)...`, "info");
       const data = await fetchJSON("/api/anses/verify/", {
         method: "POST",
-        body: JSON.stringify({ dni_list: dnis, headless: true, no_download: true }),
+        body: JSON.stringify({ clients, headless: true, no_download: true }),
       });
       outputEl.textContent = `Comando: ${data.command}\nCódigo: ${data.returncode}\n\nSTDOUT:\n${data.stdout || ""}\n\nSTDERR:\n${data.stderr || ""}`;
       showMsg("Verificación finalizada.", data.returncode === 0 ? "success" : "warning");
+      await loadCandidates(currentPage);
     } catch (err) {
       showMsg("Error al ejecutar verificación: " + err.message, "danger");
     }
   }
 
-  document.getElementById("anses-load").addEventListener("click", loadCandidates);
-  document.getElementById("anses-verify-selected").addEventListener("click", () => runVerification(selectedDnis()));
-  document.getElementById("anses-verify-all").addEventListener("click", () => runVerification(listedDnis()));
+  async function pollBackgroundJob(jobId) {
+    if (backgroundJobTimer) {
+      clearInterval(backgroundJobTimer);
+    }
+    backgroundJobTimer = setInterval(async () => {
+      try {
+        const data = await fetchJSON(`/api/anses/verify-filtered/${jobId}/`);
+        const total = Number(data.total || 0);
+        const processed = Number(data.processed || 0);
+        showMsg(`Proceso en segundo plano: ${processed}/${total} procesados. Estado: ${data.status}.`, data.status === "failed" ? "danger" : "info");
+        if (data.status === "completed" || data.status === "failed") {
+          clearInterval(backgroundJobTimer);
+          backgroundJobTimer = null;
+          if (data.status === "completed") {
+            showMsg(`Proceso finalizado (${processed}/${total}).`, "success");
+            await loadCandidates(currentPage);
+          }
+          if (data.status === "failed") {
+            showMsg(`Proceso falló: ${data.error || "sin detalle"}.`, "danger");
+          }
+        }
+      } catch (err) {
+        clearInterval(backgroundJobTimer);
+        backgroundJobTimer = null;
+        showMsg("No se pudo consultar el estado del proceso en segundo plano: " + err.message, "danger");
+      }
+    }, 5000);
+  }
+
+  async function runFilteredInBackground() {
+    try {
+      const min_age = Number(minAgeEl.value);
+      const max_age = Number(maxAgeEl.value);
+      const exclude_consulted = hideConsultedEl.checked;
+      const verification_status = statusFilterEl.value || "all";
+      showMsg(`Iniciando proceso en segundo plano para ${totalCount} socio(s) filtrados...`, "info");
+      const payload = await fetchJSON("/api/anses/verify-filtered/", {
+        method: "POST",
+        body: JSON.stringify({ min_age, max_age, exclude_consulted, verification_status }),
+      });
+      showMsg(`Proceso en segundo plano iniciado. Job ${payload.job_id}.`, "success");
+      await pollBackgroundJob(payload.job_id);
+    } catch (err) {
+      showMsg("No se pudo iniciar el proceso en segundo plano: " + err.message, "danger");
+    }
+  }
+
+  document.getElementById("anses-load").addEventListener("click", () => loadCandidates(1));
+  document.getElementById("anses-verify-selected").addEventListener("click", () => runVerification(selectedClients()));
+  document.getElementById("anses-verify-all").addEventListener("click", () => runVerification(listedClients()));
+  document.getElementById("anses-verify-filtered").addEventListener("click", runFilteredInBackground);
+  document.getElementById("anses-prev-page").addEventListener("click", () => {
+    if (currentPage > 1) {
+      loadCandidates(currentPage - 1);
+    }
+  });
+  document.getElementById("anses-next-page").addEventListener("click", () => {
+    loadCandidates(currentPage + 1);
+  });
   selectAllEl.addEventListener("change", () => {
     document.querySelectorAll(".anses-check").forEach(el => {
       el.checked = selectAllEl.checked;
     });
   });
 
-  loadCandidates();
+  loadCandidates(1);
 })();
 </script>
 {% endblock content %}
