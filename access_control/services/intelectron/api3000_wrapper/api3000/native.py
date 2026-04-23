@@ -27,6 +27,7 @@ from .structs import (
 )
 
 DEFAULT_ENV_VAR: Final[str] = "API3000_LIB_PATH"
+LIB_FILENAME: Final[str] = "libitkcom.so.0.0.0"
 
 
 def resolve_library_path(explicit_path: str | None = None) -> str:
@@ -35,7 +36,8 @@ def resolve_library_path(explicit_path: str | None = None) -> str:
     Prioridad:
     1. `explicit_path`
     2. variable de entorno `API3000_LIB_PATH`
-    3. nombre visible por el loader dinámico
+    3. librería incluida en el wrapper (si existe)
+    4. nombre visible por el loader dinámico
     """
     if explicit_path:
         return explicit_path
@@ -44,7 +46,11 @@ def resolve_library_path(explicit_path: str | None = None) -> str:
     if env_path:
         return env_path
 
-    return "libitkcom.so.0.0.0"
+    bundled_candidate = Path(__file__).resolve().parent.parent / LIB_FILENAME
+    if bundled_candidate.exists():
+        return str(bundled_candidate)
+
+    return LIB_FILENAME
 
 
 class NativeLibrary:
