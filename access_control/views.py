@@ -26,6 +26,7 @@ from rest_framework import status, viewsets
 from people.models import Cliente
 
 from access_control.services import ClientLookupError, MSSQLClientLookupService
+from access_control.services.intelectron.api3000_console import COMMAND_CATALOG
 
 
 MAX_PING_COUNT = 5
@@ -97,8 +98,12 @@ def anses_verification_console(request):
 
 @login_required
 def api3000_test_console(request):
-    """Consola de pruebas de conectividad para API3000."""
-    return render(request, "access_control/api3000_test_console.html")
+    """Consola de pruebas de funciones del wrapper API3000."""
+    return render(
+        request,
+        "access_control/api3000_test_console.html",
+        {"command_catalog": COMMAND_CATALOG},
+    )
 
 
 def _validate_ipv4(value: str):
