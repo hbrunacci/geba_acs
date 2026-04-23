@@ -690,3 +690,50 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["processed"], 2)
         self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["status"], "completed")
         del api_views.ANSES_BACKGROUND_JOBS[job_id]
+
+
+class Api3000ToolsAPITestCase(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.authenticate()
+        self.ping_url = reverse("acs_test_ping_api")
+        self.execute_url = reverse("acs_test_execute_api")
+
+    @patch("access_control.api.v1.api_views.socket.getaddrinfo")
+    @patch("access_control.api.v1.api_views.subprocess.run")
+    def test_ping_api_returns_reachability_and_latency(self, run_mock, getaddrinfo_mock):
+        getaddrinfo_mock.return_value = [object()]
+        run_mock.return_value.returncode = 0
+        run_mock.return_value.stdout = "64 bytes from 10.0.0.1: icmp_seq=1 ttl=64 time=3.50 ms"
+        run_mock.return_value.stderr = ""
+
+        response = self.client.post(self.ping_url, {"ip": "10.0.0.1"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["reachable"])
+        self.assertEqual(response.data["latency_ms"], 3.5)
+        self.assertIsNone(response.data["error"])
+
+    def test_ping_api_rejects_invalid_ip(self):
+        response = self.client.post(self.ping_url, {"ip": "invalid host !!"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["reachable"])
+
+    @patch("access_control.api.v1.api_views.socket.getaddrinfo")
+    @patch("access_control.api.v1.api_views._build_biostar_client_for_ip")
+    def test_execute_api_calls_whitelisted_function(self, build_client_mock, getaddrinfo_mock):
+        getaddrinfo_mock.return_value = [object()]
+        client_mock = build_client_mock.return_value
+        client_mock.list_devices.return_value = {"DeviceCollection": {"rows": []}}
+
+        payload = {"ip": "10.0.0.1", "function_name": "list_devices", "params": {}}
+        response = self.client.post(self.execute_url, payload, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["ok"])
+        self.assertEqual(response.data["response"], {"DeviceCollection": {"rows": []}})
+        client_mock.list_devices.assert_called_once_with()
+
+    def test_execute_api_rejects_non_whitelisted_function(self):
+        payload = {"ip": "10.0.0.1", "function_name": "__import__", "params": {}}
+        response = self.client.post(self.execute_url, payload, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["ok"])

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
+import platform
 import re
+import socket
+import subprocess
 import threading
 import time
 import uuid
 import zipfile
 from datetime import datetime
 from io import BytesIO
+from urllib.parse import urlsplit, urlunsplit
 from xml.sax.saxutils import escape
 
 from django.contrib.auth import get_user_model
@@ -30,12 +35,12 @@ from access_control.serializers import (
 
 from rest_framework import permissions, status, views
 
-from access_control.models import BioStarDevice, BioStarUser
+from access_control.models import BioStar2Config, BioStarDevice, BioStarUser
 from institutions.models import AccessPoint, Event
 from people.models import Cliente, Person, PersonType
 from access_control.serializers import BioStarDeviceSerializer, BioStarUserSerializer
 
-from access_control.services.biostar2_client import BioStar2Client
+from access_control.services.biostar2_client import BioStar2Client, BioStar2Env
 
 from access_control.services import (
     AnsesVerificationError,
@@ -53,6 +58,80 @@ ANSES_RESULT_PATTERN = re.compile(r"^(?:OK|ERROR) DNI (?P<dni>\d+): (?P<message>
 
 ANSES_BACKGROUND_JOBS: dict[str, dict] = {}
 ANSES_BACKGROUND_LOCK = threading.Lock()
+HOSTNAME_PATTERN = re.compile(
+    r"^(?=.{1,253}$)(?!-)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.(?!-)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$"
+)
+PING_LATENCY_PATTERN = re.compile(r"time[=<]\s*(?P<latency>\d+(?:\.\d+)?)\s*ms", re.IGNORECASE)
+WINDOWS_PING_LATENCY_PATTERN = re.compile(r"time[=<]\s*(?P<latency>\d+)\s*ms", re.IGNORECASE)
+API3000_ALLOWED_FUNCTIONS = {
+    "list_devices",
+    "list_users",
+    "list_device_groups",
+    "list_device_users",
+    "discover_device_userdata",
+    "search_users_v2",
+}
+
+
+def _is_valid_ip_or_hostname(value: str) -> bool:
+    candidate = (value or "").strip()
+    if not candidate:
+        return False
+    try:
+        ipaddress.ip_address(candidate)
+        return True
+    except ValueError:
+        return bool(HOSTNAME_PATTERN.fullmatch(candidate))
+
+
+def _parse_ping_latency(stdout: str) -> float | None:
+    if not stdout:
+        return None
+    for pattern in (PING_LATENCY_PATTERN, WINDOWS_PING_LATENCY_PATTERN):
+        match = pattern.search(stdout)
+        if match:
+            return float(match.group("latency"))
+    return None
+
+
+def _ping_host(host: str) -> tuple[bool, float | None, str | None]:
+    is_windows = platform.system().lower().startswith("win")
+    if is_windows:
+        cmd = ["ping", "-n", "1", "-w", "1000", host]
+    else:
+        cmd = ["ping", "-c", "1", "-W", "1", host]
+
+    completed = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=3,
+        check=False,
+    )
+    stdout = completed.stdout or ""
+    stderr = completed.stderr or ""
+    latency = _parse_ping_latency(stdout)
+    reachable = completed.returncode == 0
+    error = None if reachable else (stderr.strip() or stdout.strip() or "Host unreachable")
+    return reachable, latency, error
+
+
+def _build_biostar_client_for_ip(ip_or_host: str) -> BioStar2Client:
+    cfg = BioStar2Config.get_solo()
+    env = BioStar2Env.from_env()
+    parsed = urlsplit(env.base_url)
+    netloc = ip_or_host
+    if parsed.port:
+        netloc = f"{ip_or_host}:{parsed.port}"
+    target_base_url = urlunsplit((parsed.scheme or "http", netloc, parsed.path or "", "", "")).rstrip("/")
+    target_env = BioStar2Env(
+        base_url=target_base_url,
+        username=env.username,
+        password=env.password,
+        verify_tls=env.verify_tls,
+        timeout_seconds=env.timeout_seconds,
+    )
+    return BioStar2Client(cfg=cfg, env=target_env)
 
 
 def _map_anses_status(message: str) -> str:
@@ -261,6 +340,96 @@ class BioStarUserListAPI(views.APIView):
         page = paginator.paginate_queryset(qs, request, view=self)
         serializer = BioStarUserSerializer(page, many=True)
         return paginator.get_paginated_response(serializer.data)
+
+
+class Api3000PingAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        ip = (request.data.get("ip") or "").strip()
+        if not _is_valid_ip_or_hostname(ip):
+            return Response(
+                {"reachable": False, "latency_ms": None, "error": "El campo 'ip' no es válido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            socket.getaddrinfo(ip, None)
+        except socket.gaierror:
+            return Response(
+                {"reachable": False, "latency_ms": None, "error": "No se pudo resolver el host indicado."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            reachable, latency_ms, error = _ping_host(ip)
+        except subprocess.TimeoutExpired:
+            return Response(
+                {"reachable": False, "latency_ms": None, "error": "Tiempo de espera agotado al hacer ping."},
+                status=status.HTTP_200_OK,
+            )
+        except Exception as exc:
+            return Response(
+                {"reachable": False, "latency_ms": None, "error": str(exc)},
+                status=status.HTTP_200_OK,
+            )
+        return Response(
+            {"reachable": reachable, "latency_ms": latency_ms, "error": error},
+            status=status.HTTP_200_OK,
+        )
+
+
+class Api3000ExecuteAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        ip = (request.data.get("ip") or "").strip()
+        function_name = (request.data.get("function_name") or "").strip()
+        params = request.data.get("params", {})
+
+        if not _is_valid_ip_or_hostname(ip):
+            return Response(
+                {"ok": False, "request": request.data, "response": None, "error": "El campo 'ip' no es válido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if function_name not in API3000_ALLOWED_FUNCTIONS:
+            return Response(
+                {"ok": False, "request": request.data, "response": None, "error": "Función no permitida."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not isinstance(params, dict):
+            return Response(
+                {"ok": False, "request": request.data, "response": None, "error": "El campo 'params' debe ser un objeto."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            socket.getaddrinfo(ip, None)
+            client = _build_biostar_client_for_ip(ip)
+            method = getattr(client, function_name)
+            response_data = method(**params)
+            return Response(
+                {
+                    "ok": True,
+                    "request": {"ip": ip, "function_name": function_name, "params": params},
+                    "response": response_data,
+                    "error": None,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except socket.gaierror:
+            error = "No se pudo resolver el host indicado."
+        except TypeError as exc:
+            error = f"Parámetros inválidos para la función: {exc}"
+        except Exception as exc:
+            error = str(exc)
+        return Response(
+            {
+                "ok": False,
+                "request": {"ip": ip, "function_name": function_name, "params": params},
+                "response": None,
+                "error": error,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class BioStarUserSyncAPI(views.APIView):

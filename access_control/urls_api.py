@@ -2,6 +2,8 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from access_control.api.v1.api_views import (
+    Api3000ExecuteAPI,
+    Api3000PingAPI,
     AnsesCandidatesAPI,
     AnsesProcessedExportAPI,
     AnsesVerifyAPI,
@@ -76,4 +78,6 @@ urlpatterns = router.urls + [
     path("anses/verify/", AnsesVerifyAPI.as_view(), name="anses_verify_api"),
     path("anses/verify-filtered/", AnsesVerifyFilteredAPI.as_view(), name="anses_verify_filtered_api"),
     path("anses/verify-filtered/<str:job_id>/", AnsesVerifyFilteredStatusAPI.as_view(), name="anses_verify_filtered_status_api"),
+    path("acs/test/ping/", Api3000PingAPI.as_view(), name="acs_test_ping_api"),
+    path("acs/test/execute/", Api3000ExecuteAPI.as_view(), name="acs_test_execute_api"),
 ]
