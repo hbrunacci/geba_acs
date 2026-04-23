@@ -7,6 +7,9 @@ from access_control.api.v1.api_views import (
     AnsesVerifyAPI,
     AnsesVerifyFilteredAPI,
     AnsesVerifyFilteredStatusAPI,
+    Api3000CommandCatalogAPI,
+    Api3000ExecuteCommandAPI,
+    Api3000PingAPI,
     BioStarDeviceListAPI,
     BioStarDeviceSyncAPI,
     BioStarDeviceUserdataAPI,
@@ -19,6 +22,8 @@ from access_control.api.v1.api_views import (
 )
 from access_control.api.v1.intelectron_api_views import Api3000CommandAPI, Api3000PingAPI
 from access_control.views import (
+    ACSTestCommandView,
+    ACSTestPingView,
     AccessByCategoryReportView,
     AccessBySiteReportView,
     AccessEventViewSet,
@@ -38,6 +43,12 @@ urlpatterns = router.urls + [
 
     path("acs/test/ping/", Api3000PingAPI.as_view(), name="acs_test_ping_api"),
     path("acs/test/command/", Api3000CommandAPI.as_view(), name="acs_test_command_api"),
+    path("acs/test/ping/", ACSTestPingView.as_view(), name="acs_test_ping_api"),
+    path("acs/test/command/", ACSTestCommandView.as_view(), name="acs_test_command_api"),
+
+    path("api3000/catalog/", Api3000CommandCatalogAPI.as_view(), name="api3000_catalog_api"),
+    path("api3000/ping/", Api3000PingAPI.as_view(), name="api3000_ping_api"),
+    path("api3000/execute/", Api3000ExecuteCommandAPI.as_view(), name="api3000_execute_api"),
     path("parking/client-lookup/", ParkingClienteLookupView.as_view(), name="parking_client_lookup"),
     path("parking/movements/", ParkingMovementView.as_view(), name="parking_movements_api"),
     path("parking/movements/<int:movement_id>/mark-exit/", ParkingMovementMarkExitView.as_view(), name="parking_movement_mark_exit_api"),

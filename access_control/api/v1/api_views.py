@@ -44,6 +44,12 @@ from access_control.services import (
     ExternalAccessLogError,
     ExternalAccessLogSynchronizer,
 )
+from access_control.services.intelectron.api3000_console import (
+    COMMAND_CATALOG,
+    execute_command,
+    validate_base_payload,
+    validate_command_params,
+)
 
 from django.core.management import call_command
 
@@ -934,3 +940,46 @@ class AnsesProcessedExportAPI(views.APIView):
         )
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+
+
+class Api3000CommandCatalogAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response({"commands": COMMAND_CATALOG})
+
+
+class Api3000PingAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        try:
+            base = validate_base_payload(payload)
+            result = execute_command(command="lib_version", base=base, params={})
+            return Response({"ok": True, **result})
+        except ValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+            return Response({"ok": False, "errors": detail}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({"ok": False, "detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class Api3000ExecuteCommandAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        payload = request.data if isinstance(request.data, dict) else {}
+        command = str(payload.get("command") or "").strip()
+        params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+
+        try:
+            base = validate_base_payload(payload, command=command)
+            parsed_params = validate_command_params(command, params)
+            result = execute_command(command=command, base=base, params=parsed_params)
+            return Response({"ok": True, "result": result})
+        except ValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+            return Response({"ok": False, "errors": detail}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({"ok": False, "detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import ipaddress
+import re
+import subprocess
 
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
@@ -23,6 +26,12 @@ from rest_framework import status, viewsets
 from people.models import Cliente
 
 from access_control.services import ClientLookupError, MSSQLClientLookupService
+from access_control.services.intelectron.api3000_console import COMMAND_CATALOG
+
+
+MAX_PING_COUNT = 5
+MAX_PING_TIMEOUT_SECONDS = 10
+MAX_RAW_SUMMARY_LENGTH = 280
 
 
 def _parking_quota_access_status(ult_cuota_paga):
@@ -71,6 +80,13 @@ def external_access_console(request):
 
 
 
+
+
+@login_required
+def api3000_test_console(request):
+    """Consola de pruebas para comandos API-3000."""
+    return render(request, "access_control/api3000_test_console.html", {"command_catalog": COMMAND_CATALOG})
+
 @login_required
 def parking_movements_console(request):
     """Consola para registrar ingresos y salidas de automóviles."""
@@ -86,6 +102,121 @@ def access_reports_console(request):
 def anses_verification_console(request):
     """Consola para verificar situación ANSES de socios de +90 años."""
     return render(request, "access_control/anses_verification_console.html")
+
+
+@login_required
+def api3000_test_console(request):
+    """Consola de pruebas de conectividad para API3000."""
+    return render(request, "access_control/api3000_test_console.html")
+
+
+def _validate_ipv4(value: str):
+    if not value:
+        raise ValueError("El campo 'ip' es obligatorio.")
+    try:
+        candidate = ipaddress.ip_address(value)
+    except ValueError as exc:
+        raise ValueError("El campo 'ip' debe ser una IP válida.") from exc
+    if candidate.version != 4:
+        raise ValueError("Solo se soportan direcciones IPv4.")
+    return str(candidate)
+
+
+def _validate_ping_params(data):
+    ip = _validate_ipv4(str(data.get("ip", "")).strip())
+    count = int(data.get("count", 1) or 1)
+    timeout = float(data.get("timeout", 1) or 1)
+    if count < 1 or count > MAX_PING_COUNT:
+        raise ValueError(f"El campo 'count' debe estar entre 1 y {MAX_PING_COUNT}.")
+    if timeout <= 0 or timeout > MAX_PING_TIMEOUT_SECONDS:
+        raise ValueError(f"El campo 'timeout' debe estar entre 0 y {MAX_PING_TIMEOUT_SECONDS} segundos.")
+    return ip, count, timeout
+
+
+def _extract_latency_ms(output: str):
+    avg_regex = re.search(r"=\s*\d+(?:\.\d+)?/(\d+(?:\.\d+)?)/", output)
+    if avg_regex:
+        return float(avg_regex.group(1))
+    first_match = re.search(r"time[=<]\s*(\d+(?:\.\d+)?)\s*ms", output)
+    if first_match:
+        return float(first_match.group(1))
+    return None
+
+
+def _run_safe_ping(ip: str, count: int, timeout: float):
+    timeout_int = max(1, int(round(timeout)))
+    cmd = ["ping", "-c", str(count), "-W", str(timeout_int), ip]
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=(count * timeout_int) + 2,
+        check=False,
+    )
+    raw_summary = (proc.stdout or proc.stderr or "")[:MAX_RAW_SUMMARY_LENGTH]
+    return {
+        "reachable": proc.returncode == 0,
+        "latency_ms": _extract_latency_ms(proc.stdout or ""),
+        "raw_summary": raw_summary,
+    }
+
+
+class ACSTestPingView(APIView):
+    """Ejecuta ping de forma controlada para validar conectividad."""
+
+    def post(self, request):
+        try:
+            ip, count, timeout = _validate_ping_params(request.data)
+            result = _run_safe_ping(ip, count, timeout)
+        except (ValueError, TypeError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except subprocess.TimeoutExpired:
+            return Response(
+                {
+                    "reachable": False,
+                    "latency_ms": None,
+                    "raw_summary": "Ping superó el tiempo máximo de espera.",
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(result)
+
+
+class ACSTestCommandView(APIView):
+    """Endpoint de prueba que revalida conectividad antes de simular envío de comando."""
+
+    def post(self, request):
+        try:
+            ip, _count, timeout = _validate_ping_params(request.data)
+        except (ValueError, TypeError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        command = str(request.data.get("command", "")).strip()
+        if not command:
+            return Response({"detail": "El campo 'command' es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
+
+        connectivity = _run_safe_ping(ip, count=1, timeout=timeout)
+        if not connectivity["reachable"]:
+            return Response(
+                {
+                    "accepted": False,
+                    "detail": "No se puede enviar el comando porque el host no respondió al ping de validación.",
+                    "ping": connectivity,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                "accepted": True,
+                "detail": "Comando validado y aceptado para procesamiento.",
+                "ip": ip,
+                "timeout": timeout,
+                "command": command,
+                "ping": connectivity,
+            }
+        )
 
 
 class WhitelistEntryViewSet(viewsets.ModelViewSet):

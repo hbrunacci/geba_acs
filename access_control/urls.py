@@ -2,7 +2,9 @@ from django.urls import path
 
 from access_control.views import (
     access_reports_console,
+    api3000_test_console,
     anses_verification_console,
+    api3000_test_console,
     biostar_devices_console,
     biostar_users_console,
     external_access_console,
@@ -12,6 +14,7 @@ from access_control.views import (
 
 urlpatterns = [
 
+    path("api3000-test-console/", api3000_test_console, name="api3000_test_console"),
     path(
         "parking-movements/",
         parking_movements_console,
@@ -31,6 +34,11 @@ urlpatterns = [
         "anses-verification/",
         anses_verification_console,
         name="anses_verification_console",
+    ),
+    path(
+        "api3000-test/",
+        api3000_test_console,
+        name="api3000_test_console",
     ),
     path(
         "biostar/devices/",
