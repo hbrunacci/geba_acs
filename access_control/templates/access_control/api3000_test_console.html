@@ -1,70 +1,143 @@
 {% extends "common/base.html" %}
-{% load static %}
 
-{% block page_title %}API3000 Test Console{% endblock page_title %}
-{% block header_title %}API3000 Test Console{% endblock header_title %}
-{% block header_subtitle %}Diagnóstico de comandos sobre hardware real.{% endblock header_subtitle %}
+{% block page_title %}Consola API3000{% endblock page_title %}
+{% block header_title %}Consola de prueba API3000{% endblock header_title %}
+{% block header_subtitle %}Validación de red previa al envío de comandos.{% endblock header_subtitle %}
 
 {% block content %}
-<div class="container-fluid">
-  <div class="card shadow-sm">
-    <div class="card-body">
-      <form id="api3000-form" class="row g-3">
-        <div class="col-md-3">
-          <label class="form-label" for="ip">IP</label>
-          <input class="form-control" id="ip" name="ip" placeholder="192.168.0.10" required />
-        </div>
-        <div class="col-md-2">
-          <label class="form-label" for="port">Puerto</label>
-          <input class="form-control" id="port" name="port" type="number" value="3001" required />
-        </div>
-        <div class="col-md-2">
-          <label class="form-label" for="source_node">Source node</label>
-          <input class="form-control" id="source_node" name="source_node" type="number" value="1" required />
-        </div>
-        <div class="col-md-2">
-          <label class="form-label" for="dest_node">Dest node</label>
-          <input class="form-control" id="dest_node" name="dest_node" type="number" value="1" />
-        </div>
-        <div class="col-md-3">
-          <label class="form-label" for="command">Comando</label>
-          <select class="form-select" id="command" name="command" required></select>
-        </div>
-
-        <div class="col-12">
-          <div class="border rounded p-3 bg-light-subtle">
-            <h6 class="mb-3">Parámetros dinámicos</h6>
-            <div id="command-params" class="row g-3"></div>
-          </div>
-        </div>
-
-        <div class="col-12 d-flex gap-2">
-          <button type="button" id="ping-btn" class="btn btn-outline-secondary">Ping endpoint</button>
-          <button type="submit" class="btn btn-primary">Enviar comando</button>
-        </div>
-      </form>
-      <div id="form-errors" class="alert alert-danger mt-3 d-none"></div>
-    </div>
-  </div>
-
-  <div class="row g-3 mt-2">
-    <div class="col-md-6">
-      <div class="card">
-        <div class="card-header">Request</div>
-        <div class="card-body"><pre id="request-view" class="mb-0">{}</pre></div>
+<div class="card shadow-sm">
+  <div class="card-body d-flex flex-column gap-3">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label" for="acs-ip">IP dispositivo</label>
+        <input class="form-control" id="acs-ip" placeholder="192.168.1.10" value="192.168.1.10" />
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="acs-count">Count</label>
+        <input class="form-control" id="acs-count" type="number" min="1" max="5" value="1" />
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="acs-timeout">Timeout (s)</label>
+        <input class="form-control" id="acs-timeout" type="number" min="1" max="10" step="1" value="1" />
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-outline-primary w-100" id="acs-ping-btn">Ping</button>
+      </div>
+      <div class="col-md-2">
+        <span id="acs-ping-state" class="badge text-bg-secondary">Sin validar</span>
       </div>
     </div>
-    <div class="col-md-6">
-      <div class="card">
-        <div class="card-header">Response</div>
-        <div class="card-body"><pre id="response-view" class="mb-0">{}</pre></div>
+
+    <div class="row g-2 align-items-end">
+      <div class="col-md-10">
+        <label class="form-label" for="acs-command">Comando</label>
+        <input class="form-control" id="acs-command" placeholder="GET_STATUS" />
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-primary w-100" id="acs-send-btn" disabled>Enviar comando</button>
       </div>
     </div>
+
+    <div class="alert alert-light border" id="acs-log" style="white-space: pre-wrap;">Esperando acción...</div>
   </div>
 </div>
-{{ command_catalog|json_script:"api3000-command-catalog" }}
 {% endblock content %}
 
 {% block extra_js %}
-<script src="{% static 'common/js/api3000_test_console.js' %}"></script>
+<script>
+(() => {
+  const pingBtn = document.getElementById("acs-ping-btn");
+  const sendBtn = document.getElementById("acs-send-btn");
+  const pingStateEl = document.getElementById("acs-ping-state");
+  const logEl = document.getElementById("acs-log");
+  const ipEl = document.getElementById("acs-ip");
+  const countEl = document.getElementById("acs-count");
+  const timeoutEl = document.getElementById("acs-timeout");
+  const commandEl = document.getElementById("acs-command");
+
+  let lastPing = null;
+
+  function canSendCommand() {
+    if (!lastPing || !lastPing.reachable || !lastPing.checkedAt) {
+      return false;
+    }
+    return (Date.now() - lastPing.checkedAt) <= 30_000;
+  }
+
+  function refreshSendState() {
+    sendBtn.disabled = !canSendCommand();
+  }
+
+  function updatePingIndicator(reachable) {
+    pingStateEl.className = "badge";
+    if (reachable) {
+      pingStateEl.classList.add("text-bg-success");
+      pingStateEl.textContent = "OK";
+    } else {
+      pingStateEl.classList.add("text-bg-danger");
+      pingStateEl.textContent = "FAIL";
+    }
+  }
+
+  function appendLog(title, payload) {
+    logEl.textContent = `${new Date().toLocaleString()} · ${title}\n${JSON.stringify(payload, null, 2)}`;
+  }
+
+  async function callJson(url, body) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "Error de red");
+    }
+    return data;
+  }
+
+  pingBtn.addEventListener("click", async () => {
+    try {
+      const payload = {
+        ip: ipEl.value.trim(),
+        count: Number(countEl.value || 1),
+        timeout: Number(timeoutEl.value || 1),
+      };
+      const result = await callJson("/api/acs/test/ping/", payload);
+      lastPing = { ...result, checkedAt: Date.now(), ip: payload.ip, timeout: payload.timeout };
+      updatePingIndicator(!!result.reachable);
+      appendLog("Resultado ping", result);
+    } catch (err) {
+      lastPing = { reachable: false, checkedAt: Date.now() };
+      updatePingIndicator(false);
+      appendLog("Error ping", { detail: err.message });
+    } finally {
+      refreshSendState();
+    }
+  });
+
+  sendBtn.addEventListener("click", async () => {
+    if (!canSendCommand()) {
+      const proceed = window.confirm("No hay ping exitoso en los últimos 30 segundos. ¿Desea continuar?");
+      if (!proceed) {
+        return;
+      }
+    }
+
+    try {
+      const payload = {
+        ip: ipEl.value.trim(),
+        timeout: Number(timeoutEl.value || 1),
+        command: commandEl.value.trim(),
+      };
+      const result = await callJson("/api/acs/test/command/", payload);
+      appendLog("Comando enviado", result);
+    } catch (err) {
+      appendLog("Error envío comando", { detail: err.message });
+    }
+  });
+
+  setInterval(refreshSendState, 1000);
+})();
+</script>
 {% endblock extra_js %}

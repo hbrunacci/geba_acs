@@ -21,6 +21,8 @@ from access_control.api.v1.api_views import (
     WhitelistBatchCreateAPI,
 )
 from access_control.views import (
+    ACSTestCommandView,
+    ACSTestPingView,
     AccessByCategoryReportView,
     AccessBySiteReportView,
     AccessEventViewSet,
@@ -37,6 +39,9 @@ router.register(r"whitelist", WhitelistEntryViewSet)
 router.register(r"access-events", AccessEventViewSet)
 
 urlpatterns = router.urls + [
+
+    path("acs/test/ping/", ACSTestPingView.as_view(), name="acs_test_ping_api"),
+    path("acs/test/command/", ACSTestCommandView.as_view(), name="acs_test_command_api"),
 
     path("api3000/catalog/", Api3000CommandCatalogAPI.as_view(), name="api3000_catalog_api"),
     path("api3000/ping/", Api3000PingAPI.as_view(), name="api3000_ping_api"),
