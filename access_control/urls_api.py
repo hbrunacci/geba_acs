@@ -20,6 +20,7 @@ from access_control.api.v1.api_views import (
     ExternalAccessLogSyncAPI,
     WhitelistBatchCreateAPI,
 )
+from access_control.api.v1.intelectron_api_views import Api3000CommandAPI, Api3000PingAPI
 from access_control.views import (
     ACSTestCommandView,
     ACSTestPingView,
@@ -40,6 +41,8 @@ router.register(r"access-events", AccessEventViewSet)
 
 urlpatterns = router.urls + [
 
+    path("acs/test/ping/", Api3000PingAPI.as_view(), name="acs_test_ping_api"),
+    path("acs/test/command/", Api3000CommandAPI.as_view(), name="acs_test_command_api"),
     path("acs/test/ping/", ACSTestPingView.as_view(), name="acs_test_ping_api"),
     path("acs/test/command/", ACSTestCommandView.as_view(), name="acs_test_command_api"),
 
