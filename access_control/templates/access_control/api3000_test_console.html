@@ -1,0 +1,70 @@
+{% extends "common/base.html" %}
+{% load static %}
+
+{% block page_title %}API3000 Test Console{% endblock page_title %}
+{% block header_title %}API3000 Test Console{% endblock header_title %}
+{% block header_subtitle %}Diagnóstico de comandos sobre hardware real.{% endblock header_subtitle %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <form id="api3000-form" class="row g-3">
+        <div class="col-md-3">
+          <label class="form-label" for="ip">IP</label>
+          <input class="form-control" id="ip" name="ip" placeholder="192.168.0.10" required />
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="port">Puerto</label>
+          <input class="form-control" id="port" name="port" type="number" value="3001" required />
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="source_node">Source node</label>
+          <input class="form-control" id="source_node" name="source_node" type="number" value="1" required />
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="dest_node">Dest node</label>
+          <input class="form-control" id="dest_node" name="dest_node" type="number" value="1" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="command">Comando</label>
+          <select class="form-select" id="command" name="command" required></select>
+        </div>
+
+        <div class="col-12">
+          <div class="border rounded p-3 bg-light-subtle">
+            <h6 class="mb-3">Parámetros dinámicos</h6>
+            <div id="command-params" class="row g-3"></div>
+          </div>
+        </div>
+
+        <div class="col-12 d-flex gap-2">
+          <button type="button" id="ping-btn" class="btn btn-outline-secondary">Ping endpoint</button>
+          <button type="submit" class="btn btn-primary">Enviar comando</button>
+        </div>
+      </form>
+      <div id="form-errors" class="alert alert-danger mt-3 d-none"></div>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-2">
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header">Request</div>
+        <div class="card-body"><pre id="request-view" class="mb-0">{}</pre></div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header">Response</div>
+        <div class="card-body"><pre id="response-view" class="mb-0">{}</pre></div>
+      </div>
+    </div>
+  </div>
+</div>
+{{ command_catalog|json_script:"api3000-command-catalog" }}
+{% endblock content %}
+
+{% block extra_js %}
+<script src="{% static 'common/js/api3000_test_console.js' %}"></script>
+{% endblock extra_js %}
