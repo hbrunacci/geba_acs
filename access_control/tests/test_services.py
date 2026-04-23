@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
@@ -18,6 +18,7 @@ from access_control.services.intelectron.api3000_service import (
     Api3000Service,
 )
 from access_control.services.intelectron.api3000_wrapper.api3000 import ITKDateTime, ITKMarkInfo, ITKUserInfo
+from access_control.services.intelectron.api3000_wrapper.api3000.client import Api3000Client
 
 
 class ExternalAccessLogServiceTestCase(SimpleTestCase):
@@ -323,3 +324,31 @@ class Api3000ServiceTestCase(SimpleTestCase):
         self.assertEqual(result[1]["user_id"], "USR11")
         self.assertEqual(result[2]["access_id"], 77)
         self.assertIsInstance(result[2]["date_time"], dict)
+
+
+class Api3000ClientInitToleranceTestCase(SimpleTestCase):
+    @patch("access_control.services.intelectron.api3000_wrapper.api3000.client.NativeLibrary")
+    def test_init_library_tolerates_already_initialized(self, native_cls):
+        native = MagicMock()
+        native.cdll.itk_init.return_value = 1031
+        native_cls.return_value = native
+
+        client = Api3000Client(conn_string=None)
+        client.init_library()
+
+        self.assertTrue(client._initialized)
+        native.cdll.itk_init.assert_called_once()
+
+    @patch("access_control.services.intelectron.api3000_wrapper.api3000.client.NativeLibrary")
+    def test_uninit_library_tolerates_not_initialized(self, native_cls):
+        native = MagicMock()
+        native.cdll.itk_init.return_value = 1
+        native.cdll.itk_uninit.return_value = 1034
+        native_cls.return_value = native
+
+        client = Api3000Client(conn_string=None)
+        client.init_library()
+        client.uninit_library()
+
+        self.assertFalse(client._initialized)
+        native.cdll.itk_uninit.assert_called_once()

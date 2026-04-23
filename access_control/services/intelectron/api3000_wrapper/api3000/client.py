@@ -69,6 +69,9 @@ class Api3000Client:
             self.log_path.encode("latin-1", errors="ignore"),
             self.log_level,
         )
+        if int(code) == 1031:
+            self._initialized = True
+            return
         ensure_ok(code, "itk_init")
         self._initialized = True
 
@@ -78,6 +81,9 @@ class Api3000Client:
             return
 
         code = self._native.cdll.itk_uninit()
+        if int(code) == 1034:
+            self._initialized = False
+            return
         ensure_ok(code, "itk_uninit")
         self._initialized = False
 
