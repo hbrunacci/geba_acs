@@ -17,6 +17,7 @@ from access_control.api.v1.api_views import (
     ExternalAccessLogSyncAPI,
     WhitelistBatchCreateAPI,
 )
+from access_control.api.v1.intelectron_api_views import Api3000CommandAPI, Api3000PingAPI
 from access_control.views import (
     AccessByCategoryReportView,
     AccessBySiteReportView,
@@ -35,6 +36,8 @@ router.register(r"access-events", AccessEventViewSet)
 
 urlpatterns = router.urls + [
 
+    path("acs/test/ping/", Api3000PingAPI.as_view(), name="acs_test_ping_api"),
+    path("acs/test/command/", Api3000CommandAPI.as_view(), name="acs_test_command_api"),
     path("parking/client-lookup/", ParkingClienteLookupView.as_view(), name="parking_client_lookup"),
     path("parking/movements/", ParkingMovementView.as_view(), name="parking_movements_api"),
     path("parking/movements/<int:movement_id>/mark-exit/", ParkingMovementMarkExitView.as_view(), name="parking_movement_mark_exit_api"),

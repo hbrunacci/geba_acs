@@ -13,6 +13,11 @@ from rest_framework.test import APITestCase
 from access_control.models import AnsesVerificationRecord, ExternalAccessLogEntry, ParkingMovement
 from access_control.models.models import AccessEvent
 from access_control.api.v1 import api_views
+from access_control.services.intelectron.api3000_service import (
+    Api3000CommandError,
+    Api3000ConnectionError,
+    Api3000GatewayError,
+)
 from people.models import Cliente, GuestType, PersonType
 
 
@@ -270,6 +275,60 @@ class ExternalAccessLogAPITestCase(BaseAPITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 2)
+
+
+class Api3000TestAPITestCase(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.ping_url = reverse("acs_test_ping_api")
+        self.command_url = reverse("acs_test_command_api")
+        self.authenticate()
+
+    @patch("access_control.api.v1.intelectron_api_views.Api3000Service")
+    def test_ping_success(self, service_cls):
+        service_cls.return_value.ping.return_value = {
+            "status": "ok",
+            "conn_string": "192.168.0.10:3001",
+            "dest_node": 1,
+            "device_time": {"hour": 10},
+        }
+
+        response = self.client.post(self.ping_url, {"ip": "192.168.0.10"}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "ok")
+
+    @patch("access_control.api.v1.intelectron_api_views.Api3000Service")
+    def test_ping_connection_error(self, service_cls):
+        service_cls.return_value.ping.side_effect = Api3000ConnectionError("timeout")
+
+        response = self.client.post(self.ping_url, {"ip": "192.168.0.10"}, format="json")
+
+        self.assertEqual(response.status_code, 504)
+
+    @patch("access_control.api.v1.intelectron_api_views.Api3000Service")
+    def test_command_disallows_unwhitelisted(self, service_cls):
+        service_cls.return_value.execute_command.side_effect = Api3000CommandError("no permitido")
+
+        response = self.client.post(
+            self.command_url,
+            {"ip": "192.168.0.10", "command": "eval", "params": {}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("access_control.api.v1.intelectron_api_views.Api3000Service")
+    def test_command_native_error(self, service_cls):
+        service_cls.return_value.execute_command.side_effect = Api3000GatewayError("error nativo")
+
+        response = self.client.post(
+            self.command_url,
+            {"ip": "192.168.0.10", "command": "get_time"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 502)
 
 
 class AccessReportsAPITestCase(BaseAPITestCase):
