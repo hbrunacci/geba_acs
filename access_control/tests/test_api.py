@@ -690,3 +690,54 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["processed"], 2)
         self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["status"], "completed")
         del api_views.ANSES_BACKGROUND_JOBS[job_id]
+
+
+class ACSTestConsoleAPITestCase(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.authenticate()
+
+    @patch("access_control.views.subprocess.run")
+    def test_ping_endpoint_returns_uniform_payload(self, run_mock):
+        run_mock.return_value.returncode = 0
+        run_mock.return_value.stdout = "64 bytes from 192.168.1.10: icmp_seq=1 ttl=64 time=2.3 ms"
+        run_mock.return_value.stderr = ""
+
+        response = self.client.post(
+            reverse("acs_test_ping_api"),
+            {"ip": "192.168.1.10", "count": 1, "timeout": 1},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["reachable"], True)
+        self.assertEqual(response.data["latency_ms"], 2.3)
+        self.assertIn("time=2.3", response.data["raw_summary"])
+
+    def test_ping_endpoint_rejects_invalid_ip(self):
+        response = self.client.post(
+            reverse("acs_test_ping_api"),
+            {"ip": "invalid-ip", "count": 1, "timeout": 1},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("ip", response.data["detail"].lower())
+
+    @patch("access_control.views._run_safe_ping")
+    def test_command_endpoint_requires_reachable_ping(self, ping_mock):
+        ping_mock.return_value = {
+            "reachable": False,
+            "latency_ms": None,
+            "raw_summary": "timeout",
+        }
+
+        response = self.client.post(
+            reverse("acs_test_command_api"),
+            {"ip": "192.168.1.10", "timeout": 1, "command": "GET_STATUS"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["accepted"], False)
+        self.assertEqual(response.data["ping"]["reachable"], False)
