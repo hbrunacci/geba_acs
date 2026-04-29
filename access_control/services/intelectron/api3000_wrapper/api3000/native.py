@@ -29,6 +29,7 @@ from .structs import (
 DEFAULT_ENV_VAR: Final[str] = "API3000_LIB_PATH"
 LINUX_LIB_FILENAME: Final[str] = "libitkcom.so.0.0.0"
 WINDOWS_LIB_FILENAME: Final[str] = "itkcom.dll"
+WINDOWS_ALT_LIB_FILENAME: Final[str] = "libitkcom.dll"
 
 
 def resolve_library_path(explicit_path: str | None = None) -> str:
@@ -62,8 +63,9 @@ def resolve_library_candidates(explicit_path: str | None = None) -> list[str]:
     if explicit_path is not None:
         return fallback_candidates
 
-    if primary_candidate != WINDOWS_LIB_FILENAME:
-        fallback_candidates.append(WINDOWS_LIB_FILENAME)
+    for windows_candidate in (WINDOWS_ALT_LIB_FILENAME, WINDOWS_LIB_FILENAME):
+        if primary_candidate != windows_candidate:
+            fallback_candidates.append(windows_candidate)
 
     return fallback_candidates
 
