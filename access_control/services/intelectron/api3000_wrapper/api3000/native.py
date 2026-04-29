@@ -27,7 +27,8 @@ from .structs import (
 )
 
 DEFAULT_ENV_VAR: Final[str] = "API3000_LIB_PATH"
-LIB_FILENAME: Final[str] = "libitkcom.so.0.0.0"
+LINUX_LIB_FILENAME: Final[str] = "libitkcom.so.0.0.0"
+WINDOWS_LIB_FILENAME: Final[str] = "itkcom.dll"
 
 
 def resolve_library_path(explicit_path: str | None = None) -> str:
@@ -46,24 +47,47 @@ def resolve_library_path(explicit_path: str | None = None) -> str:
     if env_path:
         return env_path
 
-    bundled_candidate = Path(__file__).resolve().parent.parent / LIB_FILENAME
+    bundled_candidate = Path(__file__).resolve().parent.parent / LINUX_LIB_FILENAME
     if bundled_candidate.exists():
         return str(bundled_candidate)
 
-    return LIB_FILENAME
+    return LINUX_LIB_FILENAME
+
+
+def resolve_library_candidates(explicit_path: str | None = None) -> list[str]:
+    """Devuelve rutas candidatas para cargar la librería nativa."""
+    primary_candidate = resolve_library_path(explicit_path)
+    fallback_candidates = [primary_candidate]
+
+    if explicit_path is not None:
+        return fallback_candidates
+
+    if primary_candidate != WINDOWS_LIB_FILENAME:
+        fallback_candidates.append(WINDOWS_LIB_FILENAME)
+
+    return fallback_candidates
 
 
 class NativeLibrary:
     """Encapsula la carga de `libitkcom` y define firmas conocidas."""
 
     def __init__(self, lib_path: str | None = None) -> None:
-        self.lib_path = resolve_library_path(lib_path)
-        try:
-            self._cdll = CDLL(self.lib_path)
-        except OSError as exc:
+        errors: list[str] = []
+        candidates = resolve_library_candidates(lib_path)
+
+        for candidate in candidates:
+            try:
+                self._cdll = CDLL(candidate)
+                self.lib_path = candidate
+                break
+            except OSError as exc:
+                errors.append(f"{candidate}: {exc}")
+        else:
+            attempted = "; ".join(errors)
             raise Api3000Error(
-                f"No se pudo cargar la libreria nativa '{self.lib_path}': {exc}"
-            ) from exc
+                f"No se pudo cargar la libreria nativa. Intentos: {attempted}"
+            )
+
         self._configure_signatures()
 
     @property
