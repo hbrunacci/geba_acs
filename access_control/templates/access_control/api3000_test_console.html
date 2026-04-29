@@ -1,0 +1,70 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Consola API3000{% endblock page_title %}
+{% block header_title %}Consola de prueba API3000{% endblock header_title %}
+{% block header_subtitle %}Pruebe funciones del wrapper y valide conectividad al molinete.{% endblock header_subtitle %}
+
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-body d-flex flex-column gap-3">
+    <div class="alert alert-warning py-2 mb-1">
+      1) Configure IP/puerto/nodo destino. 2) Ejecute <strong>Ping</strong>. 3) Dispare cualquier función y verá la respuesta cruda.
+    </div>
+
+    <div id="form-errors" class="alert alert-danger d-none" role="alert"></div>
+
+    <form id="api3000-form" class="d-flex flex-column gap-3">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label" for="ip">IP del molinete *</label>
+          <input class="form-control" id="ip" name="ip" value="192.168.1.10" required>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="port">Puerto *</label>
+          <input class="form-control" id="port" name="port" type="number" min="1" max="65535" value="3001" required>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="source_node">Source node *</label>
+          <input class="form-control" id="source_node" name="source_node" type="number" min="1" value="255" required>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="dest_node">Dest node</label>
+          <input class="form-control" id="dest_node" name="dest_node" type="number" min="1" value="1">
+        </div>
+        <div class="col-md-2">
+          <button type="button" class="btn btn-outline-primary w-100" id="ping-btn">Ping</button>
+        </div>
+      </div>
+
+      <div class="row g-2 align-items-end">
+        <div class="col-md-6">
+          <label class="form-label" for="command">Función del wrapper</label>
+          <select class="form-select" id="command" name="command"></select>
+        </div>
+        <div class="col-md-6 d-grid">
+          <button class="btn btn-primary" type="submit">Ejecutar función</button>
+        </div>
+      </div>
+
+      <div id="command-params" class="row g-2"></div>
+    </form>
+
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Request</label>
+        <pre id="request-view" class="bg-light border rounded p-2 mb-0" style="min-height: 260px; white-space: pre-wrap;"></pre>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Response</label>
+        <pre id="response-view" class="bg-dark text-light border rounded p-2 mb-0" style="min-height: 260px; white-space: pre-wrap;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ command_catalog|json_script:"api3000-command-catalog" }}
+{% endblock content %}
+
+{% block extra_js %}
+<script src="/static/common/js/api3000_test_console.js"></script>
+{% endblock extra_js %}

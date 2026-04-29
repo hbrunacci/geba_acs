@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
@@ -13,6 +13,12 @@ from access_control.services import (
     ExternalAccessLogService,
     ExternalAccessLogSynchronizer,
 )
+from access_control.services.intelectron.api3000_service import (
+    Api3000CommandError,
+    Api3000Service,
+)
+from access_control.services.intelectron.api3000_wrapper.api3000 import ITKDateTime, ITKMarkInfo, ITKUserInfo
+from access_control.services.intelectron.api3000_wrapper.api3000.client import Api3000Client
 
 
 class ExternalAccessLogServiceTestCase(SimpleTestCase):
@@ -258,6 +264,7 @@ class AnsesVerificationServiceTestCase(SimpleTestCase):
             "DRIVER": "{ODBC Driver 18 for SQL Server}",
         }
 
+
     def _install_pyodbc_stub(self, connect_mock: MagicMock) -> None:
         from access_control.services import anses_verification_service
 
@@ -282,3 +289,66 @@ class AnsesVerificationServiceTestCase(SimpleTestCase):
         self.assertIn("ct.Descripcion LIKE '%vitalicio%'", executed_query)
         self.assertIn("BETWEEN ? AND ?", executed_query)
         self.assertIn("OFFSET ? ROWS FETCH NEXT ? ROWS ONLY", executed_query)
+
+
+class Api3000ServiceTestCase(SimpleTestCase):
+    def test_execute_command_rejects_non_whitelisted_command(self):
+        service = Api3000Service()
+
+        with self.assertRaises(Api3000CommandError):
+            service.execute_command(
+                ip="192.168.0.10",
+                port=3001,
+                dest_node=1,
+                command="__import__('os').system",
+                params={},
+            )
+
+    def test_serialize_known_structs_to_plain_json(self):
+        user = ITKUserInfo()
+        user.access_id = 11
+        user.set_user_id("USR11")
+        user.set_user_name("Juan Test")
+        user.set_user_msg("Hola")
+
+        dt = ITKDateTime(hour=12, minute=34, seconds=56, year=24, month=5, day=6, dayofweek=1)
+
+        mark = ITKMarkInfo()
+        mark.access_id = 77
+        mark.date_time = dt
+
+        result = Api3000Service.serialize([dt, user, mark])
+
+        self.assertEqual(result[0]["hour"], 12)
+        self.assertEqual(result[1]["access_id"], 11)
+        self.assertEqual(result[1]["user_id"], "USR11")
+        self.assertEqual(result[2]["access_id"], 77)
+        self.assertIsInstance(result[2]["date_time"], dict)
+
+
+class Api3000ClientInitToleranceTestCase(SimpleTestCase):
+    @patch("access_control.services.intelectron.api3000_wrapper.api3000.client.NativeLibrary")
+    def test_init_library_tolerates_already_initialized(self, native_cls):
+        native = MagicMock()
+        native.cdll.itk_init.return_value = 1031
+        native_cls.return_value = native
+
+        client = Api3000Client(conn_string=None)
+        client.init_library()
+
+        self.assertTrue(client._initialized)
+        native.cdll.itk_init.assert_called_once()
+
+    @patch("access_control.services.intelectron.api3000_wrapper.api3000.client.NativeLibrary")
+    def test_uninit_library_tolerates_not_initialized(self, native_cls):
+        native = MagicMock()
+        native.cdll.itk_init.return_value = 1
+        native.cdll.itk_uninit.return_value = 1034
+        native_cls.return_value = native
+
+        client = Api3000Client(conn_string=None)
+        client.init_library()
+        client.uninit_library()
+
+        self.assertFalse(client._initialized)
+        native.cdll.itk_uninit.assert_called_once()

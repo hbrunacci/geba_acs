@@ -70,6 +70,9 @@
           <li class="nav__item{% if current_url == 'anses_verification_console' %} nav__item--active{% endif %}">
             <a href="{% url 'anses_verification_console' %}">Verificar situacion anses</a>
           </li>
+          <li class="nav__item{% if current_url == 'api3000_test_console' %} nav__item--active{% endif %}">
+            <a href="{% url 'api3000_test_console' %}">Consola API3000</a>
+          </li>
         </ul>
         {% endwith %}
         {% endblock sidebar %}
