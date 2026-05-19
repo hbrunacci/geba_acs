@@ -164,11 +164,10 @@ def _apply_candidate_filters(
         id_cliente = item.get("id_cliente")
         record = records_map.get(id_cliente) if id_cliente is not None else None
         consulted = record is not None
-        if (
-            exclude_consulted
-            and consulted
-            and record.verification_status == AnsesVerificationRecord.VerificationStatus.GENERATED
-        ):
+        if exclude_consulted and consulted and record.verification_status in {
+            AnsesVerificationRecord.VerificationStatus.GENERATED,
+            AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
+        }:
             continue
         if verification_status and verification_status != "all":
             record_status = record.verification_status if record else ""
@@ -727,6 +726,29 @@ class AnsesVerifyAPI(views.APIView):
                     doc_nro = int(item["doc_nro"])
                     pairs.append((id_cliente, doc_nro))
                     candidates_map[id_cliente] = item
+                protected_statuses = {
+                    AnsesVerificationRecord.VerificationStatus.GENERATED,
+                    AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
+                }
+                existing_statuses = {
+                    record.id_cliente: record.verification_status
+                    for record in AnsesVerificationRecord.objects.filter(
+                        requested_by=request.user,
+                        id_cliente__in=[id_cliente for id_cliente, _ in pairs],
+                    )
+                }
+                pairs = [pair for pair in pairs if existing_statuses.get(pair[0]) not in protected_statuses]
+                candidates_map = {id_cliente: candidates_map[id_cliente] for id_cliente, _ in pairs}
+                if not pairs:
+                    return Response(
+                        {
+                            "detail": (
+                                "Todos los socios seleccionados ya tienen estado 'Constancia generada' "
+                                "u 'Oficina ANSES' y no se vuelven a validar."
+                            )
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
                 dnis = [pair[1] for pair in pairs]
             else:
                 pairs = []
