@@ -535,6 +535,35 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         self.export_url = reverse("anses_processed_export_api")
         self.verify_url = reverse("anses_verify_api")
 
+    def test_apply_candidate_filters_excludes_only_generated_when_exclude_consulted(self):
+        generated_record = AnsesVerificationRecord(
+            id_cliente=1,
+            dni=30111111,
+            verification_status=AnsesVerificationRecord.VerificationStatus.GENERATED,
+            verification_message="constancia generada.",
+        )
+        office_required_record = AnsesVerificationRecord(
+            id_cliente=2,
+            dni=30222222,
+            verification_status=AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
+            verification_message="acercate a oficina.",
+        )
+        items = [
+            {"id_cliente": 1, "doc_nro": 30111111},
+            {"id_cliente": 2, "doc_nro": 30222222},
+            {"id_cliente": 3, "doc_nro": 30333333},
+        ]
+        records_map = {1: generated_record, 2: office_required_record}
+
+        filtered = api_views._apply_candidate_filters(
+            items=items,
+            records_map=records_map,
+            exclude_consulted=True,
+            verification_status="all",
+        )
+
+        self.assertEqual([item["id_cliente"] for item in filtered], [2, 3])
+
     @patch("access_control.api.v1.api_views.AnsesVerificationService")
     def test_candidates_pagination_with_age_range(self, service_cls):
         service = service_cls.return_value
