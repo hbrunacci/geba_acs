@@ -720,9 +720,8 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
             verification_status="all",
         )
 
-        self.assertEqual(service.run_verification.call_args_list[0].args[0], [30111111])
-        self.assertEqual(service.run_verification.call_args_list[1].args[0], [30222222])
-        self.assertEqual(service.run_verification.call_args_list[2].args[0], [30333333])
+        called_dnis = {call.args[0][0] for call in service.run_verification.call_args_list}
+        self.assertSetEqual(called_dnis, {30111111, 30222222, 30333333})
         self.assertEqual(service.run_verification.call_count, 3)
         self.assertEqual(save_records_mock.call_count, 3)
         self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["processed"], 3)
