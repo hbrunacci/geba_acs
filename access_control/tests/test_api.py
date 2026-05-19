@@ -535,7 +535,7 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         self.export_url = reverse("anses_processed_export_api")
         self.verify_url = reverse("anses_verify_api")
 
-    def test_apply_candidate_filters_excludes_only_generated_when_exclude_consulted(self):
+    def test_apply_candidate_filters_excludes_generated_and_office_required_when_exclude_consulted(self):
         generated_record = AnsesVerificationRecord(
             id_cliente=1,
             dni=30111111,
@@ -562,7 +562,43 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
             verification_status="all",
         )
 
-        self.assertEqual([item["id_cliente"] for item in filtered], [2, 3])
+        self.assertEqual([item["id_cliente"] for item in filtered], [3])
+
+    @patch("access_control.api.v1.api_views.AnsesVerificationService")
+    def test_verify_clients_skips_generated_and_office_required(self, service_cls):
+        service_cls.return_value.run_verification.return_value = {"returncode": 0}
+        AnsesVerificationRecord.objects.create(
+            requested_by=self.user,
+            id_cliente=201,
+            dni=30111222,
+            verification_status=AnsesVerificationRecord.VerificationStatus.GENERATED,
+            verification_message="constancia generada.",
+        )
+        AnsesVerificationRecord.objects.create(
+            requested_by=self.user,
+            id_cliente=202,
+            dni=30111333,
+            verification_status=AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
+            verification_message="acercate a oficina.",
+        )
+        payload = {
+            "clients": [
+                {"id_cliente": 201, "doc_nro": 30111222},
+                {"id_cliente": 202, "doc_nro": 30111333},
+                {"id_cliente": 203, "doc_nro": 30111444},
+            ],
+            "headless": True,
+            "no_download": True,
+        }
+
+        response = self.client.post(self.verify_url, payload, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        service_cls.return_value.run_verification.assert_called_once_with(
+            [30111444],
+            headless=True,
+            no_download=True,
+        )
 
     @patch("access_control.api.v1.api_views.AnsesVerificationService")
     def test_candidates_pagination_with_age_range(self, service_cls):

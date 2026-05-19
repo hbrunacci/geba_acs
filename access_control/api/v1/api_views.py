@@ -11,7 +11,7 @@ from io import BytesIO
 from xml.sax.saxutils import escape
 
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import close_old_connections, transaction
 from django.db.models import Q
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse
@@ -59,6 +59,7 @@ ANSES_RESULT_PATTERN = re.compile(r"^(?:OK|ERROR) DNI (?P<dni>\d+): (?P<message>
 
 ANSES_BACKGROUND_JOBS: dict[str, dict] = {}
 ANSES_BACKGROUND_LOCK = threading.Lock()
+ANSES_DB_WRITE_LOCK = threading.Lock()
 
 
 def _map_anses_status(message: str) -> str:
@@ -163,11 +164,10 @@ def _apply_candidate_filters(
         id_cliente = item.get("id_cliente")
         record = records_map.get(id_cliente) if id_cliente is not None else None
         consulted = record is not None
-        if (
-            exclude_consulted
-            and consulted
-            and record.verification_status == AnsesVerificationRecord.VerificationStatus.GENERATED
-        ):
+        if exclude_consulted and consulted and record.verification_status in {
+            AnsesVerificationRecord.VerificationStatus.GENERATED,
+            AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
+        }:
             continue
         if verification_status and verification_status != "all":
             record_status = record.verification_status if record else ""
@@ -218,6 +218,7 @@ def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: in
                 ANSES_BACKGROUND_JOBS[job_id]["finished_at"] = timezone.now().isoformat()
             return
         def _process_pair(pair: tuple[int, int]) -> None:
+            close_old_connections()
             service = AnsesVerificationService()
             dnis = [pair[1]]
             try:
@@ -225,9 +226,11 @@ def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: in
                 stdout = result.get("stdout", "")
             except Exception as exc:
                 stdout = f"ERROR DNI {pair[1]}: {exc}"
-            _save_anses_records(user=user, pairs=[pair], stdout=stdout, candidates_map=candidates_map)
+            with ANSES_DB_WRITE_LOCK:
+                _save_anses_records(user=user, pairs=[pair], stdout=stdout, candidates_map=candidates_map)
             with ANSES_BACKGROUND_LOCK:
                 ANSES_BACKGROUND_JOBS[job_id]["processed"] += 1
+            close_old_connections()
 
         with ThreadPoolExecutor(max_workers=3) as executor:
             list(executor.map(_process_pair, pairs))
@@ -723,6 +726,29 @@ class AnsesVerifyAPI(views.APIView):
                     doc_nro = int(item["doc_nro"])
                     pairs.append((id_cliente, doc_nro))
                     candidates_map[id_cliente] = item
+                protected_statuses = {
+                    AnsesVerificationRecord.VerificationStatus.GENERATED,
+                    AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
+                }
+                existing_statuses = {
+                    record.id_cliente: record.verification_status
+                    for record in AnsesVerificationRecord.objects.filter(
+                        requested_by=request.user,
+                        id_cliente__in=[id_cliente for id_cliente, _ in pairs],
+                    )
+                }
+                pairs = [pair for pair in pairs if existing_statuses.get(pair[0]) not in protected_statuses]
+                candidates_map = {id_cliente: candidates_map[id_cliente] for id_cliente, _ in pairs}
+                if not pairs:
+                    return Response(
+                        {
+                            "detail": (
+                                "Todos los socios seleccionados ya tienen estado 'Constancia generada' "
+                                "u 'Oficina ANSES' y no se vuelven a validar."
+                            )
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
                 dnis = [pair[1] for pair in pairs]
             else:
                 pairs = []
