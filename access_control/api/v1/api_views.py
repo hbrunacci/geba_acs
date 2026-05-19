@@ -11,7 +11,7 @@ from io import BytesIO
 from xml.sax.saxutils import escape
 
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import close_old_connections, transaction
 from django.db.models import Q
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse
@@ -59,6 +59,7 @@ ANSES_RESULT_PATTERN = re.compile(r"^(?:OK|ERROR) DNI (?P<dni>\d+): (?P<message>
 
 ANSES_BACKGROUND_JOBS: dict[str, dict] = {}
 ANSES_BACKGROUND_LOCK = threading.Lock()
+ANSES_DB_WRITE_LOCK = threading.Lock()
 
 
 def _map_anses_status(message: str) -> str:
@@ -218,6 +219,7 @@ def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: in
                 ANSES_BACKGROUND_JOBS[job_id]["finished_at"] = timezone.now().isoformat()
             return
         def _process_pair(pair: tuple[int, int]) -> None:
+            close_old_connections()
             service = AnsesVerificationService()
             dnis = [pair[1]]
             try:
@@ -225,9 +227,11 @@ def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: in
                 stdout = result.get("stdout", "")
             except Exception as exc:
                 stdout = f"ERROR DNI {pair[1]}: {exc}"
-            _save_anses_records(user=user, pairs=[pair], stdout=stdout, candidates_map=candidates_map)
+            with ANSES_DB_WRITE_LOCK:
+                _save_anses_records(user=user, pairs=[pair], stdout=stdout, candidates_map=candidates_map)
             with ANSES_BACKGROUND_LOCK:
                 ANSES_BACKGROUND_JOBS[job_id]["processed"] += 1
+            close_old_connections()
 
         with ThreadPoolExecutor(max_workers=3) as executor:
             list(executor.map(_process_pair, pairs))
