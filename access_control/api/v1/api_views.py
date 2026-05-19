@@ -163,7 +163,11 @@ def _apply_candidate_filters(
         id_cliente = item.get("id_cliente")
         record = records_map.get(id_cliente) if id_cliente is not None else None
         consulted = record is not None
-        if exclude_consulted and consulted:
+        if (
+            exclude_consulted
+            and consulted
+            and record.verification_status == AnsesVerificationRecord.VerificationStatus.GENERATED
+        ):
             continue
         if verification_status and verification_status != "all":
             record_status = record.verification_status if record else ""
