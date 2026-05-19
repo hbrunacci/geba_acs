@@ -896,7 +896,8 @@ class AnsesProcessedExportAPI(views.APIView):
         clientes_map = Cliente.objects.in_bulk(record_ids, field_name="id_cliente")
 
         headers = [
-            "Numero",
+            "Cliente_id",
+            "DNI",
             "Apellido",
             "Nombre",
             "Fecha Nacimiento",
@@ -921,6 +922,7 @@ class AnsesProcessedExportAPI(views.APIView):
             rows.append(
                 [
                     str(record.id_cliente),
+                    str(record.dni or ""),
                     apellido,
                     nombre,
                     fecha_nac,
