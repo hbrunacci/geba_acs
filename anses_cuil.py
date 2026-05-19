@@ -515,41 +515,41 @@ def main() -> int:
 
     try:
         for person in people:
-            complete_form(driver, wait, person)
-            result = wait_for_result(driver, wait)
+            try:
+                complete_form(driver, wait, person)
+                result = wait_for_result(driver, wait)
 
-            if result == "error":
+                if result == "error":
+                    errors += 1
+                    print(f"ERROR DNI {person.doc_nro}: {ERROR_TEXT}")
+                    continue
+
+                print(f"OK DNI {person.doc_nro}: constancia generada.")
+                if not args.no_download:
+                    download_constancia(driver, wait)
+                    print(f"Descarga iniciada en: {args.download_dir.resolve()}")
+            except TimeoutException as exc:
                 errors += 1
-                print(f"ERROR DNI {person.doc_nro}: {ERROR_TEXT}")
-                continue
-
-            print(f"OK DNI {person.doc_nro}: constancia generada.")
-            if not args.no_download:
-                download_constancia(driver, wait)
-                print(f"Descarga iniciada en: {args.download_dir.resolve()}")
+                snapshot_path = args.download_dir / f"anses_timeout_snapshot_{person.doc_nro}.html"
+                try:
+                    args.download_dir.mkdir(parents=True, exist_ok=True)
+                    snapshot_path.write_text(driver.page_source, encoding="utf-8")
+                    extra = f" Se guardó snapshot HTML en: {snapshot_path.resolve()}"
+                except Exception:
+                    extra = ""
+                print(
+                    f"ERROR DNI {person.doc_nro}: Tiempo de espera agotado."
+                    f" URL actual: {driver.current_url}. Detalle: {exc}.{extra}"
+                )
+            except RuntimeError as exc:
+                errors += 1
+                print(f"ERROR DNI {person.doc_nro}: {exc}")
+            except Exception as exc:  # pragma: no cover
+                errors += 1
+                print(f"ERROR DNI {person.doc_nro}: Error inesperado: {exc}")
 
         print(f"Resultado final: {len(people) - errors}/{len(people)} exitosos.")
         return 0 if errors == 0 else 1
-
-    except TimeoutException as exc:
-        snapshot_path = args.download_dir / "anses_timeout_snapshot.html"
-        try:
-            args.download_dir.mkdir(parents=True, exist_ok=True)
-            snapshot_path.write_text(driver.page_source, encoding="utf-8")
-            extra = f" Se guardó snapshot HTML en: {snapshot_path.resolve()}"
-        except Exception:
-            extra = ""
-        print(
-            "ERROR: Tiempo de espera agotado."
-            f" URL actual: {driver.current_url}. Detalle: {exc}.{extra}"
-        )
-        return 2
-    except RuntimeError as exc:
-        print(f"ERROR: {exc}")
-        return 2
-    except Exception as exc:  # pragma: no cover
-        print(f"ERROR INESPERADO: {exc}")
-        return 3
     finally:
         driver.quit()
 
