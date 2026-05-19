@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import re
 import threading
-import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 import zipfile
 from datetime import datetime
 from io import BytesIO
@@ -217,8 +217,8 @@ def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: in
                 ANSES_BACKGROUND_JOBS[job_id]["status"] = "completed"
                 ANSES_BACKGROUND_JOBS[job_id]["finished_at"] = timezone.now().isoformat()
             return
-        service = AnsesVerificationService()
-        for index, pair in enumerate(pairs):
+        def _process_pair(pair: tuple[int, int]) -> None:
+            service = AnsesVerificationService()
             dnis = [pair[1]]
             try:
                 result = service.run_verification(dnis, headless=True, no_download=True)
@@ -228,8 +228,9 @@ def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: in
             _save_anses_records(user=user, pairs=[pair], stdout=stdout, candidates_map=candidates_map)
             with ANSES_BACKGROUND_LOCK:
                 ANSES_BACKGROUND_JOBS[job_id]["processed"] += 1
-            if index < len(pairs) - 1:
-                time.sleep(1)
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            list(executor.map(_process_pair, pairs))
         with ANSES_BACKGROUND_LOCK:
             ANSES_BACKGROUND_JOBS[job_id]["status"] = "completed"
             ANSES_BACKGROUND_JOBS[job_id]["finished_at"] = timezone.now().isoformat()
