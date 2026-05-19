@@ -317,7 +317,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--from-mssql",
         action="store_true",
-        help="Obtiene 10+ personas activas >90 años desde MSSQL y ejecuta ANSES.",
+        help="Obtiene personas activas desde MSSQL y ejecuta ANSES.",
     )
     parser.add_argument(
         "--mssql-limit",
@@ -377,7 +377,6 @@ def fetch_people_from_mssql(limit: int) -> list[PersonData]:
     WHERE Activo = 1
       AND Fecha_Nac IS NOT NULL
       AND Doc_Nro IS NOT NULL
-      AND DATEDIFF(YEAR, Fecha_Nac, CAST(GETDATE() AS date)) > 90
     ORDER BY Fecha_Nac ASC
     """
     try:
@@ -433,7 +432,6 @@ def fetch_people_by_dnis(dnis: list[int]) -> list[PersonData]:
     WHERE Activo = 1
       AND Fecha_Nac IS NOT NULL
       AND Doc_Nro IN ({placeholders})
-      AND DATEDIFF(YEAR, Fecha_Nac, CAST(GETDATE() AS date)) > 90
     ORDER BY Fecha_Nac ASC
     """
     try:
@@ -488,7 +486,7 @@ def main() -> int:
             print(f"ERROR: {exc}")
             return 2
         if not people:
-            print("No se encontraron personas activas de más de 90 años para los DNIs indicados.")
+            print("No se encontraron personas activas para los DNIs indicados.")
             return 1
     elif args.from_mssql:
         try:
@@ -497,7 +495,7 @@ def main() -> int:
             print(f"ERROR: {exc}")
             return 2
         if not people:
-            print("No se encontraron personas activas de más de 90 años.")
+            print("No se encontraron personas activas.")
             return 1
     else:
         people = [
