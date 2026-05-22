@@ -271,6 +271,7 @@ def resolve_with_busca_datos(driver: webdriver.Chrome, wait: WebDriverWait, dni:
     search_input = wait.until(EC.element_to_be_clickable((By.ID, "txtBusqueda")))
     search_input.clear()
     search_input.send_keys(str(dni))
+    sleep(1)
     try:
         search_input.click()
     except Exception:
@@ -363,6 +364,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         dest="dnis",
         help="DNI puntual a consultar. Repetir el flag para múltiples DNIs.",
+    )
+    parser.add_argument(
+        "--wait-manual-close",
+        action="store_true",
+        help="Espera Enter antes de cerrar el navegador para revisión manual.",
     )
     return parser.parse_args()
 
@@ -587,6 +593,11 @@ def main() -> int:
         print(f"Resultado final: {len(people) - errors}/{len(people)} exitosos.")
         return 0 if errors == 0 else 1
     finally:
+        if args.wait_manual_close:
+            try:
+                input("Presione Enter para cerrar el navegador...")
+            except EOFError:
+                pass
         driver.quit()
 
 
