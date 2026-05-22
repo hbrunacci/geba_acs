@@ -565,7 +565,7 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         self.assertEqual([item["id_cliente"] for item in filtered], [3])
 
     @patch("access_control.api.v1.api_views.AnsesVerificationService")
-    def test_verify_clients_skips_generated_and_office_required(self, service_cls):
+    def test_verify_clients_revalidates_even_if_already_processed(self, service_cls):
         service_cls.return_value.run_verification.return_value = {"returncode": 0}
         AnsesVerificationRecord.objects.create(
             requested_by=self.user,
@@ -595,7 +595,7 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
 
         self.assertEqual(response.status_code, 200)
         service_cls.return_value.run_verification.assert_called_once_with(
-            [30111444],
+            [30111222, 30111333, 30111444],
             headless=True,
             no_download=True,
         )

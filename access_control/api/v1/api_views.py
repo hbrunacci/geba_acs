@@ -55,6 +55,7 @@ from django.core.management import call_command
 
 ANSES_ERROR_MESSAGE = "ACERCATE A UNA OFICINA DE ANSES CON DOCUMENTACIÓN QUE ACREDITE IDENTIDAD"
 ANSES_SUCCESS_SNIPPET = "constancia generada."
+ANSES_DECEASED_SNIPPET = "fallecido"
 ANSES_RESULT_PATTERN = re.compile(r"^(?:OK|ERROR) DNI (?P<dni>\d+): (?P<message>.+)$", re.MULTILINE)
 
 ANSES_BACKGROUND_JOBS: dict[str, dict] = {}
@@ -68,6 +69,8 @@ def _map_anses_status(message: str) -> str:
         return AnsesVerificationRecord.VerificationStatus.GENERATED
     if ANSES_ERROR_MESSAGE.lower() in lowered:
         return AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED
+    if ANSES_DECEASED_SNIPPET in lowered:
+        return AnsesVerificationRecord.VerificationStatus.DECEASED
     return AnsesVerificationRecord.VerificationStatus.UNKNOWN
 
 
@@ -607,6 +610,7 @@ class AnsesCandidatesAPI(views.APIView):
             AnsesVerificationRecord.VerificationStatus.GENERATED,
             AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
             AnsesVerificationRecord.VerificationStatus.UNKNOWN,
+            AnsesVerificationRecord.VerificationStatus.DECEASED,
         }
         if verification_status not in allowed_status_filters:
             return Response(
@@ -726,29 +730,6 @@ class AnsesVerifyAPI(views.APIView):
                     doc_nro = int(item["doc_nro"])
                     pairs.append((id_cliente, doc_nro))
                     candidates_map[id_cliente] = item
-                protected_statuses = {
-                    AnsesVerificationRecord.VerificationStatus.GENERATED,
-                    AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
-                }
-                existing_statuses = {
-                    record.id_cliente: record.verification_status
-                    for record in AnsesVerificationRecord.objects.filter(
-                        requested_by=request.user,
-                        id_cliente__in=[id_cliente for id_cliente, _ in pairs],
-                    )
-                }
-                pairs = [pair for pair in pairs if existing_statuses.get(pair[0]) not in protected_statuses]
-                candidates_map = {id_cliente: candidates_map[id_cliente] for id_cliente, _ in pairs}
-                if not pairs:
-                    return Response(
-                        {
-                            "detail": (
-                                "Todos los socios seleccionados ya tienen estado 'Constancia generada' "
-                                "u 'Oficina ANSES' y no se vuelven a validar."
-                            )
-                        },
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
                 dnis = [pair[1] for pair in pairs]
             else:
                 pairs = []
@@ -801,6 +782,7 @@ class AnsesVerifyFilteredAPI(views.APIView):
             AnsesVerificationRecord.VerificationStatus.GENERATED,
             AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
             AnsesVerificationRecord.VerificationStatus.UNKNOWN,
+            AnsesVerificationRecord.VerificationStatus.DECEASED,
         }
         if verification_status not in allowed_status_filters:
             return Response(
