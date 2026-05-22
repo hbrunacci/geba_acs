@@ -235,6 +235,7 @@ class AnsesVerificationRecord(models.Model):
     class VerificationStatus(models.TextChoices):
         GENERATED = "generated", "Constancia generada"
         OFFICE_REQUIRED = "office_required", "Validar identidad en oficina ANSES"
+        DECEASED = "deceased", "Fallecido"
         UNKNOWN = "unknown", "Resultado no identificado"
 
     id_cliente = models.BigIntegerField()

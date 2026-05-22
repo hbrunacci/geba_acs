@@ -22,6 +22,7 @@ import os
 import sys
 from dataclasses import dataclass
 from datetime import date, datetime
+from time import sleep
 from pathlib import Path
 
 from selenium import webdriver
@@ -41,6 +42,8 @@ except ModuleNotFoundError:  # pragma: no cover
 URL = "https://servicioswww.anses.gob.ar/C2-ConstaCUIL"
 ERROR_TEXT = "ACERCATE A UNA OFICINA DE ANSES CON DOCUMENTACIÓN QUE ACREDITE IDENTIDAD"
 SUCCESS_TEXT = "DESCARGAR CONSTANCIA"
+BUSCA_DATOS_URL = "https://www.busca-datos.com.ar/"
+BUSCA_DATOS_NO_DATA_TEXT = "NO hay datos para ese DNI"
 VALIDATION_ERROR_TEXTS = (
     "completá este campo",
     "ingresá",
@@ -260,6 +263,35 @@ def wait_for_result(driver: webdriver.Chrome, wait: WebDriverWait) -> str:
         )
 
     raise TimeoutException("No se pudo determinar el resultado de la consulta.")
+
+
+def resolve_with_busca_datos(driver: webdriver.Chrome, wait: WebDriverWait, dni: int) -> str:
+    """Consulta busca-datos para clasificar un DNI cuando ANSES no devuelve constancia."""
+    driver.get(BUSCA_DATOS_URL)
+    search_input = wait.until(EC.element_to_be_clickable((By.ID, "txtBusqueda")))
+    search_input.clear()
+    search_input.send_keys(str(dni))
+    try:
+        search_input.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", search_input)
+    sleep(1)
+
+    page = driver.page_source.lower()
+    if BUSCA_DATOS_NO_DATA_TEXT.lower() in page:
+        return "error"
+    if "det-nombre-destacado" in page and "det-cruz" in page:
+        return "fallecido"
+    return "error"
+
+
+def report_non_success_with_fallback(driver: webdriver.Chrome, wait: WebDriverWait, dni: int) -> None:
+    """Ejecuta fallback y reporta el estado final para resultados no exitosos de ANSES."""
+    fallback_status = resolve_with_busca_datos(driver, wait, dni)
+    if fallback_status == "fallecido":
+        print(f"ERROR DNI {dni}: Fallecido")
+        return
+    print(f"ERROR DNI {dni}: {ERROR_TEXT}")
 
 
 def download_constancia(driver: webdriver.Chrome, wait: WebDriverWait) -> None:
@@ -521,7 +553,7 @@ def main() -> int:
 
                 if result == "error":
                     errors += 1
-                    print(f"ERROR DNI {person.doc_nro}: {ERROR_TEXT}")
+                    report_non_success_with_fallback(driver, wait, person.doc_nro)
                     continue
 
                 print(f"OK DNI {person.doc_nro}: constancia generada.")
@@ -541,12 +573,15 @@ def main() -> int:
                     f"ERROR DNI {person.doc_nro}: Tiempo de espera agotado."
                     f" URL actual: {driver.current_url}. Detalle: {exc}.{extra}"
                 )
+                report_non_success_with_fallback(driver, wait, person.doc_nro)
             except RuntimeError as exc:
                 errors += 1
-                print(f"ERROR DNI {person.doc_nro}: {exc}")
+                print(f"ERROR DNI {person.doc_nro}: {exc}. Ejecutando validación secundaria...")
+                report_non_success_with_fallback(driver, wait, person.doc_nro)
             except Exception as exc:  # pragma: no cover
                 errors += 1
-                print(f"ERROR DNI {person.doc_nro}: Error inesperado: {exc}")
+                print(f"ERROR DNI {person.doc_nro}: Error inesperado: {exc}. Ejecutando validación secundaria...")
+                report_non_success_with_fallback(driver, wait, person.doc_nro)
 
         print(f"Resultado final: {len(people) - errors}/{len(people)} exitosos.")
         return 0 if errors == 0 else 1
