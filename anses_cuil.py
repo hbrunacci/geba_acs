@@ -558,6 +558,7 @@ def main() -> int:
                 result = wait_for_result(driver, wait)
 
                 if result == "error":
+                    fallback_status = resolve_with_busca_datos(driver, wait, person.doc_nro)
                     errors += 1
                     report_non_success_with_fallback(driver, wait, person.doc_nro)
                     continue
