@@ -29,6 +29,7 @@
           <option value="pending">Pendiente</option>
           <option value="generated">Constancia generada</option>
           <option value="office_required">Ir a oficina ANSES</option>
+          <option value="deceased">Fallecido</option>
           <option value="unknown">Sin clasificar</option>
         </select>
       </div>
@@ -136,6 +137,9 @@
     }
     if (item.verification_status === "office_required") {
       return '<span class="badge bg-warning text-dark">Oficina ANSES</span>';
+    }
+    if (item.verification_status === "deceased") {
+      return '<span class="badge bg-dark">Fallecido</span>';
     }
     return '<span class="badge bg-secondary">Consultado</span>';
   }
