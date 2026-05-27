@@ -267,6 +267,7 @@ def wait_for_result(driver: webdriver.Chrome, wait: WebDriverWait) -> str:
 
 def resolve_with_busca_datos(driver: webdriver.Chrome, wait: WebDriverWait, dni: int) -> str:
     """Consulta busca-datos para clasificar un DNI cuando ANSES no devuelve constancia."""
+    print(f"[busca-datos] Iniciando validación para DNI {dni}...")
     driver.get(BUSCA_DATOS_URL)
     search_input = wait.until(EC.element_to_be_clickable((By.ID, "txtBusqueda")))
     search_input.clear()
@@ -280,9 +281,13 @@ def resolve_with_busca_datos(driver: webdriver.Chrome, wait: WebDriverWait, dni:
 
     page = driver.page_source.lower()
     if BUSCA_DATOS_NO_DATA_TEXT.lower() in page:
+        print(f"[busca-datos] DNI {dni}: sin datos en el sitio.")
         return "error"
     if "det-nombre-destacado" in page and "det-cruz" in page:
+        print(f"[busca-datos] DNI {dni}: resultado detectado = fallecido.")
         return "fallecido"
+
+    print(f"[busca-datos] DNI {dni}: resultado no concluyente (se considera 'error').")
     return "error"
 
 
