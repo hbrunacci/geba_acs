@@ -44,6 +44,7 @@ ERROR_TEXT = "ACERCATE A UNA OFICINA DE ANSES CON DOCUMENTACIÓN QUE ACREDITE ID
 SUCCESS_TEXT = "DESCARGAR CONSTANCIA"
 BUSCA_DATOS_URL = "https://www.busca-datos.com.ar/"
 BUSCA_DATOS_NO_DATA_TEXT = "NO hay datos para ese DNI"
+BUSCA_DATOS_LOG_PATH = Path.cwd() / "busca_datos.log"
 VALIDATION_ERROR_TEXTS = (
     "completá este campo",
     "ingresá",
@@ -55,6 +56,18 @@ DOCUMENTO_UNICO_OPTIONS = ("Documento Único", "Documento Unico")
 DOCUMENTO_IDENTIDAD_OPTIONS = ("Documento de Identidad", "Documento identidad")
 LIBRETA_CIVICA_OPTIONS = ("Libreta Cívica", "Libreta Civica")
 LIBRETA_ENROLAMIENTO_OPTIONS = ("Libreta de Enrolamiento", "Libreta Enrolamiento")
+
+
+def _log_busca_datos(message: str) -> None:
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{timestamp}] {message}"
+    print(line)
+    try:
+        BUSCA_DATOS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with BUSCA_DATOS_LOG_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except Exception:
+        pass
 
 
 @dataclass(frozen=True)
@@ -267,6 +280,7 @@ def wait_for_result(driver: webdriver.Chrome, wait: WebDriverWait) -> str:
 
 def resolve_with_busca_datos(driver: webdriver.Chrome, wait: WebDriverWait, dni: int) -> str:
     """Consulta busca-datos para clasificar un DNI cuando ANSES no devuelve constancia."""
+    _log_busca_datos(f"[busca-datos] Iniciando validación para DNI {dni}...")
     driver.get(BUSCA_DATOS_URL)
     search_input = wait.until(EC.element_to_be_clickable((By.ID, "txtBusqueda")))
     search_input.clear()
@@ -280,9 +294,16 @@ def resolve_with_busca_datos(driver: webdriver.Chrome, wait: WebDriverWait, dni:
 
     page = driver.page_source.lower()
     if BUSCA_DATOS_NO_DATA_TEXT.lower() in page:
+        _log_busca_datos(f"[busca-datos] DNI {dni}: sin datos en el sitio.")
+        sleep(1)
         return "error"
     if "det-nombre-destacado" in page and "det-cruz" in page:
+        _log_busca_datos(f"[busca-datos] DNI {dni}: resultado detectado = fallecido.")
+        sleep(1)
         return "fallecido"
+
+    _log_busca_datos(f"[busca-datos] DNI {dni}: resultado no concluyente (se considera 'error').")
+    sleep(1)
     return "error"
 
 
@@ -300,7 +321,7 @@ def report_non_success_with_fallback(driver: webdriver.Chrome, wait: WebDriverWa
     if final_status == "Fallecido":
         print(f"ERROR DNI {dni}: Fallecido")
         return final_status
-    print(f"ERROR DNI {dni}: {ERROR_TEXT}")
+    print(f"ERROR DNI {dni}: No definido")
     return final_status
 
 
@@ -571,7 +592,7 @@ def main() -> int:
                     final_status = report_non_success_with_fallback(driver, wait, person.doc_nro)
                     print(
                         f"ESTADO FINAL DNI {person.doc_nro}: "
-                        f"{final_status if final_status == 'Fallecido' else 'Pendiente de validación ANSES'}"
+                        f"{final_status}"
                     )
                     continue
 
@@ -596,7 +617,7 @@ def main() -> int:
                 final_status = report_non_success_with_fallback(driver, wait, person.doc_nro)
                 print(
                     f"ESTADO FINAL DNI {person.doc_nro}: "
-                    f"{final_status if final_status == 'Fallecido' else 'Pendiente de validación ANSES'}"
+                    f"{final_status}"
                 )
             except RuntimeError as exc:
                 errors += 1
@@ -604,7 +625,7 @@ def main() -> int:
                 final_status = report_non_success_with_fallback(driver, wait, person.doc_nro)
                 print(
                     f"ESTADO FINAL DNI {person.doc_nro}: "
-                    f"{final_status if final_status == 'Fallecido' else 'Pendiente de validación ANSES'}"
+                    f"{final_status}"
                 )
             except Exception as exc:  # pragma: no cover
                 errors += 1
@@ -612,7 +633,7 @@ def main() -> int:
                 final_status = report_non_success_with_fallback(driver, wait, person.doc_nro)
                 print(
                     f"ESTADO FINAL DNI {person.doc_nro}: "
-                    f"{final_status if final_status == 'Fallecido' else 'Pendiente de validación ANSES'}"
+                    f"{final_status}"
                 )
 
         print(f"Resultado final: {len(people) - errors}/{len(people)} exitosos.")
