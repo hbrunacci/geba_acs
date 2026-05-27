@@ -57,6 +57,7 @@ ANSES_ERROR_MESSAGE = "ACERCATE A UNA OFICINA DE ANSES CON DOCUMENTACIÓN QUE AC
 ANSES_SUCCESS_SNIPPET = "constancia generada."
 ANSES_DECEASED_SNIPPET = "fallecido"
 ANSES_RESULT_PATTERN = re.compile(r"^(?:OK|ERROR) DNI (?P<dni>\d+): (?P<message>.+)$", re.MULTILINE)
+ANSES_FINAL_STATUS_PATTERN = re.compile(r"^ESTADO FINAL DNI (?P<dni>\d+): (?P<message>.+)$", re.MULTILINE)
 
 ANSES_BACKGROUND_JOBS: dict[str, dict] = {}
 ANSES_BACKGROUND_LOCK = threading.Lock()
@@ -76,11 +77,22 @@ def _map_anses_status(message: str) -> str:
 
 def _extract_anses_messages(stdout: str) -> dict[int, str]:
     messages_by_dni: dict[int, str] = {}
-    for match in ANSES_RESULT_PATTERN.finditer(stdout or ""):
+    output = stdout or ""
+
+    for match in ANSES_RESULT_PATTERN.finditer(output):
         dni = int(match.group("dni"))
         message = (match.group("message") or "").strip()
         if message:
             messages_by_dni[dni] = message
+
+    # Si existe "ESTADO FINAL", tiene prioridad por representar el resultado consolidado
+    # tras la validación secundaria (busca-datos) cuando aplica.
+    for match in ANSES_FINAL_STATUS_PATTERN.finditer(output):
+        dni = int(match.group("dni"))
+        message = (match.group("message") or "").strip()
+        if message:
+            messages_by_dni[dni] = message
+
     return messages_by_dni
 
 
