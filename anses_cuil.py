@@ -286,13 +286,22 @@ def resolve_with_busca_datos(driver: webdriver.Chrome, wait: WebDriverWait, dni:
     return "error"
 
 
-def report_non_success_with_fallback(driver: webdriver.Chrome, wait: WebDriverWait, dni: int) -> None:
-    """Ejecuta fallback y reporta el estado final para resultados no exitosos de ANSES."""
+def resolve_final_status_with_fallback(driver: webdriver.Chrome, wait: WebDriverWait, dni: int) -> str:
+    """Resuelve estado final para casos sin constancia ANSES."""
     fallback_status = resolve_with_busca_datos(driver, wait, dni)
     if fallback_status == "fallecido":
+        return "Fallecido"
+    return "No definido"
+
+
+def report_non_success_with_fallback(driver: webdriver.Chrome, wait: WebDriverWait, dni: int) -> str:
+    """Ejecuta busca-datos como segundo paso y reporta estado final."""
+    final_status = resolve_final_status_with_fallback(driver, wait, dni)
+    if final_status == "Fallecido":
         print(f"ERROR DNI {dni}: Fallecido")
-        return
+        return final_status
     print(f"ERROR DNI {dni}: {ERROR_TEXT}")
+    return final_status
 
 
 def download_constancia(driver: webdriver.Chrome, wait: WebDriverWait) -> None:
@@ -558,12 +567,16 @@ def main() -> int:
                 result = wait_for_result(driver, wait)
 
                 if result == "error":
-                    fallback_status = resolve_with_busca_datos(driver, wait, person.doc_nro)
                     errors += 1
-                    report_non_success_with_fallback(driver, wait, person.doc_nro)
+                    final_status = report_non_success_with_fallback(driver, wait, person.doc_nro)
+                    print(
+                        f"ESTADO FINAL DNI {person.doc_nro}: "
+                        f"{final_status if final_status == 'Fallecido' else 'Pendiente de validación ANSES'}"
+                    )
                     continue
 
                 print(f"OK DNI {person.doc_nro}: constancia generada.")
+                print(f"ESTADO FINAL DNI {person.doc_nro}: Constancia generada")
                 if not args.no_download:
                     download_constancia(driver, wait)
                     print(f"Descarga iniciada en: {args.download_dir.resolve()}")
@@ -580,15 +593,27 @@ def main() -> int:
                     f"ERROR DNI {person.doc_nro}: Tiempo de espera agotado."
                     f" URL actual: {driver.current_url}. Detalle: {exc}.{extra}"
                 )
-                report_non_success_with_fallback(driver, wait, person.doc_nro)
+                final_status = report_non_success_with_fallback(driver, wait, person.doc_nro)
+                print(
+                    f"ESTADO FINAL DNI {person.doc_nro}: "
+                    f"{final_status if final_status == 'Fallecido' else 'Pendiente de validación ANSES'}"
+                )
             except RuntimeError as exc:
                 errors += 1
                 print(f"ERROR DNI {person.doc_nro}: {exc}. Ejecutando validación secundaria...")
-                report_non_success_with_fallback(driver, wait, person.doc_nro)
+                final_status = report_non_success_with_fallback(driver, wait, person.doc_nro)
+                print(
+                    f"ESTADO FINAL DNI {person.doc_nro}: "
+                    f"{final_status if final_status == 'Fallecido' else 'Pendiente de validación ANSES'}"
+                )
             except Exception as exc:  # pragma: no cover
                 errors += 1
                 print(f"ERROR DNI {person.doc_nro}: Error inesperado: {exc}. Ejecutando validación secundaria...")
-                report_non_success_with_fallback(driver, wait, person.doc_nro)
+                final_status = report_non_success_with_fallback(driver, wait, person.doc_nro)
+                print(
+                    f"ESTADO FINAL DNI {person.doc_nro}: "
+                    f"{final_status if final_status == 'Fallecido' else 'Pendiente de validación ANSES'}"
+                )
 
         print(f"Resultado final: {len(people) - errors}/{len(people)} exitosos.")
         return 0 if errors == 0 else 1
