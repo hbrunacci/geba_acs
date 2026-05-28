@@ -598,6 +598,7 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
             [30111222, 30111333, 30111444],
             headless=True,
             no_download=True,
+            skip_anses=False,
         )
 
     @patch("access_control.api.v1.api_views.AnsesVerificationService")
