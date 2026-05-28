@@ -535,25 +535,25 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         self.export_url = reverse("anses_processed_export_api")
         self.verify_url = reverse("anses_verify_api")
 
-    def test_apply_candidate_filters_excludes_generated_and_office_required_when_exclude_consulted(self):
+    def test_apply_candidate_filters_excludes_generated_and_deceased_when_exclude_consulted(self):
         generated_record = AnsesVerificationRecord(
             id_cliente=1,
             dni=30111111,
             verification_status=AnsesVerificationRecord.VerificationStatus.GENERATED,
             verification_message="constancia generada.",
         )
-        office_required_record = AnsesVerificationRecord(
+        deceased_record = AnsesVerificationRecord(
             id_cliente=2,
             dni=30222222,
-            verification_status=AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
-            verification_message="acercate a oficina.",
+            verification_status=AnsesVerificationRecord.VerificationStatus.DECEASED,
+            verification_message="fallecido.",
         )
         items = [
             {"id_cliente": 1, "doc_nro": 30111111},
             {"id_cliente": 2, "doc_nro": 30222222},
             {"id_cliente": 3, "doc_nro": 30333333},
         ]
-        records_map = {1: generated_record, 2: office_required_record}
+        records_map = {1: generated_record, 2: deceased_record}
 
         filtered = api_views._apply_candidate_filters(
             items=items,
