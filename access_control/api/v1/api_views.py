@@ -131,6 +131,12 @@ def _save_anses_records(
     checked_at = timezone.now()
     candidates_map = candidates_map or {}
     for id_cliente, dni in pairs:
+        existing_record = AnsesVerificationRecord.objects.filter(requested_by=user, id_cliente=id_cliente).first()
+        if existing_record and existing_record.verification_status in {
+            AnsesVerificationRecord.VerificationStatus.GENERATED,
+            AnsesVerificationRecord.VerificationStatus.DECEASED,
+        }:
+            continue
         candidate = candidates_map.get(id_cliente) or {}
         fecha_nacimiento = _parse_candidate_birth_date(candidate.get("fecha_nac"))
         message = messages_by_dni.get(dni, "").strip()
