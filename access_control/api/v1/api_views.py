@@ -54,7 +54,7 @@ from access_control.services.intelectron.api3000_console import (
 from django.core.management import call_command
 
 ANSES_ERROR_MESSAGE = "ACERCATE A UNA OFICINA DE ANSES CON DOCUMENTACIÓN QUE ACREDITE IDENTIDAD"
-ANSES_SUCCESS_SNIPPET = "constancia generada."
+ANSES_SUCCESS_SNIPPET = "constancia generada"
 ANSES_DECEASED_SNIPPET = "fallecido"
 ANSES_RESULT_PATTERN = re.compile(r"^(?:OK|ERROR) DNI (?P<dni>\d+): (?P<message>.+)$", re.MULTILINE)
 ANSES_FINAL_STATUS_PATTERN = re.compile(r"^ESTADO FINAL DNI (?P<dni>\d+): (?P<message>.+)$", re.MULTILINE)
@@ -131,6 +131,12 @@ def _save_anses_records(
     checked_at = timezone.now()
     candidates_map = candidates_map or {}
     for id_cliente, dni in pairs:
+        existing_record = AnsesVerificationRecord.objects.filter(requested_by=user, id_cliente=id_cliente).first()
+        if existing_record and existing_record.verification_status in {
+            AnsesVerificationRecord.VerificationStatus.GENERATED,
+            AnsesVerificationRecord.VerificationStatus.DECEASED,
+        }:
+            continue
         candidate = candidates_map.get(id_cliente) or {}
         fecha_nacimiento = _parse_candidate_birth_date(candidate.get("fecha_nac"))
         message = messages_by_dni.get(dni, "").strip()
