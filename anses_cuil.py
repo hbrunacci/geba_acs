@@ -18,6 +18,7 @@ Notas:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import sys
 import requests
@@ -311,8 +312,15 @@ def _card_matches_surname(card, surname: str) -> bool:
     return bool(wanted) and wanted in full_name
 
 def _consultar_fallecidos(dni: str) -> list[dict[str, str]]:
-    """Importa y ejecuta consulta_fallecidos de forma diferida para evitar inicializar Django al importar este script."""
-    from access_control.services.consulta_fallecidos import consultar_dni, parsear_html
+    """Ejecuta consulta_fallecidos sin importar el paquete Django access_control.services."""
+    module_path = Path(__file__).resolve().parent / "access_control" / "services" / "consulta_fallecidos.py"
+    spec = importlib.util.spec_from_file_location("consulta_fallecidos_standalone", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"No se pudo cargar el módulo de fallecidos desde: {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    consultar_dni = getattr(module, "consultar_dni")
+    parsear_html = getattr(module, "parsear_html")
 
     with requests.Session() as session:
         html = consultar_dni(session, dni)
