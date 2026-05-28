@@ -286,10 +286,12 @@ def resolve_with_busca_datos(driver: webdriver.Chrome, wait: WebDriverWait, dni:
     search_input.clear()
     search_input.send_keys(str(dni))
     sleep(1)
+
+    submit_button = wait.until(EC.element_to_be_clickable((By.ID, "BTNobtener")))
     try:
-        search_input.click()
+        submit_button.click()
     except Exception:
-        driver.execute_script("arguments[0].click();", search_input)
+        driver.execute_script("arguments[0].click();", submit_button)
     sleep(1)
 
     page = driver.page_source.lower()
