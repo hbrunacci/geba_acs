@@ -181,7 +181,7 @@ def _apply_candidate_filters(
         consulted = record is not None
         if exclude_consulted and consulted and record.verification_status in {
             AnsesVerificationRecord.VerificationStatus.GENERATED,
-            AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
+            AnsesVerificationRecord.VerificationStatus.DECEASED,
         }:
             continue
         if verification_status and verification_status != "all":
@@ -620,7 +620,7 @@ class AnsesCandidatesAPI(views.APIView):
             "all",
             "pending",
             AnsesVerificationRecord.VerificationStatus.GENERATED,
-            AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
+            AnsesVerificationRecord.VerificationStatus.DECEASED,
             AnsesVerificationRecord.VerificationStatus.UNKNOWN,
             AnsesVerificationRecord.VerificationStatus.DECEASED,
         }
@@ -792,7 +792,7 @@ class AnsesVerifyFilteredAPI(views.APIView):
             "all",
             "pending",
             AnsesVerificationRecord.VerificationStatus.GENERATED,
-            AnsesVerificationRecord.VerificationStatus.OFFICE_REQUIRED,
+            AnsesVerificationRecord.VerificationStatus.DECEASED,
             AnsesVerificationRecord.VerificationStatus.UNKNOWN,
             AnsesVerificationRecord.VerificationStatus.DECEASED,
         }
