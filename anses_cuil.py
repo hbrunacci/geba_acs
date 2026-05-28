@@ -35,7 +35,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
-from access_control.services.consulta_fallecidos import consultar_dni, parsear_html
 
 try:  # pragma: no cover - depende del entorno
     import pyodbc  # type: ignore
@@ -311,6 +310,15 @@ def _card_matches_surname(card, surname: str) -> bool:
     wanted = _normalize_text(surname)
     return bool(wanted) and wanted in full_name
 
+def _consultar_fallecidos(dni: str) -> list[dict[str, str]]:
+    """Importa y ejecuta consulta_fallecidos de forma diferida para evitar inicializar Django al importar este script."""
+    from access_control.services.consulta_fallecidos import consultar_dni, parsear_html
+
+    with requests.Session() as session:
+        html = consultar_dni(session, dni)
+    return parsear_html(html, dni)
+
+
 def resolve_with_busca_datos(driver: webdriver.Chrome, wait: WebDriverWait, person: PersonData) -> str:
     """Consulta busca-datos usando access_control/services/consulta_fallecidos.py para clasificar un DNI."""
     del driver, wait
@@ -318,9 +326,7 @@ def resolve_with_busca_datos(driver: webdriver.Chrome, wait: WebDriverWait, pers
     _log_busca_datos(f"[busca-datos] Iniciando validación para DNI {dni} con consulta_fallecidos.py...")
 
     try:
-        with requests.Session() as session:
-            html = consultar_dni(session, dni)
-        resultados = parsear_html(html, dni)
+        resultados = _consultar_fallecidos(dni)
     except Exception as exc:
         _log_busca_datos(f"[busca-datos] DNI {dni}: error consultando sitio: {exc}")
         return "error"
