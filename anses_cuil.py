@@ -464,6 +464,11 @@ def parse_args() -> argparse.Namespace:
         help="DNI puntual a consultar. Repetir el flag para múltiples DNIs.",
     )
     parser.add_argument(
+        "--skip-anses",
+        action="store_true",
+        help="Omite la consulta en ANSES y ejecuta solo la validación secundaria (busca-datos).",
+    )
+    parser.add_argument(
         "--wait-manual-close",
         action="store_true",
         help="Espera Enter antes de cerrar el navegador para revisión manual.",
@@ -652,6 +657,15 @@ def main() -> int:
     try:
         for person in people:
             try:
+                if args.skip_anses:
+                    final_status = report_non_success_with_fallback(driver, wait, person)
+                    print(
+                        f"ESTADO FINAL DNI {person.doc_nro}: "
+                        f"{final_status}"
+                    )
+                    errors += 0 if final_status == "Fallecido" else 1
+                    continue
+
                 complete_form(driver, wait, person)
                 result = wait_for_result(driver, wait)
 
