@@ -46,6 +46,7 @@ SUCCESS_TEXT = "DESCARGAR CONSTANCIA"
 BUSCA_DATOS_URL = "https://www.busca-datos.com.ar/"
 BUSCA_DATOS_NO_DATA_TEXT = "NO hay datos para ese DNI"
 BUSCA_DATOS_LOG_PATH = Path.cwd() / "busca_datos.log"
+BUSCA_DATOS_POST_CLICK_WAIT_SECONDS = 4
 VALIDATION_ERROR_TEXTS = (
     "completá este campo",
     "ingresá",
@@ -322,23 +323,62 @@ def resolve_with_busca_datos(driver: webdriver.Chrome, wait: WebDriverWait, pers
         submit_button.click()
     except Exception:
         driver.execute_script("arguments[0].click();", submit_button)
-    sleep(1)
+
+    _log_busca_datos(
+        f"[busca-datos] DNI {dni}: click en BTNobtener realizado. "
+        f"Esperando {BUSCA_DATOS_POST_CLICK_WAIT_SECONDS}s antes de evaluar resultado..."
+    )
+    sleep(BUSCA_DATOS_POST_CLICK_WAIT_SECONDS)
+
+    try:
+        wait.until(
+            lambda d: BUSCA_DATOS_NO_DATA_TEXT.lower() in d.page_source.lower()
+            or len(d.find_elements(By.CSS_SELECTOR, "#PNL03 a.btn-tarjeta")) > 0
+            or "det-nombre-destacado" in d.page_source.lower()
+        )
+    except TimeoutException:
+        _log_busca_datos(
+            f"[busca-datos] DNI {dni}: timeout esperando cards/no-data; se evalúa snapshot actual de la página."
+        )
 
     page = driver.page_source.lower()
     if BUSCA_DATOS_NO_DATA_TEXT.lower() in page:
-        _log_busca_datos(f"[busca-datos] DNI {dni}: sin datos en el sitio.")
+        _log_busca_datos(f"[busca-datos] DNI {dni}: sin datos en el sitio (0 casos).")
         sleep(1)
         return "error"
+
     cards = driver.find_elements(By.CSS_SELECTOR, "#PNL03 a.btn-tarjeta")
+    cards_count = len(cards)
+    _log_busca_datos(f"[busca-datos] DNI {dni}: cards detectadas en PNL03 = {cards_count}.")
+
     if cards:
+        if cards_count == 1:
+            _log_busca_datos(f"[busca-datos] DNI {dni}: resultado único; no requiere filtro por sexo.")
+        else:
+            _log_busca_datos(f"[busca-datos] DNI {dni}: resultado ambiguo ({cards_count} casos); se aplica filtro por sexo y apellido.")
+
         sexo_buscado = (person.sexo or "").upper().strip()
         cards_by_gender = [c for c in cards if _get_card_gender_hint(c) == sexo_buscado]
-        candidate_cards = cards_by_gender or cards
+        if cards_count > 1:
+            _log_busca_datos(
+                f"[busca-datos] DNI {dni}: cards con sexo '{sexo_buscado}' = {len(cards_by_gender)} "
+                f"(heurística IDCUIT/border-left)."
+            )
+
+        if cards_by_gender:
+            candidate_cards = cards_by_gender
+            _log_busca_datos(f"[busca-datos] DNI {dni}: se usó filtro por sexo para definir candidatas.")
+        else:
+            candidate_cards = cards
+            _log_busca_datos(
+                f"[busca-datos] DNI {dni}: sin match de sexo por heurística; se evalúan todas las cards por apellido."
+            )
 
         matching_card = next((c for c in candidate_cards if _card_matches_surname(c, person.apellido)), None)
         if matching_card is None:
             _log_busca_datos(
-                f"[busca-datos] DNI {dni}: sin coincidencia de apellido '{person.apellido}' en cards candidatas."
+                f"[busca-datos] DNI {dni}: sin coincidencia de apellido '{person.apellido}' "
+                f"en {len(candidate_cards)} cards candidatas."
             )
             sleep(1)
             return "dni_no_coincide_apellido"
@@ -353,11 +393,11 @@ def resolve_with_busca_datos(driver: webdriver.Chrome, wait: WebDriverWait, pers
         return "error"
 
     if "det-nombre-destacado" in page and "det-cruz" in page:
-        _log_busca_datos(f"[busca-datos] DNI {dni}: resultado detectado = fallecido.")
+        _log_busca_datos(f"[busca-datos] DNI {dni}: resultado detectado por HTML general = fallecido (sin cards parseables).")
         sleep(1)
         return "fallecido"
 
-    _log_busca_datos(f"[busca-datos] DNI {dni}: resultado no concluyente (se considera 'error').")
+    _log_busca_datos(f"[busca-datos] DNI {dni}: resultado no concluyente y sin cards (0 casos parseables).")
     sleep(1)
     return "error"
 
@@ -378,6 +418,9 @@ def report_non_success_with_fallback(driver: webdriver.Chrome, wait: WebDriverWa
     final_status = resolve_final_status_with_fallback(driver, wait, person)
     if final_status == "Fallecido":
         print(f"ERROR DNI {dni}: Fallecido")
+        return final_status
+    if final_status == "DNI no coincide con Apellido":
+        print(f"ERROR DNI {dni}: DNI no coincide con Apellido")
         return final_status
     print(f"ERROR DNI {dni}: No definido")
     return final_status
