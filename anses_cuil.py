@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import requests
 from dataclasses import dataclass
 from datetime import date, datetime
 import unicodedata
@@ -33,6 +34,8 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
+
+from access_control.services.consulta_fallecidos import consultar_dni, parsear_html
 
 try:  # pragma: no cover - depende del entorno
     import pyodbc  # type: ignore
@@ -309,96 +312,46 @@ def _card_matches_surname(card, surname: str) -> bool:
     return bool(wanted) and wanted in full_name
 
 def resolve_with_busca_datos(driver: webdriver.Chrome, wait: WebDriverWait, person: PersonData) -> str:
-    """Consulta busca-datos para clasificar un DNI cuando ANSES no devuelve constancia."""
-    dni = person.doc_nro
-    _log_busca_datos(f"[busca-datos] Iniciando validación para DNI {dni}...")
-    driver.get(BUSCA_DATOS_URL)
-    search_input = wait.until(EC.element_to_be_clickable((By.ID, "txtBusqueda")))
-    search_input.clear()
-    search_input.send_keys(str(dni))
-    sleep(1)
+    """Consulta busca-datos usando access_control/services/consulta_fallecidos.py para clasificar un DNI."""
+    del driver, wait
+    dni = str(person.doc_nro)
+    _log_busca_datos(f"[busca-datos] Iniciando validación para DNI {dni} con consulta_fallecidos.py...")
 
-    submit_button = wait.until(EC.element_to_be_clickable((By.ID, "BTNobtener")))
     try:
-        submit_button.click()
-    except Exception:
-        driver.execute_script("arguments[0].click();", submit_button)
+        with requests.Session() as session:
+            html = consultar_dni(session, dni)
+        resultados = parsear_html(html, dni)
+    except Exception as exc:
+        _log_busca_datos(f"[busca-datos] DNI {dni}: error consultando sitio: {exc}")
+        return "error"
 
-    _log_busca_datos(
-        f"[busca-datos] DNI {dni}: click en BTNobtener realizado. "
-        f"Esperando {BUSCA_DATOS_POST_CLICK_WAIT_SECONDS}s antes de evaluar resultado..."
+    tarjetas = [r for r in resultados if r.get("estado_consulta") == "OK"]
+    if not tarjetas:
+        estado_consulta = (resultados[0].get("estado_consulta", "") if resultados else "")
+        _log_busca_datos(f"[busca-datos] DNI {dni}: sin tarjetas útiles. estado_consulta={estado_consulta}")
+        return "error"
+
+    sexo_buscado = (person.sexo or "").upper().strip()
+    sexo_map = {"F": "femenino", "M": "masculino"}
+    sexo_objetivo = sexo_map.get(sexo_buscado, "")
+    por_sexo = [r for r in tarjetas if (r.get("sexo", "").strip().lower() == sexo_objetivo)] if sexo_objetivo else []
+    candidatas = por_sexo or tarjetas
+
+    apellido_norm = _normalize_text(person.apellido)
+    match = next(
+        (r for r in candidatas if apellido_norm and apellido_norm in _normalize_text(r.get("nombre_completo_sitio", ""))),
+        None,
     )
-    sleep(BUSCA_DATOS_POST_CLICK_WAIT_SECONDS)
+    if match is None:
+        _log_busca_datos(f"[busca-datos] DNI {dni}: sin coincidencia de apellido '{person.apellido}'.")
+        return "dni_no_coincide_apellido"
 
-    try:
-        wait.until(
-            lambda d: BUSCA_DATOS_NO_DATA_TEXT.lower() in d.page_source.lower()
-            or len(d.find_elements(By.CSS_SELECTOR, "#PNL03 a.btn-tarjeta")) > 0
-            or "det-nombre-destacado" in d.page_source.lower()
-        )
-    except TimeoutException:
-        _log_busca_datos(
-            f"[busca-datos] DNI {dni}: timeout esperando cards/no-data; se evalúa snapshot actual de la página."
-        )
-
-    page = driver.page_source.lower()
-    if BUSCA_DATOS_NO_DATA_TEXT.lower() in page:
-        _log_busca_datos(f"[busca-datos] DNI {dni}: sin datos en el sitio (0 casos).")
-        sleep(1)
-        return "error"
-
-    cards = driver.find_elements(By.CSS_SELECTOR, "#PNL03 a.btn-tarjeta")
-    cards_count = len(cards)
-    _log_busca_datos(f"[busca-datos] DNI {dni}: cards detectadas en PNL03 = {cards_count}.")
-
-    if cards:
-        if cards_count == 1:
-            _log_busca_datos(f"[busca-datos] DNI {dni}: resultado único; no requiere filtro por sexo.")
-        else:
-            _log_busca_datos(f"[busca-datos] DNI {dni}: resultado ambiguo ({cards_count} casos); se aplica filtro por sexo y apellido.")
-
-        sexo_buscado = (person.sexo or "").upper().strip()
-        cards_by_gender = [c for c in cards if _get_card_gender_hint(c) == sexo_buscado]
-        if cards_count > 1:
-            _log_busca_datos(
-                f"[busca-datos] DNI {dni}: cards con sexo '{sexo_buscado}' = {len(cards_by_gender)} "
-                f"(heurística IDCUIT/border-left)."
-            )
-
-        if cards_by_gender:
-            candidate_cards = cards_by_gender
-            _log_busca_datos(f"[busca-datos] DNI {dni}: se usó filtro por sexo para definir candidatas.")
-        else:
-            candidate_cards = cards
-            _log_busca_datos(
-                f"[busca-datos] DNI {dni}: sin match de sexo por heurística; se evalúan todas las cards por apellido."
-            )
-
-        matching_card = next((c for c in candidate_cards if _card_matches_surname(c, person.apellido)), None)
-        if matching_card is None:
-            _log_busca_datos(
-                f"[busca-datos] DNI {dni}: sin coincidencia de apellido '{person.apellido}' "
-                f"en {len(candidate_cards)} cards candidatas."
-            )
-            sleep(1)
-            return "dni_no_coincide_apellido"
-
-        if "det-cruz" in (matching_card.get_attribute("innerHTML") or "").lower():
-            _log_busca_datos(f"[busca-datos] DNI {dni}: card coincidente marcada como fallecido.")
-            sleep(1)
-            return "fallecido"
-
-        _log_busca_datos(f"[busca-datos] DNI {dni}: card coincidente sin marca de fallecido.")
-        sleep(1)
-        return "error"
-
-    if "det-nombre-destacado" in page and "det-cruz" in page:
-        _log_busca_datos(f"[busca-datos] DNI {dni}: resultado detectado por HTML general = fallecido (sin cards parseables).")
-        sleep(1)
+    estado = (match.get("estado") or "").upper().strip()
+    if estado == "FALLECIDO":
+        _log_busca_datos(f"[busca-datos] DNI {dni}: registro coincidente marcado como fallecido.")
         return "fallecido"
 
-    _log_busca_datos(f"[busca-datos] DNI {dni}: resultado no concluyente y sin cards (0 casos parseables).")
-    sleep(1)
+    _log_busca_datos(f"[busca-datos] DNI {dni}: registro coincidente sin marca de fallecido.")
     return "error"
 
 
