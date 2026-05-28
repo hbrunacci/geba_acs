@@ -54,7 +54,7 @@ from access_control.services.intelectron.api3000_console import (
 from django.core.management import call_command
 
 ANSES_ERROR_MESSAGE = "ACERCATE A UNA OFICINA DE ANSES CON DOCUMENTACIÓN QUE ACREDITE IDENTIDAD"
-ANSES_SUCCESS_SNIPPET = "constancia generada."
+ANSES_SUCCESS_SNIPPET = "constancia generada"
 ANSES_DECEASED_SNIPPET = "fallecido"
 ANSES_RESULT_PATTERN = re.compile(r"^(?:OK|ERROR) DNI (?P<dni>\d+): (?P<message>.+)$", re.MULTILINE)
 ANSES_FINAL_STATUS_PATTERN = re.compile(r"^ESTADO FINAL DNI (?P<dni>\d+): (?P<message>.+)$", re.MULTILINE)
