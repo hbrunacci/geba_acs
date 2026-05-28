@@ -652,6 +652,29 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         self.assertEqual(record.fecha_nacimiento.isoformat(), "1930-01-01")
         self.assertEqual(record.edad, 96)
 
+    def test_map_anses_status_accepts_success_message_without_trailing_dot(self):
+        status = api_views._map_anses_status("Constancia generada")
+        self.assertEqual(status, AnsesVerificationRecord.VerificationStatus.GENERATED)
+
+    def test_save_anses_records_updates_unknown_record_to_generated(self):
+        AnsesVerificationRecord.objects.create(
+            requested_by=self.user,
+            id_cliente=999,
+            dni=30999999,
+            verification_status=AnsesVerificationRecord.VerificationStatus.UNKNOWN,
+            verification_message="consultado",
+        )
+
+        api_views._save_anses_records(
+            user=self.user,
+            pairs=[(999, 30999999)],
+            stdout="ESTADO FINAL DNI 30999999: constancia generada",
+            candidates_map={},
+        )
+
+        record = AnsesVerificationRecord.objects.get(requested_by=self.user, id_cliente=999)
+        self.assertEqual(record.verification_status, AnsesVerificationRecord.VerificationStatus.GENERATED)
+
     def test_export_processed_records_uses_local_snapshot_when_cliente_is_missing(self):
         AnsesVerificationRecord.objects.create(
             requested_by=self.user,
