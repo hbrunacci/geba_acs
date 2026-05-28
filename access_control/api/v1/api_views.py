@@ -4,7 +4,7 @@ import asyncio
 import re
 import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+import time
 import zipfile
 from datetime import datetime
 from io import BytesIO
@@ -204,7 +204,7 @@ def _apply_candidate_filters(
     return filtered
 
 
-def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: int, exclude_consulted: bool, verification_status: str) -> None:
+def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: int, exclude_consulted: bool, verification_status: str, skip_anses: bool = False) -> None:
     User = get_user_model()
     user = User.objects.filter(id=user_id).first()
     if user is None:
@@ -243,7 +243,7 @@ def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: in
             service = AnsesVerificationService()
             dnis = [pair[1]]
             try:
-                result = service.run_verification(dnis, headless=True, no_download=True)
+                result = service.run_verification(dnis, headless=True, no_download=True, skip_anses=skip_anses)
                 stdout = result.get("stdout", "")
             except Exception as exc:
                 stdout = f"ERROR DNI {pair[1]}: {exc}"
@@ -253,8 +253,10 @@ def _run_anses_filtered_job(job_id: str, user_id: int, min_age: int, max_age: in
                 ANSES_BACKGROUND_JOBS[job_id]["processed"] += 1
             close_old_connections()
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            list(executor.map(_process_pair, pairs))
+        for index, pair in enumerate(pairs):
+            _process_pair(pair)
+            if index < len(pairs) - 1:
+                time.sleep(7)
         with ANSES_BACKGROUND_LOCK:
             ANSES_BACKGROUND_JOBS[job_id]["status"] = "completed"
             ANSES_BACKGROUND_JOBS[job_id]["finished_at"] = timezone.now().isoformat()
@@ -729,6 +731,7 @@ class AnsesVerifyAPI(views.APIView):
         dni_list = request.data.get("dni_list")
         headless = bool(request.data.get("headless", True))
         no_download = bool(request.data.get("no_download", True))
+        skip_anses = bool(request.data.get("skip_anses", False))
         if clients and not isinstance(clients, list):
             return Response(
                 {"detail": "El parámetro 'clients' debe ser una lista."},
@@ -763,6 +766,7 @@ class AnsesVerifyAPI(views.APIView):
                 dnis,
                 headless=headless,
                 no_download=no_download,
+                skip_anses=skip_anses,
             )
             if pairs:
                 _save_anses_records(
@@ -794,6 +798,7 @@ class AnsesVerifyFilteredAPI(views.APIView):
             return Response({"detail": "Rango de edades inválido."}, status=status.HTTP_400_BAD_REQUEST)
         exclude_consulted = bool(request.data.get("exclude_consulted", False))
         verification_status = (request.data.get("verification_status") or "all").strip().lower()
+        skip_anses = bool(request.data.get("skip_anses", False))
         allowed_status_filters = {
             "all",
             "pending",
@@ -827,6 +832,7 @@ class AnsesVerifyFilteredAPI(views.APIView):
                 "max_age": max_age,
                 "exclude_consulted": exclude_consulted,
                 "verification_status": verification_status,
+                "skip_anses": skip_anses,
             },
             daemon=True,
         )

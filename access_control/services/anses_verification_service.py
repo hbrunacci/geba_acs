@@ -116,7 +116,7 @@ class AnsesVerificationService:
             )
         return {"count": total, "results": items}
 
-    def run_verification(self, dnis: list[int], *, headless: bool = True, no_download: bool = True) -> dict[str, Any]:
+    def run_verification(self, dnis: list[int], *, headless: bool = True, no_download: bool = True, skip_anses: bool = False) -> dict[str, Any]:
         if not dnis:
             raise AnsesVerificationError("Debe enviar al menos un DNI para verificar.")
 
@@ -133,6 +133,8 @@ class AnsesVerificationService:
             cmd.append("--headless")
         if no_download:
             cmd.append("--no-download")
+        if skip_anses:
+            cmd.append("--skip-anses")
         for dni in unique_dnis:
             cmd.extend(["--dni", str(dni)])
 
