@@ -15,6 +15,70 @@
     }
   }
 
+  const installButton = document.querySelector("[data-pwa-install]");
+  let deferredInstallPrompt = null;
+
+  function isStandaloneMode() {
+    return (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.navigator.standalone === true
+    );
+  }
+
+  function updateInstallButton(status) {
+    if (!(installButton instanceof HTMLButtonElement)) {
+      return;
+    }
+
+    installButton.classList.toggle("is-ready", status === "ready");
+    installButton.classList.toggle("is-installed", status === "installed");
+
+    if (status === "installed") {
+      installButton.textContent = "App instalada";
+      installButton.disabled = true;
+    } else if (status === "ready") {
+      installButton.textContent = "Usa la pagina como app";
+      installButton.disabled = false;
+    } else {
+      installButton.textContent = "Usa la pagina como app";
+      installButton.disabled = false;
+    }
+  }
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/service-worker.js").catch(() => undefined);
+    });
+  }
+
+  if (isStandaloneMode()) {
+    updateInstallButton("installed");
+  } else {
+    updateInstallButton("idle");
+  }
+
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    updateInstallButton("ready");
+  });
+
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    updateInstallButton("installed");
+  });
+
+  installButton?.addEventListener("click", async () => {
+    if (!deferredInstallPrompt) {
+      return;
+    }
+
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    updateInstallButton(isStandaloneMode() ? "installed" : "idle");
+  });
+
   body.addEventListener("click", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) {

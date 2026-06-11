@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">ACS</title>
+  <desc id="desc">Ícono de la aplicación ACS</desc>
+  <rect width="512" height="512" rx="112" fill="#141b2d"/>
+  <path d="M112 340 204 156h104l92 184h-78l-16-38H206l-16 38h-78Zm120-98h48l-24-58-24 58Z" fill="#ffffff"/>
+  <path d="M102 378h308" stroke="#ff4f64" stroke-width="34" stroke-linecap="round"/>
+  <path d="M128 410h256" stroke="#4f6ef7" stroke-width="22" stroke-linecap="round"/>
+</svg>
