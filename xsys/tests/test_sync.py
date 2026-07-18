@@ -49,7 +49,7 @@ class FakeCursor:
     def fetchall(self):
         if "CD_Clientes_Novedades" in self._last:
             return self.novedades
-        if "FROM Clientes WHERE Id_Cliente IN" in self._last:
+        if "FROM Clientes C" in self._last and "Id_Cliente IN" in self._last:
             return self.socios
         if "FROM Clientes_Fotos" in self._last:
             return self.fotos

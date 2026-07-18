@@ -17,6 +17,7 @@ class XsysSocio(models.Model):
     email = models.CharField(max_length=600, blank=True, default="")
     activo = models.SmallIntegerField(null=True, blank=True, db_index=True)
     tipo_persona = models.CharField(max_length=1, blank=True, default="")
+    categoria = models.CharField(max_length=100, blank=True, default="")
     credencial_nro = models.CharField(max_length=30, blank=True, default="", db_index=True)
     ult_cuota_paga = models.DateTimeField(null=True, blank=True)
     id_estado_cliente = models.SmallIntegerField(null=True, blank=True)

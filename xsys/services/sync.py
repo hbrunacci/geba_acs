@@ -19,6 +19,7 @@ from access_control.models.models import ExternalAccessLogEntry
 from xsys.models import (
     SyncState,
     XsysAcceso,
+    XsysContrato,
     XsysControlador,
     XsysMotivo,
     XsysNovedad,
@@ -52,12 +53,14 @@ SOCIO_COLUMNS: tuple[tuple[str, str], ...] = (
     ("Fecha_Alta", "fecha_alta"),
     ("Fecha_Baja", "fecha_baja"),
 )
-_SOCIO_SELECT = ", ".join(col for col, _ in SOCIO_COLUMNS)
+# SELECT con JOIN a Clientes_Tipos para traer la categoría (última columna).
+_SOCIO_SELECT = ", ".join(f"C.{col}" for col, _ in SOCIO_COLUMNS) + ", CT.Descripcion"
+_SOCIO_FROM = "Clientes C LEFT JOIN Clientes_Tipos CT ON CT.Id_Tipo_Cli = C.Id_Tipo_Cli"
 _SOCIO_TEXT_FIELDS = {
     "apellido", "nombre", "razon_social", "sexo", "email",
     "tipo_persona", "credencial_nro", "id_cliente_externo",
 }
-_SOCIO_UPDATE_FIELDS = [attr for _, attr in SOCIO_COLUMNS if attr != "id_cliente"] + ["synced_at"]
+_SOCIO_UPDATE_FIELDS = [attr for _, attr in SOCIO_COLUMNS if attr != "id_cliente"] + ["categoria", "synced_at"]
 
 # Columnas de CD_ES -> atributos de ExternalAccessLogEntry (mismo orden).
 CDES_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -115,6 +118,8 @@ class XsysSyncService:
             elif attr in ("fecha_nac", "ult_cuota_paga", "fecha_alta", "fecha_baja"):
                 value = _aware(value)
             kwargs[attr] = value
+        # Última columna del SELECT = Clientes_Tipos.Descripcion (categoría).
+        kwargs["categoria"] = (row[len(SOCIO_COLUMNS)] or "").strip()[:100] if len(row) > len(SOCIO_COLUMNS) else ""
         kwargs["synced_at"] = timezone.now()
         return kwargs
 
@@ -158,7 +163,7 @@ class XsysSyncService:
 
     # -------------------------------------------------------------- streams
     def sync_socios_all(self, cursor) -> int:
-        cursor.execute(f"SELECT {_SOCIO_SELECT} FROM Clientes")
+        cursor.execute(f"SELECT {_SOCIO_SELECT} FROM {_SOCIO_FROM}")
         total = 0
         while True:
             rows = cursor.fetchmany(self.batch_size)
@@ -173,7 +178,7 @@ class XsysSyncService:
         for chunk in _chunked(list(ids)):
             placeholders = ",".join("?" for _ in chunk)
             cursor.execute(
-                f"SELECT {_SOCIO_SELECT} FROM Clientes WHERE Id_Cliente IN ({placeholders})",
+                f"SELECT {_SOCIO_SELECT} FROM {_SOCIO_FROM} WHERE C.Id_Cliente IN ({placeholders})",
                 list(chunk),
             )
             rows = cursor.fetchall()
@@ -289,6 +294,56 @@ class XsysSyncService:
             )
         return len(objs)
 
+    def _contrato_objs(self, rows):
+        now = timezone.now()
+        return [
+            XsysContrato(
+                id_contrato=r[0], id_cliente=r[1], id_tipo_con=r[2],
+                descripcion=(r[3] or "").strip()[:50], fecha_alta=_aware(r[4]),
+                fecha_hasta=_aware(r[5]), activo=r[6], synced_at=now,
+            )
+            for r in rows
+        ]
+
+    def sync_contratos_all(self, cursor) -> int:
+        cursor.execute(
+            "SELECT CO.Id_Contrato, CO.Id_Cliente, CO.Id_Tipo_Con, CT.Descripcion, "
+            "CO.Fecha_Alta, CO.Fecha_Hasta, CO.Activo "
+            "FROM Contratos CO JOIN Contratos_Tipos CT ON CT.Id_Tipo_Con = CO.Id_Tipo_Con "
+            "WHERE CO.Activo = 1"
+        )
+        total = 0
+        while True:
+            rows = cursor.fetchmany(self.batch_size)
+            if not rows:
+                break
+            objs = self._contrato_objs(rows)
+            with transaction.atomic():
+                XsysContrato.objects.bulk_create(
+                    objs, update_conflicts=True, unique_fields=["id_contrato"],
+                    update_fields=["id_cliente", "id_tipo_con", "descripcion", "fecha_alta", "fecha_hasta", "activo", "synced_at"],
+                )
+            total += len(objs)
+        return total
+
+    def sync_contratos_by_ids(self, cursor, ids) -> int:
+        total = 0
+        for chunk in _chunked(list(ids)):
+            ph = ",".join("?" for _ in chunk)
+            cursor.execute(
+                "SELECT CO.Id_Contrato, CO.Id_Cliente, CO.Id_Tipo_Con, CT.Descripcion, "
+                "CO.Fecha_Alta, CO.Fecha_Hasta, CO.Activo "
+                "FROM Contratos CO JOIN Contratos_Tipos CT ON CT.Id_Tipo_Con = CO.Id_Tipo_Con "
+                f"WHERE CO.Activo = 1 AND CO.Id_Cliente IN ({ph})",
+                list(chunk),
+            )
+            rows = cursor.fetchall()
+            with transaction.atomic():
+                XsysContrato.objects.filter(id_cliente__in=list(chunk)).delete()
+                XsysContrato.objects.bulk_create(self._contrato_objs(rows))
+            total += len(rows)
+        return total
+
     def read_novedades(self, cursor, last_id: int, limit: int | None = None) -> list[tuple]:
         top = f"TOP {int(limit)} " if limit else ""
         cursor.execute(
@@ -382,6 +437,7 @@ class XsysSyncService:
             stats["motivos"] = self.sync_motivos(cursor)
             stats["socios"] = self.sync_socios_all(cursor)
             stats["fotos"] = self.sync_fotos_all(cursor)
+            stats["contratos"] = self.sync_contratos_all(cursor)
 
             if seed_whitelist:
                 stats["whitelist_seed"] = self.seed_whitelist_from_suprema(cursor)
@@ -462,6 +518,7 @@ class XsysSyncService:
                 affected = sorted({r[1] for r in rows if r[1] is not None})
                 stats["socios"] = self.sync_socios_by_ids(cursor, affected)
                 stats["fotos"] = self.sync_fotos_by_ids(cursor, affected)
+                stats["contratos"] = self.sync_contratos_by_ids(cursor, affected)
                 stats["whitelist"] = self.recompute_whitelist(affected)
                 new_last = max(r[0] for r in rows)
             else:

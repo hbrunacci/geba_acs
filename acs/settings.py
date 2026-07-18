@@ -198,3 +198,7 @@ MSSQL_XSYS = {
     "WHITELIST_ACCESO": _get_int_env("MSSQL_XSYS_WHITELIST_ACCESO", 22),
     "WHITELIST_CONTROLADOR": _get_int_env("MSSQL_XSYS_WHITELIST_CONTROLADOR", 0) or None,
 }
+
+# Días de vencimiento de la cuota (gracia). El estatuto bloquea al acumular 2
+# cuotas impagas; este es el período de gracia dentro del mes (ej: 1 al 10 → 10).
+XSYS_CUOTA_DIAS_VENCIMIENTO = _get_int_env("XSYS_CUOTA_DIAS_VENCIMIENTO", 10)

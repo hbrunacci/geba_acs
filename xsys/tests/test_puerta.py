@@ -34,7 +34,10 @@ class PuertaMonitorTests(TestCase):
         XsysControlador.objects.create(id_controlador=60, id_acceso=14, descripcion="Alcorta Mol2", tipo_cont="K", activo=1)
         XsysControlador.objects.create(id_controlador=90, id_acceso=14, descripcion="Alcorta Facial", tipo_cont="F", activo=1)
         XsysMotivo.objects.create(id_cd_motivo=305, descripcion="ok", descripcion_pantalla="ADELANTE")
-        XsysSocio.objects.create(id_cliente=944426, apellido="SIMOUR", nombre="GERMAN", activo=1)
+        XsysSocio.objects.create(
+            id_cliente=944426, apellido="SIMOUR", nombre="GERMAN", activo=1,
+            categoria="SOCIO ACTIVO", ult_cuota_paga=timezone.now(),
+        )
         XsysSocioFoto.objects.create(id_cliente=944426, nro=1, imagen=b"\xff\xd8\xff\xe0x", sha256="x")
 
     def _ev(self, id_es, id_controlador, id_acceso=14, tipo="E", resultado="S", motivo=305):
@@ -64,6 +67,53 @@ class PuertaMonitorTests(TestCase):
         by_nombre = {c["nombre"]: c for c in d["columnas"]}
         self.assertEqual(by_nombre["Alcorta Mol1"]["ultimo"]["id_es"], 8000)
         self.assertEqual(by_nombre["Alcorta Mol2"]["ultimo"]["id_es"], 8001)
+        # el mensaje ahora trae categoría + última cuota paga
+        ev = by_nombre["Alcorta Mol1"]["ultimo"]
+        self.assertEqual(ev["categoria"], "SOCIO ACTIVO")
+        self.assertIsNotNone(ev["ult_cuota_paga"])
+        # permitido + cuota al día -> "Acceso Concedido"
+        self.assertTrue(ev["cuota_al_dia"])
+        self.assertEqual(ev["mensaje"], "Acceso Concedido")
+        self.assertEqual(ev["estado"], "ok")
+
+    def test_mensaje_deducido_anomalia_amarillo(self):
+        from datetime import datetime as _dt
+        from django.utils import timezone as _tz
+        # permitido pero cuota vencida -> anomalía (amarillo)
+        XsysSocio.objects.filter(pk=944426).update(ult_cuota_paga=_tz.make_aware(_dt(2025, 1, 1)))
+        PantallaPuerta.objects.create(token=TOKEN, id_acceso=14)
+        self._ev(9200, 59, resultado="S")   # xSys dejó pasar, pero cuota vencida
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        col = next(c for c in d["columnas"] if 59 in c["controladores"])
+        ev = col["ultimo"]
+        self.assertTrue(ev["permitido"])
+        self.assertFalse(ev["cuota_al_dia"])
+        self.assertEqual(ev["estado"], "anomalia")
+        self.assertEqual(ev["mensaje"], "Acceso Concedido · Cuota Vencida")
+
+    def test_mensaje_deducido_cuota_vencida(self):
+        from datetime import datetime as _dt
+        from django.utils import timezone as _tz
+        # socio con cuota muy vieja -> vencida
+        XsysSocio.objects.filter(pk=944426).update(
+            ult_cuota_paga=_tz.make_aware(_dt(2025, 1, 1)))
+        PantallaPuerta.objects.create(token=TOKEN, id_acceso=14)
+        self._ev(9000, 59, resultado="N")
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        col = next(c for c in d["columnas"] if 59 in c["controladores"])
+        ev = col["ultimo"]
+        self.assertFalse(ev["cuota_al_dia"])
+        self.assertEqual(ev["mensaje"], "Cuota Vencida")
+
+    def test_mensaje_deducido_chequear_oficina(self):
+        # cuota al día pero acceso denegado por otra regla -> Chequear Oficina
+        PantallaPuerta.objects.create(token=TOKEN, id_acceso=14)
+        self._ev(9100, 59, resultado="N")   # socio 944426 tiene ult_cuota_paga=now (al día)
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        col = next(c for c in d["columnas"] if 59 in c["controladores"])
+        ev = col["ultimo"]
+        self.assertTrue(ev["cuota_al_dia"])
+        self.assertEqual(ev["mensaje"], "Chequear Oficina de Socios")
 
     def test_estado_molinete_agrupa_controladores(self):
         # Columna "Molinete 1" agrupa el molinete 59 + su facial 90
@@ -101,6 +151,20 @@ class PuertaMonitorTests(TestCase):
 
     def test_config_requiere_login(self):
         self.assertIn(self.client.get("/api/xsys/config/molinetes/?id_acceso=14").status_code, (401, 403))
+
+    def test_socio_detalle_con_contratos(self):
+        from xsys.models import XsysContrato
+        XsysContrato.objects.create(id_contrato=1, id_cliente=944426, descripcion="CUOTA SOCIAL", activo=1)
+        XsysContrato.objects.create(id_contrato=2, id_cliente=944426, descripcion="ED NATACION", activo=1)
+        r = self.client.get("/api/xsys/socios/944426/detalle/")   # AllowAny
+        self.assertEqual(r.status_code, 200)
+        d = r.json()
+        self.assertEqual(d["nombre"], "SIMOUR, GERMAN")
+        self.assertEqual(d["categoria"], "SOCIO ACTIVO")
+        self.assertIsNotNone(d["ult_cuota_paga"])
+        descs = [c["descripcion"] for c in d["contratos"]]
+        self.assertIn("ED NATACION", descs)
+        self.assertIn("CUOTA SOCIAL", descs)
 
     def test_monitor_page_publico(self):
         self.assertEqual(self.client.get("/xsys/puerta/").status_code, 200)

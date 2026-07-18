@@ -14,6 +14,7 @@ from xsys.models import (
     PantallaPuerta,
     PuertaMolinete,
     XsysAcceso,
+    XsysContrato,
     XsysControlador,
     XsysMotivo,
     XsysSocio,
@@ -26,6 +27,7 @@ from xsys.serializers import (
     XsysWhitelistSerializer,
 )
 from xsys.services.access import resolver_acceso, resolver_socio
+from xsys.services.cuota import cuota_al_dia
 
 
 def _client_ip(request) -> str:
@@ -205,23 +207,48 @@ HISTORIAL_LEN = 50
 def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict) -> dict:
     socio = socios.get(ev.id_cliente)
     tiene_foto = ev.id_cliente in fotos
-    mensaje = ""
+    # Mensaje original de xSys (motivo de pantalla u observación).
+    mensaje_original = ""
     if ev.id_cd_motivo and ev.id_cd_motivo in motivos:
-        mensaje = motivos[ev.id_cd_motivo].mensaje_pantalla
-    if not mensaje:
-        mensaje = (ev.observacion or "").strip()
+        mensaje_original = motivos[ev.id_cd_motivo].mensaje_pantalla
+    if not mensaje_original:
+        mensaje_original = (ev.observacion or "").strip()
+
+    permitido = ev.resultado == "S"
+    # Mensaje + estado deducidos localmente según la cuota.
+    #   estado: "ok" (verde) / "no" (rojo) / "anomalia" (amarillo).
+    al_dia = cuota_al_dia(socio.ult_cuota_paga) if socio else False
+    if permitido and not al_dia:
+        # Anomalía: xSys dejó pasar pero la cuota está vencida -> alertar al operador.
+        estado = "anomalia"
+        mensaje = "Acceso Concedido · Cuota Vencida"
+    elif not al_dia:
+        estado = "no"
+        mensaje = "Cuota Vencida"
+    elif permitido:
+        estado = "ok"
+        mensaje = "Acceso Concedido"
+    else:
+        estado = "no"
+        mensaje = "Chequear Oficina de Socios"
+
     foto_url = f"/api/xsys/socios/{ev.id_cliente}/foto/" if tiene_foto else None
     return {
         "id_es": ev.external_id,
         "fecha": ev.fecha.isoformat() if ev.fecha else None,
         "resultado": ev.resultado,
-        "permitido": ev.resultado == "S",
+        "permitido": permitido,
+        "cuota_al_dia": al_dia,
+        "estado": estado,
         "mensaje": mensaje,
+        "mensaje_original": mensaje_original,
         "id_cliente": ev.id_cliente,
         "nombre": (
             (f"{socio.apellido}, {socio.nombre}".strip(", ") or socio.razon_social)
             if socio else ""
         ),
+        "categoria": (socio.categoria if socio else ""),
+        "ult_cuota_paga": (socio.ult_cuota_paga.isoformat() if socio and socio.ult_cuota_paga else None),
         "foto_url": foto_url,
         "foto_thumb_url": (foto_url + "?thumb=1") if foto_url else None,
     }
@@ -458,3 +485,33 @@ class MolinetesAutoAPI(APIView):
             )
             creados += 1
         return Response({"creados": creados})
+
+
+class SocioDetalleAPI(APIView):
+    """GET /api/xsys/socios/<id_cliente>/detalle/ → datos del socio para el modal
+    del monitor (foto, categoría, última cuota, contratos activos)."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, id_cliente: int):
+        socio = XsysSocio.objects.filter(pk=id_cliente).first()
+        tiene_foto = XsysSocioFoto.objects.filter(id_cliente=id_cliente).exists()
+        contratos = [
+            {
+                "descripcion": c.descripcion,
+                "fecha_alta": c.fecha_alta.isoformat() if c.fecha_alta else None,
+            }
+            for c in XsysContrato.objects.filter(id_cliente=id_cliente, activo=1).order_by("descripcion")
+        ]
+        return Response({
+            "id_cliente": id_cliente,
+            "nombre": (
+                (f"{socio.apellido}, {socio.nombre}".strip(", ") or socio.razon_social)
+                if socio else ""
+            ),
+            "categoria": (socio.categoria if socio else ""),
+            "ult_cuota_paga": (socio.ult_cuota_paga.isoformat() if socio and socio.ult_cuota_paga else None),
+            "foto_url": f"/api/xsys/socios/{id_cliente}/foto/" if tiene_foto else None,
+            "contratos": contratos,
+        })
