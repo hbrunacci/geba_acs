@@ -15,9 +15,15 @@ def xsys_puerta_monitor(request):
     """Pantalla de monitor de una puerta (kiosco, sin login).
 
     Todos los datos salen del espejo local vía la API AllowAny; la propia pantalla
-    se identifica por su IP y elige la puerta con la hamburguesa.
+    se identifica por su token y elige la puerta con la hamburguesa.
     """
     return render(request, "xsys/puerta_monitor.html")
+
+
+@login_required
+def xsys_molinetes_config(request):
+    """Administración de molinetes (columnas) por puerta."""
+    return render(request, "xsys/molinetes_config.html")
 
 
 @login_required

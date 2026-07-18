@@ -12,7 +12,9 @@ from access_control.models.models import ExternalAccessLogEntry
 
 from xsys.models import (
     PantallaPuerta,
+    PuertaMolinete,
     XsysAcceso,
+    XsysControlador,
     XsysMotivo,
     XsysSocio,
     XsysSocioFoto,
@@ -196,16 +198,19 @@ def _registrar_pantalla(request) -> PantallaPuerta | None:
     return pantalla
 
 
-def _evento_payload(ev: ExternalAccessLogEntry) -> dict:
-    socio = XsysSocio.objects.filter(pk=ev.id_cliente).first() if ev.id_cliente else None
-    tiene_foto = bool(socio) and XsysSocioFoto.objects.filter(id_cliente=socio.id_cliente).exists()
+# Cuántos ingresos de historial se devuelven por columna (para paginar de a 5).
+HISTORIAL_LEN = 50
+
+
+def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict) -> dict:
+    socio = socios.get(ev.id_cliente)
+    tiene_foto = ev.id_cliente in fotos
     mensaje = ""
-    if ev.id_cd_motivo:
-        motivo = XsysMotivo.objects.filter(pk=ev.id_cd_motivo).first()
-        if motivo:
-            mensaje = motivo.mensaje_pantalla
+    if ev.id_cd_motivo and ev.id_cd_motivo in motivos:
+        mensaje = motivos[ev.id_cd_motivo].mensaje_pantalla
     if not mensaje:
         mensaje = (ev.observacion or "").strip()
+    foto_url = f"/api/xsys/socios/{ev.id_cliente}/foto/" if tiene_foto else None
     return {
         "id_es": ev.external_id,
         "fecha": ev.fecha.isoformat() if ev.fecha else None,
@@ -217,26 +222,30 @@ def _evento_payload(ev: ExternalAccessLogEntry) -> dict:
             (f"{socio.apellido}, {socio.nombre}".strip(", ") or socio.razon_social)
             if socio else ""
         ),
-        "foto_url": f"/api/xsys/socios/{socio.id_cliente}/foto/" if tiene_foto else None,
+        "foto_url": foto_url,
+        "foto_thumb_url": (foto_url + "?thumb=1") if foto_url else None,
     }
 
 
+def _accesos_disponibles() -> list[dict]:
+    return [
+        {"id_acceso": a.id_acceso, "descripcion": a.descripcion or f"Acceso {a.id_acceso}"}
+        for a in XsysAcceso.objects.filter(activo=1).order_by("descripcion")
+    ]
+
+
 class PuertasListAPI(APIView):
-    """GET /api/xsys/puertas/ → lista de puertas activas (para la hamburguesa)."""
+    """GET /api/xsys/puertas/ → lista de accesos activos (para la hamburguesa)."""
 
     permission_classes = [AllowAny]
     authentication_classes = []
 
     def get(self, request):
-        puertas = [
-            {"id_acceso": a.id_acceso, "descripcion": a.descripcion or f"Acceso {a.id_acceso}"}
-            for a in XsysAcceso.objects.filter(activo=1).order_by("descripcion")
-        ]
-        return Response({"puertas": puertas})
+        return Response({"puertas": _accesos_disponibles()})
 
 
 class PuertaSeleccionarAPI(APIView):
-    """POST /api/xsys/puerta/seleccionar/ {id_acceso} → ata el token a esa puerta."""
+    """POST /api/xsys/puerta/seleccionar/ {id_acceso} → puerta que muestra el token."""
 
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -246,6 +255,10 @@ class PuertaSeleccionarAPI(APIView):
         if not token:
             return Response({"detail": "Falta el token de pantalla."}, status=status.HTTP_400_BAD_REQUEST)
         id_acceso = request.data.get("id_acceso")
+        if id_acceso in (None, ""):  # compat: aceptar id_accesos[0]
+            lst = request.data.get("id_accesos")
+            if isinstance(lst, (list, tuple)) and lst:
+                id_acceso = lst[0]
         if id_acceso in (None, ""):
             return Response({"detail": "id_acceso requerido."}, status=status.HTTP_400_BAD_REQUEST)
         try:
@@ -262,12 +275,27 @@ class PuertaSeleccionarAPI(APIView):
         return Response({"ok": True, "token": token, "id_acceso": id_acceso})
 
 
-class PuertaUltimoAPI(APIView):
-    """GET /api/xsys/puerta/ultimo/ → último ingreso de la puerta de este token.
+def _columnas_de_puerta(id_acceso: int) -> list[dict]:
+    """Columnas (molinetes) de una puerta: los grupos administrables definidos, o
+    fallback automático = un molinete por controlador activo del acceso."""
+    grupos = list(PuertaMolinete.objects.filter(id_acceso=id_acceso).order_by("orden", "id"))
+    if grupos:
+        return [
+            {"key": f"g{g.id}", "nombre": g.nombre, "controladores": [int(c) for c in (g.id_controladores or [])]}
+            for g in grupos
+        ]
+    return [
+        {"key": f"c{c.id_controlador}", "nombre": c.descripcion or f"Ctrl {c.id_controlador}",
+         "controladores": [c.id_controlador]}
+        for c in XsysControlador.objects.filter(id_acceso=id_acceso, activo=1).order_by("descripcion")
+    ]
 
-    Se identifica por el header ``X-Pantalla-Token``. Todo se resuelve del espejo
-    local. Si el token no tiene puerta configurada, devuelve la lista de puertas
-    para elegir en la hamburguesa.
+
+class PuertaEstadoAPI(APIView):
+    """GET /api/xsys/puerta/estado/ → estado por columna (una por molinete de la puerta).
+
+    Cada columna: ``ultimo`` (quién está accediendo) + ``historial``. Del espejo
+    local; identificado por header X-Pantalla-Token.
     """
 
     permission_classes = [AllowAny]
@@ -281,25 +309,152 @@ class PuertaUltimoAPI(APIView):
             return Response({
                 "configurada": False,
                 "ip": pantalla.ip,
-                "puertas": [
-                    {"id_acceso": a.id_acceso, "descripcion": a.descripcion or f"Acceso {a.id_acceso}"}
-                    for a in XsysAcceso.objects.filter(activo=1).order_by("descripcion")
-                ],
+                "puertas": _accesos_disponibles(),
             })
 
-        acceso = XsysAcceso.objects.filter(pk=pantalla.id_acceso).first()
-        ev = (
-            ExternalAccessLogEntry.objects
-            .filter(id_acceso=pantalla.id_acceso, tipo="E")
-            .order_by("-external_id")
-            .first()
-        )
+        puerta = pantalla.id_acceso
+        acceso = XsysAcceso.objects.filter(pk=puerta).first()
+        cols_def = _columnas_de_puerta(puerta)
+
+        # Eventos por columna (por conjunto de controladores del molinete).
+        eventos_por_col = []
+        for cd in cols_def:
+            ctrls = cd["controladores"]
+            evs = list(
+                ExternalAccessLogEntry.objects
+                .filter(id_controlador__in=ctrls, tipo="E")
+                .order_by("-external_id")[: HISTORIAL_LEN + 1]
+            ) if ctrls else []
+            eventos_por_col.append(evs)
+
+        # Resolución en lote de socios / fotos / motivos (evita N+1).
+        todos = [e for evs in eventos_por_col for e in evs]
+        cids = {e.id_cliente for e in todos if e.id_cliente}
+        mids = {e.id_cd_motivo for e in todos if e.id_cd_motivo}
+        socios = {s.id_cliente: s for s in XsysSocio.objects.filter(pk__in=cids)}
+        fotos = set(XsysSocioFoto.objects.filter(id_cliente__in=cids).values_list("id_cliente", flat=True))
+        motivos = {m.id_cd_motivo: m for m in XsysMotivo.objects.filter(pk__in=mids)}
+
+        columnas = []
+        for cd, evs in zip(cols_def, eventos_por_col):
+            columnas.append({
+                "key": cd["key"],
+                "nombre": cd["nombre"],
+                "controladores": cd["controladores"],
+                "ultimo": _evento_payload(evs[0], socios, fotos, motivos) if evs else None,
+                "historial": [_evento_payload(e, socios, fotos, motivos) for e in evs[1:]],
+            })
         return Response({
             "configurada": True,
             "ip": pantalla.ip,
-            "puerta": {
-                "id_acceso": pantalla.id_acceso,
-                "descripcion": (acceso.descripcion if acceso else f"Acceso {pantalla.id_acceso}"),
-            },
-            "evento": _evento_payload(ev) if ev else None,
+            "nombre": pantalla.nombre or (acceso.descripcion if acceso else ""),
+            "puerta": {"id_acceso": puerta, "descripcion": (acceso.descripcion if acceso else f"Acceso {puerta}")},
+            "columnas": columnas,
         })
+
+
+# ----------------------------------------------------------------------------
+# Administración de molinetes (columnas) por puerta. Requiere login.
+# ----------------------------------------------------------------------------
+
+class ControladoresPorAccesoAPI(APIView):
+    """GET /api/xsys/config/controladores/?id_acceso= → controladores de la puerta."""
+
+    def get(self, request):
+        try:
+            id_acceso = int(request.query_params.get("id_acceso"))
+        except (TypeError, ValueError):
+            return Response({"detail": "id_acceso requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        ctrls = [
+            {"id_controlador": c.id_controlador, "descripcion": c.descripcion or f"Ctrl {c.id_controlador}",
+             "tipo_cont": c.tipo_cont, "activo": c.activo}
+            for c in XsysControlador.objects.filter(id_acceso=id_acceso).order_by("descripcion")
+        ]
+        return Response({"id_acceso": id_acceso, "controladores": ctrls})
+
+
+def _molinete_dict(m: PuertaMolinete) -> dict:
+    return {"id": m.id, "id_acceso": m.id_acceso, "nombre": m.nombre,
+            "id_controladores": m.id_controladores or [], "orden": m.orden}
+
+
+class MolinetesConfigAPI(APIView):
+    """GET ?id_acceso= (listar) / POST (crear) molinetes de una puerta."""
+
+    def get(self, request):
+        try:
+            id_acceso = int(request.query_params.get("id_acceso"))
+        except (TypeError, ValueError):
+            return Response({"detail": "id_acceso requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        molinetes = [_molinete_dict(m) for m in PuertaMolinete.objects.filter(id_acceso=id_acceso).order_by("orden", "id")]
+        return Response({"id_acceso": id_acceso, "molinetes": molinetes})
+
+    def post(self, request):
+        d = request.data
+        try:
+            id_acceso = int(d.get("id_acceso"))
+        except (TypeError, ValueError):
+            return Response({"detail": "id_acceso requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        nombre = (d.get("nombre") or "").strip()[:60]
+        if not nombre:
+            return Response({"detail": "nombre requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ctrls = [int(c) for c in (d.get("id_controladores") or [])]
+        except (TypeError, ValueError):
+            return Response({"detail": "id_controladores inválido."}, status=status.HTTP_400_BAD_REQUEST)
+        orden = int(d.get("orden") or PuertaMolinete.objects.filter(id_acceso=id_acceso).count())
+        m = PuertaMolinete.objects.create(id_acceso=id_acceso, nombre=nombre, id_controladores=ctrls, orden=orden)
+        return Response(_molinete_dict(m), status=status.HTTP_201_CREATED)
+
+
+class MolineteConfigDetailAPI(APIView):
+    """PUT / DELETE /api/xsys/config/molinetes/<id>/."""
+
+    def put(self, request, mid: int):
+        m = PuertaMolinete.objects.filter(pk=mid).first()
+        if not m:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        d = request.data
+        if "nombre" in d:
+            m.nombre = (d.get("nombre") or "").strip()[:60] or m.nombre
+        if "id_controladores" in d:
+            try:
+                m.id_controladores = [int(c) for c in (d.get("id_controladores") or [])]
+            except (TypeError, ValueError):
+                return Response({"detail": "id_controladores inválido."}, status=status.HTTP_400_BAD_REQUEST)
+        if "orden" in d:
+            try:
+                m.orden = int(d.get("orden"))
+            except (TypeError, ValueError):
+                pass
+        m.save()
+        return Response(_molinete_dict(m))
+
+    def delete(self, request, mid: int):
+        PuertaMolinete.objects.filter(pk=mid).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MolinetesAutoAPI(APIView):
+    """POST /api/xsys/config/molinetes/auto/ {id_acceso} → crea un molinete por
+    cada controlador activo del acceso (si no hay molinetes definidos)."""
+
+    def post(self, request):
+        try:
+            id_acceso = int(request.data.get("id_acceso"))
+        except (TypeError, ValueError):
+            return Response({"detail": "id_acceso requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        existentes = set()
+        for m in PuertaMolinete.objects.filter(id_acceso=id_acceso):
+            existentes.update(int(c) for c in (m.id_controladores or []))
+        creados = 0
+        base = PuertaMolinete.objects.filter(id_acceso=id_acceso).count()
+        for c in XsysControlador.objects.filter(id_acceso=id_acceso, activo=1).order_by("descripcion"):
+            if c.id_controlador in existentes:
+                continue
+            PuertaMolinete.objects.create(
+                id_acceso=id_acceso, nombre=c.descripcion or f"Ctrl {c.id_controlador}",
+                id_controladores=[c.id_controlador], orden=base + creados,
+            )
+            creados += 1
+        return Response({"creados": creados})

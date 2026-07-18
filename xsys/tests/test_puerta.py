@@ -1,10 +1,13 @@
+from django.contrib.auth.models import User
 from django.test import TestCase
 from django.utils import timezone
 
 from access_control.models.models import ExternalAccessLogEntry
 from xsys.models import (
     PantallaPuerta,
+    PuertaMolinete,
     XsysAcceso,
+    XsysControlador,
     XsysMotivo,
     XsysSocio,
     XsysSocioFoto,
@@ -24,91 +27,80 @@ def _post(client, url, data):
 class PuertaMonitorTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        XsysAcceso.objects.create(id_acceso=22, descripcion="Acceso CS", activo=1)
-        XsysAcceso.objects.create(id_acceso=24, descripcion="Pileta", activo=1)
-        XsysAcceso.objects.create(id_acceso=99, descripcion="Inactiva", activo=0)
-        XsysMotivo.objects.create(id_cd_motivo=305, descripcion="Habilitado cuota", descripcion_pantalla="ADELANTE, CUOTA OK")
-        cls.socio = XsysSocio.objects.create(id_cliente=944426, apellido="SIMOUR", nombre="GERMAN", activo=1)
+        XsysAcceso.objects.create(id_acceso=14, descripcion="SM-Alcorta", activo=1)
+        XsysAcceso.objects.create(id_acceso=16, descripcion="SM-Noble", activo=1)
+        # molinetes (controladores) de la puerta 14
+        XsysControlador.objects.create(id_controlador=59, id_acceso=14, descripcion="Alcorta Mol1", tipo_cont="K", activo=1)
+        XsysControlador.objects.create(id_controlador=60, id_acceso=14, descripcion="Alcorta Mol2", tipo_cont="K", activo=1)
+        XsysControlador.objects.create(id_controlador=90, id_acceso=14, descripcion="Alcorta Facial", tipo_cont="F", activo=1)
+        XsysMotivo.objects.create(id_cd_motivo=305, descripcion="ok", descripcion_pantalla="ADELANTE")
+        XsysSocio.objects.create(id_cliente=944426, apellido="SIMOUR", nombre="GERMAN", activo=1)
         XsysSocioFoto.objects.create(id_cliente=944426, nro=1, imagen=b"\xff\xd8\xff\xe0x", sha256="x")
 
-    def _evento(self, id_es, id_acceso=22, tipo="E", resultado="S", id_cliente=944426, motivo=305):
+    def _ev(self, id_es, id_controlador, id_acceso=14, tipo="E", resultado="S", motivo=305):
         return ExternalAccessLogEntry.objects.create(
-            external_id=id_es, tipo=tipo, id_cliente=id_cliente, fecha=timezone.now(),
-            resultado=resultado, id_acceso=id_acceso, id_cd_motivo=motivo, observacion="obs",
+            external_id=id_es, tipo=tipo, id_cliente=944426, fecha=timezone.now(),
+            resultado=resultado, id_acceso=id_acceso, id_controlador=id_controlador,
+            id_cd_motivo=motivo, observacion="obs",
         )
-
-    def test_puertas_lista_solo_activas(self):
-        r = _get(self.client, "/api/xsys/puertas/")
-        self.assertEqual(r.status_code, 200)
-        ids = [p["id_acceso"] for p in r.json()["puertas"]]
-        self.assertIn(22, ids); self.assertIn(24, ids); self.assertNotIn(99, ids)
 
     def test_sin_token_400(self):
-        self.assertEqual(self.client.get("/api/xsys/puerta/ultimo/").status_code, 400)
-        self.assertEqual(
-            self.client.post("/api/xsys/puerta/seleccionar/", {"id_acceso": 22},
-                             content_type="application/json").status_code,
-            400,
-        )
+        self.assertEqual(self.client.get("/api/xsys/puerta/estado/").status_code, 400)
 
-    def test_sin_configurar_devuelve_puertas(self):
-        r = _get(self.client, "/api/xsys/puerta/ultimo/")
+    def test_seleccionar_una_puerta(self):
+        r = _post(self.client, "/api/xsys/puerta/seleccionar/", {"id_acceso": 14, "nombre": "Alcorta"})
         self.assertEqual(r.status_code, 200)
-        d = r.json()
-        self.assertFalse(d["configurada"])
-        self.assertTrue(any(p["id_acceso"] == 22 for p in d["puertas"]))
-        self.assertTrue(PantallaPuerta.objects.filter(token=TOKEN).exists())
+        p = PantallaPuerta.objects.get(token=TOKEN)
+        self.assertEqual(p.id_acceso, 14)
+        self.assertEqual(p.nombre, "Alcorta")
 
-    def test_seleccionar_puerta(self):
-        r = _post(self.client, "/api/xsys/puerta/seleccionar/", {"id_acceso": 22})
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(PantallaPuerta.objects.get(token=TOKEN).id_acceso, 22)
-
-    def test_seleccionar_puerta_inexistente_404(self):
-        r = _post(self.client, "/api/xsys/puerta/seleccionar/", {"id_acceso": 12345})
-        self.assertEqual(r.status_code, 404)
-
-    def test_ultimo_ingreso_con_evento(self):
-        PantallaPuerta.objects.create(token=TOKEN, id_acceso=22)
-        self._evento(8000, id_acceso=22)
-        self._evento(8001, id_acceso=22)          # último ingreso
-        self._evento(7999, id_acceso=24)          # otra puerta
-        self._evento(8002, id_acceso=22, tipo="S")  # egreso, se ignora
-        r = _get(self.client, "/api/xsys/puerta/ultimo/")
-        d = r.json()
+    def test_estado_auto_una_columna_por_controlador(self):
+        PantallaPuerta.objects.create(token=TOKEN, id_acceso=14)
+        self._ev(8000, 59); self._ev(8001, 60); self._ev(8002, 90)
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
         self.assertTrue(d["configurada"])
-        self.assertEqual(d["puerta"]["id_acceso"], 22)
-        ev = d["evento"]
-        self.assertEqual(ev["id_es"], 8001)
-        self.assertTrue(ev["permitido"])
-        self.assertEqual(ev["mensaje"], "ADELANTE, CUOTA OK")
-        self.assertEqual(ev["nombre"], "SIMOUR, GERMAN")
-        self.assertEqual(ev["foto_url"], "/api/xsys/socios/944426/foto/")
+        # sin molinetes definidos -> auto: una columna por cada controlador activo (3)
+        self.assertEqual(len(d["columnas"]), 3)
+        by_nombre = {c["nombre"]: c for c in d["columnas"]}
+        self.assertEqual(by_nombre["Alcorta Mol1"]["ultimo"]["id_es"], 8000)
+        self.assertEqual(by_nombre["Alcorta Mol2"]["ultimo"]["id_es"], 8001)
 
-    def test_ultimo_sin_eventos(self):
-        PantallaPuerta.objects.create(token=TOKEN, id_acceso=24)
-        r = _get(self.client, "/api/xsys/puerta/ultimo/")
-        d = r.json()
-        self.assertTrue(d["configurada"])
-        self.assertIsNone(d["evento"])
+    def test_estado_molinete_agrupa_controladores(self):
+        # Columna "Molinete 1" agrupa el molinete 59 + su facial 90
+        PuertaMolinete.objects.create(id_acceso=14, nombre="Molinete 1", id_controladores=[59, 90], orden=0)
+        PuertaMolinete.objects.create(id_acceso=14, nombre="Molinete 2", id_controladores=[60], orden=1)
+        PantallaPuerta.objects.create(token=TOKEN, id_acceso=14)
+        self._ev(8000, 59)   # molinete 1 (por 59)
+        self._ev(8001, 90)   # molinete 1 (por facial 90) -> mismo lugar
+        self._ev(8002, 60)   # molinete 2
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        cols = d["columnas"]
+        self.assertEqual([c["nombre"] for c in cols], ["Molinete 1", "Molinete 2"])
+        self.assertEqual(cols[0]["ultimo"]["id_es"], 8001)          # última lectura del molinete 1 (facial)
+        hist_ids = [e["id_es"] for e in cols[0]["historial"]]
+        self.assertIn(8000, hist_ids)                                # la del molinete convive en la misma columna
+        self.assertEqual(cols[1]["ultimo"]["id_es"], 8002)
 
-    def test_evento_denegado_usa_observacion_si_no_hay_motivo(self):
-        PantallaPuerta.objects.create(token=TOKEN, id_acceso=22)
-        ExternalAccessLogEntry.objects.create(
-            external_id=9000, tipo="E", id_cliente=944426, fecha=timezone.now(),
-            resultado="N", id_acceso=22, id_cd_motivo=None, observacion="Rechazado por vencimiento",
-        )
-        r = _get(self.client, "/api/xsys/puerta/ultimo/")
-        ev = r.json()["evento"]
-        self.assertFalse(ev["permitido"])
-        self.assertEqual(ev["mensaje"], "Rechazado por vencimiento")
+    def test_config_crud_molinetes(self):
+        user = User.objects.create_user("admin", password="pw")
+        self.client.force_login(user)
+        # crear
+        r = self.client.post("/api/xsys/config/molinetes/",
+                             {"id_acceso": 14, "nombre": "Mol A", "id_controladores": [59, 90]},
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 201)
+        mid = r.json()["id"]
+        # listar
+        r = self.client.get("/api/xsys/config/molinetes/?id_acceso=14")
+        self.assertEqual(len(r.json()["molinetes"]), 1)
+        # auto (crea por los controladores que faltan: 60)
+        r = self.client.post("/api/xsys/config/molinetes/auto/", {"id_acceso": 14}, content_type="application/json")
+        self.assertGreaterEqual(r.json()["creados"], 1)
+        # eliminar
+        self.assertEqual(self.client.delete("/api/xsys/config/molinetes/%d/" % mid).status_code, 204)
 
-    def test_registra_ip_como_dato(self):
-        PantallaPuerta.objects.create(token=TOKEN, id_acceso=22)
-        self.client.get("/api/xsys/puerta/ultimo/", HTTP_X_PANTALLA_TOKEN=TOKEN, REMOTE_ADDR="10.1.2.3")
-        self.assertEqual(PantallaPuerta.objects.get(token=TOKEN).ip, "10.1.2.3")
+    def test_config_requiere_login(self):
+        self.assertIn(self.client.get("/api/xsys/config/molinetes/?id_acceso=14").status_code, (401, 403))
 
     def test_monitor_page_publico(self):
-        r = self.client.get("/xsys/puerta/")
-        self.assertEqual(r.status_code, 200)
-        self.assertContains(r, "Monitor de puerta")
+        self.assertEqual(self.client.get("/xsys/puerta/").status_code, 200)

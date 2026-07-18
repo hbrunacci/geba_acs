@@ -19,6 +19,7 @@ from access_control.models.models import ExternalAccessLogEntry
 from xsys.models import (
     SyncState,
     XsysAcceso,
+    XsysControlador,
     XsysMotivo,
     XsysNovedad,
     XsysSocio,
@@ -231,6 +232,34 @@ class XsysSyncService:
             )
         return len(objs)
 
+    def sync_controladores(self, cursor) -> int:
+        """Espejo de CD_Controladores (molinetes/lectores). Tabla chica: upsert."""
+        cursor.execute(
+            "SELECT Id_Controlador, Id_Acceso, Descripcion, Tipo, Tipo_Cont, Activo FROM CD_Controladores"
+        )
+        rows = cursor.fetchall()
+        now = timezone.now()
+        objs = [
+            XsysControlador(
+                id_controlador=r[0],
+                id_acceso=r[1],
+                descripcion=(r[2] or "").strip()[:100],
+                tipo=(r[3] or "").strip(),
+                tipo_cont=(r[4] or "").strip(),
+                activo=r[5],
+                synced_at=now,
+            )
+            for r in rows
+        ]
+        if objs:
+            XsysControlador.objects.bulk_create(
+                objs,
+                update_conflicts=True,
+                unique_fields=["id_controlador"],
+                update_fields=["id_acceso", "descripcion", "tipo", "tipo_cont", "activo", "synced_at"],
+            )
+        return len(objs)
+
     def sync_motivos(self, cursor) -> int:
         """Espejo de CD_Motivos (mensajes de pantalla). Tabla chica: upsert completo."""
         cursor.execute(
@@ -349,6 +378,7 @@ class XsysSyncService:
         stats: dict[str, int] = {}
         with xsys_cursor(self.config) as cursor:
             stats["accesos"] = self.sync_accesos(cursor)
+            stats["controladores"] = self.sync_controladores(cursor)
             stats["motivos"] = self.sync_motivos(cursor)
             stats["socios"] = self.sync_socios_all(cursor)
             stats["fotos"] = self.sync_fotos_all(cursor)
@@ -423,6 +453,7 @@ class XsysSyncService:
         with xsys_cursor(self.config) as cursor:
             # Tablas de referencia (chicas) se refrescan en cada corrida.
             stats["accesos"] = self.sync_accesos(cursor)
+            stats["controladores"] = self.sync_controladores(cursor)
             stats["motivos"] = self.sync_motivos(cursor)
             rows = self.read_novedades(cursor, last_id, limit=limit)
             stats["novedades"] = len(rows)

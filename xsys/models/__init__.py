@@ -1,5 +1,7 @@
 from .acceso import XsysAcceso, XsysMotivo
+from .controlador import XsysControlador
 from .foto import XsysSocioFoto
+from .molinete import PuertaMolinete
 from .novedad import XsysNovedad
 from .pantalla import PantallaPuerta
 from .socio import XsysSocio
@@ -14,5 +16,7 @@ __all__ = [
     "SyncState",
     "XsysAcceso",
     "XsysMotivo",
+    "XsysControlador",
+    "PuertaMolinete",
     "PantallaPuerta",
 ]

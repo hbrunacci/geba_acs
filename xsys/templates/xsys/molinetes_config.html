@@ -1,0 +1,123 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Molinetes por puerta{% endblock page_title %}
+{% block header_title %}Molinetes por puerta{% endblock header_title %}
+{% block header_subtitle %}
+  Definí las columnas del monitor: cada molinete agrupa uno o más controladores (ej. molinete + su facial).
+{% endblock header_subtitle %}
+
+{% block content %}
+{% csrf_token %}
+<section class="card mb-3">
+  <div class="card__body">
+    <label class="form-label" for="puerta">Puerta (acceso)</label>
+    <select id="puerta" class="form-select" style="max-width: 420px"></select>
+  </div>
+</section>
+
+<div id="panel" class="row g-3 d-none">
+  <div class="col-lg-5">
+    <section class="card h-100">
+      <div class="card__header"><h5 class="card__title">Controladores de la puerta</h5></div>
+      <div class="card__body">
+        <div id="controladores" class="small text-muted">—</div>
+        <button id="auto" class="btn btn-outline-secondary btn-sm mt-3">Auto: 1 molinete por controlador</button>
+      </div>
+    </section>
+  </div>
+  <div class="col-lg-7">
+    <section class="card mb-3">
+      <div class="card__header"><h5 class="card__title">Nueva columna (molinete)</h5></div>
+      <div class="card__body">
+        <input id="nuevo-nombre" class="form-control form-control-sm mb-2" placeholder="Nombre de la columna (ej: Molinete 1)" />
+        <div id="nuevo-ctrls" class="mb-2"></div>
+        <button id="crear" class="btn btn-primary btn-sm">Crear columna</button>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card__header"><h5 class="card__title">Columnas definidas</h5></div>
+      <div class="card__body"><div id="molinetes">—</div></div>
+    </section>
+  </div>
+</div>
+{% endblock content %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var API = "/api/xsys";
+  function getCookie(name) { var m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)'); return m ? m.pop() : ''; }
+  function hdr(json) { var h = { "Accept": "application/json", "X-CSRFToken": getCookie("csrftoken") }; if (json) h["Content-Type"] = "application/json"; return h; }
+  function esc(v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+
+  var puertaSel = document.getElementById("puerta");
+  var ctrlsCache = [];
+
+  fetch(API + "/puertas/", { headers: hdr() }).then(function (r) { return r.json(); }).then(function (d) {
+    puertaSel.innerHTML = '<option value="">— elegí una puerta —</option>' +
+      (d.puertas || []).map(function (p) { return '<option value="' + p.id_acceso + '">' + esc(p.descripcion) + '</option>'; }).join("");
+  });
+
+  puertaSel.addEventListener("change", cargar);
+  document.getElementById("auto").addEventListener("click", auto);
+  document.getElementById("crear").addEventListener("click", crear);
+
+  function puerta() { return parseInt(puertaSel.value, 10); }
+
+  function cargar() {
+    var id = puerta();
+    if (!id) { document.getElementById("panel").classList.add("d-none"); return; }
+    document.getElementById("panel").classList.remove("d-none");
+    fetch(API + "/config/controladores/?id_acceso=" + id, { headers: hdr() }).then(function (r) { return r.json(); }).then(function (d) {
+      ctrlsCache = d.controladores || [];
+      document.getElementById("controladores").innerHTML = ctrlsCache.length
+        ? ctrlsCache.map(function (c) { return "#" + c.id_controlador + " · " + esc(c.descripcion) + (c.activo ? "" : " (inactivo)"); }).join("<br>")
+        : "Sin controladores.";
+      document.getElementById("nuevo-ctrls").innerHTML = ctrlsCache.map(function (c) {
+        return '<label class="d-block small"><input type="checkbox" value="' + c.id_controlador + '"> ' + esc(c.descripcion) + '</label>';
+      }).join("");
+    });
+    cargarMolinetes();
+  }
+
+  function ctrlNombre(id) { for (var i = 0; i < ctrlsCache.length; i++) if (ctrlsCache[i].id_controlador === id) return ctrlsCache[i].descripcion; return "#" + id; }
+
+  function cargarMolinetes() {
+    fetch(API + "/config/molinetes/?id_acceso=" + puerta(), { headers: hdr() }).then(function (r) { return r.json(); }).then(function (d) {
+      var cont = document.getElementById("molinetes");
+      var ms = d.molinetes || [];
+      if (!ms.length) { cont.innerHTML = '<div class="text-muted small">No hay columnas. Usá "Auto" o creá una.</div>'; return; }
+      cont.innerHTML = ms.map(function (m) {
+        var ctrls = (m.id_controladores || []).map(function (id) { return esc(ctrlNombre(id)); }).join(", ") || "—";
+        return '<div class="d-flex align-items-center justify-content-between border-bottom py-2">' +
+          '<div><strong>' + esc(m.nombre) + '</strong><br><small class="text-muted">' + ctrls + '</small></div>' +
+          '<button class="btn btn-outline-danger btn-sm" data-del="' + m.id + '">Eliminar</button></div>';
+      }).join("");
+      cont.querySelectorAll("[data-del]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          fetch(API + "/config/molinetes/" + b.getAttribute("data-del") + "/", { method: "DELETE", headers: hdr() }).then(cargarMolinetes);
+        });
+      });
+    });
+  }
+
+  function crear() {
+    var nombre = document.getElementById("nuevo-nombre").value.trim();
+    var ids = Array.prototype.slice.call(document.querySelectorAll("#nuevo-ctrls input:checked")).map(function (el) { return parseInt(el.value, 10); });
+    if (!nombre) { alert("Poné un nombre."); return; }
+    fetch(API + "/config/molinetes/", {
+      method: "POST", headers: hdr(true),
+      body: JSON.stringify({ id_acceso: puerta(), nombre: nombre, id_controladores: ids }),
+    }).then(function () {
+      document.getElementById("nuevo-nombre").value = "";
+      document.querySelectorAll("#nuevo-ctrls input:checked").forEach(function (el) { el.checked = false; });
+      cargarMolinetes();
+    });
+  }
+
+  function auto() {
+    fetch(API + "/config/molinetes/auto/", { method: "POST", headers: hdr(true), body: JSON.stringify({ id_acceso: puerta() }) }).then(cargarMolinetes);
+  }
+})();
+</script>
+{% endblock extra_js %}
