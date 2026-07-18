@@ -10,6 +10,8 @@ from datetime import datetime
 from io import BytesIO
 from xml.sax.saxutils import escape
 
+import requests
+
 from django.contrib.auth import get_user_model
 from django.db import close_old_connections, transaction
 from django.db.models import Q
@@ -38,11 +40,13 @@ from access_control.serializers import BioStarDeviceSerializer, BioStarUserSeria
 from access_control.services.biostar2_client import BioStar2Client
 
 from access_control.services import (
+    AccessCheckError,
     AnsesVerificationError,
     AnsesVerificationService,
     ClientLookupError,
     ExternalAccessLogError,
     ExternalAccessLogSynchronizer,
+    MSSQLAccessCheckService,
 )
 from access_control.services.intelectron.api3000_console import (
     COMMAND_CATALOG,
@@ -406,6 +410,70 @@ class BioStarDeviceUserdataAPI(views.APIView):
         return Response(payload, status=status.HTTP_200_OK)
 
 
+class BioStarUserLookupAPI(views.APIView):
+    """Busca un usuario en BioStar (en vivo) a partir de DNI, Id_Cliente o credencial de xSys.
+
+    El user_id de BioStar coincide con el Id_Cliente de xSys, así que el DNI/credencial
+    se resuelve primero contra xsys_geba (MSSQLAccessCheckService) y luego se consulta
+    ese Id_Cliente directamente en BioStar.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    IDENTIFIER_PARAMS = ("doc_nro", "id_cliente", "credencial")
+
+    def get(self, request):
+        params = request.query_params
+        present = [name for name in self.IDENTIFIER_PARAMS if params.get(name)]
+        if len(present) != 1:
+            return Response(
+                {
+                    "detail": "Debe indicar exactamente uno de estos parámetros: "
+                    + ", ".join(self.IDENTIFIER_PARAMS)
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        identifier_type = present[0]
+        identifier_value = params[identifier_type]
+
+        if identifier_type == "id_cliente":
+            try:
+                id_cliente = int(identifier_value)
+            except (TypeError, ValueError):
+                return Response(
+                    {"detail": "id_cliente debe ser numérico."}, status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            try:
+                id_cliente = MSSQLAccessCheckService().resolve_id_cliente(
+                    identifier_type=identifier_type, identifier_value=identifier_value
+                )
+            except AccessCheckError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            if not id_cliente:
+                return Response(
+                    {"found": False, "detail": "No se encontró un socio con ese dato en xSys."},
+                    status=status.HTTP_200_OK,
+                )
+
+        try:
+            biostar_user = BioStar2Client.from_db_and_env().get_user(id_cliente)
+        except requests.RequestException as exc:
+            return Response(
+                {"detail": "No se pudo consultar BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(
+            {
+                "found": biostar_user is not None,
+                "id_cliente": id_cliente,
+                "biostar_user": biostar_user,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class BioStarUserSearchAPI(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -611,6 +679,65 @@ class WhitelistBatchCreateAPI(views.APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class AccessCheckAPI(views.APIView):
+    """Verificación rápida (alternativa a CP_SCA_RegistrarAcceso) de si un socio puede ingresar por un acceso."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    IDENTIFIER_PARAMS = ("doc_nro", "id_cliente", "credencial")
+    DOOR_PARAMS = ("id_acceso", "id_controlador")
+
+    def get(self, request):
+        params = request.query_params
+
+        present_identifiers = [name for name in self.IDENTIFIER_PARAMS if params.get(name)]
+        if len(present_identifiers) != 1:
+            return Response(
+                {
+                    "detail": "Debe indicar exactamente uno de estos parámetros: "
+                    + ", ".join(self.IDENTIFIER_PARAMS)
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        identifier_type = present_identifiers[0]
+        identifier_value = params[identifier_type]
+
+        present_doors = [name for name in self.DOOR_PARAMS if params.get(name)]
+        if len(present_doors) != 1:
+            return Response(
+                {
+                    "detail": "Debe indicar exactamente uno de estos parámetros: "
+                    + ", ".join(self.DOOR_PARAMS)
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        id_acceso = None
+        id_controlador = None
+        try:
+            if present_doors[0] == "id_acceso":
+                id_acceso = int(params["id_acceso"])
+            else:
+                id_controlador = int(params["id_controlador"])
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "id_acceso / id_controlador deben ser numéricos."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            result = MSSQLAccessCheckService().check_access(
+                identifier_type=identifier_type,
+                identifier_value=identifier_value,
+                id_acceso=id_acceso,
+                id_controlador=id_controlador,
+            )
+        except AccessCheckError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class AnsesCandidatesAPI(views.APIView):

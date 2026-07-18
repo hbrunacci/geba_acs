@@ -1,0 +1,242 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Socios (espejo xSys){% endblock page_title %}
+
+{% block header_title %}Socios (espejo xSys){% endblock header_title %}
+
+{% block header_subtitle %}
+  Búsqueda local de socios: datos, foto y estado de lista blanca (sin depender de la VPN).
+{% endblock header_subtitle %}
+
+{% block content %}
+<section class="card mb-3">
+  <div class="card__body">
+    <div class="d-flex flex-wrap align-items-center gap-3">
+      <span class="fw-semibold">Estado del espejo</span>
+      <span class="badge text-bg-secondary">Socios: {{ total_socios }}</span>
+      <span class="badge text-bg-secondary">Fotos: {{ total_fotos }}</span>
+      <span class="badge text-bg-success">Habilitados: {{ total_habilitados }}</span>
+    </div>
+    {% if sync_states %}
+    <div class="table-responsive mt-2">
+      <table class="table table-sm mb-0 align-middle">
+        <thead>
+          <tr class="text-muted small">
+            <th>Stream</th><th>Última sincronización</th><th>Estado</th><th>Filas</th><th>Últ. id</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in sync_states %}
+          <tr>
+            <td>{{ s.label }}</td>
+            <td>
+              {% if s.last_run_finished_at %}
+                <span data-iso="{{ s.last_run_finished_at|date:'c' }}">{{ s.last_run_finished_at|date:'d/m/Y H:i' }}</span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td>
+              {% if s.last_run_ok %}<span class="badge text-bg-success">OK</span>
+              {% else %}<span class="badge text-bg-danger" title="{{ s.last_error }}">Error</span>{% endif %}
+            </td>
+            <td>{{ s.rows_last_run }}</td>
+            <td class="text-muted">{{ s.last_id|default:'—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted small mb-0 mt-2">Todavía no se ejecutó ninguna sincronización (<code>manage.py xsys_init</code>).</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="card__body">
+    <form id="lookup-form" class="d-flex flex-wrap gap-2 align-items-end">
+      <div>
+        <label class="form-label" for="tipo">Buscar por</label>
+        <select id="tipo" class="form-select form-select-sm">
+          <option value="doc">Documento</option>
+          <option value="credencial">Credencial</option>
+          <option value="id">Id Cliente</option>
+        </select>
+      </div>
+      <div class="flex-grow-1" style="min-width: 220px">
+        <label class="form-label" for="valor">Valor</label>
+        <input id="valor" class="form-control form-control-sm" type="text" placeholder="Ej: 31850936" autofocus />
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Buscar</button>
+    </form>
+    <div id="msg" class="alert d-none mt-3" role="alert"></div>
+    <div id="resultados-lista" class="list-group mt-3 d-none"></div>
+  </div>
+</section>
+
+<section id="resultado" class="card mt-4 d-none">
+  <div class="card__body">
+    <div class="row g-4">
+      <div class="col-auto">
+        <img id="foto" alt="Foto del socio" class="rounded border"
+             style="width: 150px; height: 190px; object-fit: cover; background:#f1f3f5" />
+      </div>
+      <div class="col">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <h4 id="nombre" class="mb-0"></h4>
+          <span id="wl-badge" class="badge"></span>
+          <span id="activo-badge" class="badge"></span>
+        </div>
+        <div id="wl-motivo" class="text-muted small mb-3"></div>
+        <dl class="row mb-0 small">
+          <dt class="col-sm-3">Id Cliente</dt><dd class="col-sm-3" id="f-id"></dd>
+          <dt class="col-sm-3">Documento</dt><dd class="col-sm-3" id="f-doc"></dd>
+          <dt class="col-sm-3">Credencial</dt><dd class="col-sm-3" id="f-cred"></dd>
+          <dt class="col-sm-3">Últ. cuota paga</dt><dd class="col-sm-3" id="f-ucp"></dd>
+          <dt class="col-sm-3">Tipo persona</dt><dd class="col-sm-3" id="f-tp"></dd>
+          <dt class="col-sm-3">Email</dt><dd class="col-sm-3" id="f-email"></dd>
+          <dt class="col-sm-3">Alta / Baja</dt><dd class="col-sm-3" id="f-altabaja"></dd>
+          <dt class="col-sm-3">Sincronizado</dt><dd class="col-sm-3" id="f-synced"></dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock content %}
+
+{% block extra_js %}
+<script>
+(function () {
+  const form = document.getElementById("lookup-form");
+  const msg = document.getElementById("msg");
+  const res = document.getElementById("resultado");
+
+  function showMsg(text, kind) {
+    msg.className = "alert mt-3 alert-" + (kind || "info");
+    msg.textContent = text;
+  }
+  function hideMsg() { msg.className = "alert d-none mt-3"; }
+
+  function fmtDate(v) {
+    if (!v) return "—";
+    try { return new Date(v).toLocaleString("es-AR"); } catch (e) { return v; }
+  }
+
+  function render(data) {
+    const s = data.socio || {};
+    const wl = data.whitelist;
+    document.getElementById("nombre").textContent = s.nombre_completo || ("Cliente " + s.id_cliente);
+    document.getElementById("f-id").textContent = s.id_cliente ?? "—";
+    document.getElementById("f-doc").textContent = s.doc_nro ?? "—";
+    document.getElementById("f-cred").textContent = s.credencial_nro || "—";
+    document.getElementById("f-ucp").textContent = fmtDate(s.ult_cuota_paga);
+    document.getElementById("f-tp").textContent = s.tipo_persona || "—";
+    document.getElementById("f-email").textContent = s.email || "—";
+    document.getElementById("f-altabaja").textContent =
+      (s.fecha_alta ? fmtDate(s.fecha_alta) : "—") + " / " + (s.fecha_baja ? fmtDate(s.fecha_baja) : "—");
+    document.getElementById("f-synced").textContent = fmtDate(s.synced_at);
+
+    const activo = document.getElementById("activo-badge");
+    activo.textContent = s.activo ? "Activo" : "Inactivo";
+    activo.className = "badge " + (s.activo ? "text-bg-secondary" : "text-bg-dark");
+
+    const badge = document.getElementById("wl-badge");
+    const motivo = document.getElementById("wl-motivo");
+    if (wl == null) {
+      badge.textContent = "Lista blanca: sin cálculo";
+      badge.className = "badge text-bg-warning";
+      motivo.textContent = "Este socio todavía no fue evaluado por el sync.";
+    } else if (wl.habilitado) {
+      badge.textContent = "Habilitado";
+      badge.className = "badge text-bg-success";
+      motivo.textContent = (wl.motivo || "") + (wl.detalle ? " — " + wl.detalle : "");
+    } else {
+      badge.textContent = "No habilitado";
+      badge.className = "badge text-bg-danger";
+      motivo.textContent = (wl.motivo || "") + (wl.detalle ? " — " + wl.detalle : "");
+    }
+
+    const foto = document.getElementById("foto");
+    if (s.foto_url) {
+      foto.src = s.foto_url;
+      foto.style.display = "";
+      foto.onerror = function () { foto.style.display = "none"; };
+    } else {
+      foto.removeAttribute("src");
+      foto.style.display = "none";
+    }
+    res.classList.remove("d-none");
+  }
+
+  const lista = document.getElementById("resultados-lista");
+
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function loadDetail(tipo, valor) {
+    hideMsg();
+    const url = "/api/xsys/socios/lookup/?" + encodeURIComponent(tipo) + "=" + encodeURIComponent(valor);
+    fetch(url, { credentials: "same-origin", headers: { "Accept": "application/json" } })
+      .then(function (r) {
+        if (r.status === 404) { throw new Error("Socio no encontrado."); }
+        if (!r.ok) { throw new Error("Error en la consulta (" + r.status + ")."); }
+        return r.json();
+      })
+      .then(render)
+      .catch(function (e) { showMsg(e.message || "Error inesperado.", "danger"); });
+  }
+
+  function renderLista(items) {
+    if (!items.length) { lista.classList.add("d-none"); lista.innerHTML = ""; return; }
+    lista.innerHTML = items.map(function (s) {
+      const thumbSrc = s.foto_thumb_url || s.foto_url;
+      const thumb = thumbSrc
+        ? '<img src="' + esc(thumbSrc) + '" alt="" class="rounded border me-3" ' +
+          'style="width:40px;height:50px;object-fit:cover;background:#f1f3f5" ' +
+          'onerror="this.style.visibility=\'hidden\'">'
+        : '<span class="rounded border me-3 d-inline-block bg-body-secondary" style="width:40px;height:50px"></span>';
+      const estado = s.activo
+        ? '<span class="badge text-bg-secondary ms-2">Activo</span>'
+        : '<span class="badge text-bg-dark ms-2">Inactivo</span>';
+      return '<button type="button" class="list-group-item list-group-item-action d-flex align-items-center" ' +
+        'data-id="' + esc(s.id_cliente) + '">' + thumb +
+        '<span class="flex-grow-1 text-start"><strong>' + esc(s.nombre_completo) + '</strong>' + estado +
+        '<br><small class="text-muted">Doc ' + esc(s.doc_nro || "—") + ' · Cred ' + esc(s.credencial_nro || "—") +
+        ' · #' + esc(s.id_cliente) + '</small></span></button>';
+    }).join("");
+    lista.classList.remove("d-none");
+    lista.querySelectorAll("[data-id]").forEach(function (el) {
+      el.addEventListener("click", function () { loadDetail("id", el.getAttribute("data-id")); });
+    });
+  }
+
+  function buscarLista(q) {
+    if (q.length < 2) { renderLista([]); return; }
+    fetch("/api/xsys/socios/?q=" + encodeURIComponent(q), {
+      credentials: "same-origin", headers: { "Accept": "application/json" },
+    })
+      .then(function (r) { return r.ok ? r.json() : { results: [] }; })
+      .then(function (d) { renderLista(d.results || d || []); })
+      .catch(function () { renderLista([]); });
+  }
+
+  let debounce = null;
+  document.getElementById("valor").addEventListener("input", function (ev) {
+    const q = ev.target.value.trim();
+    clearTimeout(debounce);
+    debounce = setTimeout(function () { buscarLista(q); }, 300);
+  });
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    res.classList.add("d-none");
+    const tipo = document.getElementById("tipo").value;
+    const valor = document.getElementById("valor").value.trim();
+    if (!valor) { showMsg("Ingresá un valor para buscar.", "warning"); return; }
+    loadDetail(tipo, valor);
+  });
+})();
+</script>
+{% endblock extra_js %}

@@ -144,11 +144,30 @@ class BioStar2Client:
     def list_users(self, *, limit: int = 200, offset: int = 0) -> dict:
         return self.request("GET", "/api/users", params={"limit": limit, "offset": offset}).json()
 
+    def get_user(self, user_id: int) -> dict | None:
+        """Trae el detalle en vivo de un usuario puntual. None si no existe en BioStar (404)."""
+        try:
+            return self.request("GET", f"/api/users/{user_id}").json()
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 404:
+                return None
+            raise
+
     def list_device_groups(self) -> dict:
         """
         Lista grupos de dispositivos en BioStar 2
         """
         return self.request("GET", "/api/device_groups").json()
+
+    def move_device_group(self, device_id: int, group_id: int) -> dict:
+        """Mueve un dispositivo a otro grupo de dispositivos (device_group).
+
+        No existe un endpoint dedicado "move_device_group" en esta instancia de
+        BioStar 2 (probado, devuelve 400 "Request is not supported"). Lo que sí
+        funciona es un PUT a /api/devices/{id} con el objeto Device parcial.
+        """
+        payload = {"Device": {"id": str(device_id), "device_group_id": {"id": str(group_id)}}}
+        return self.request("PUT", f"/api/devices/{device_id}", json=payload).json()
 
     def list_device_users(self, device_id: int, *, limit: int = 1, offset: int = 0) -> dict:
         return self.request(
@@ -159,6 +178,65 @@ class BioStar2Client:
 
     def discover_device_userdata(self, device_id: int) -> dict:
         return self.request("GET", f"/api/devices/{device_id}/discover_userdata").json()
+
+    def list_devices_by_group(self, group_id: int) -> list[int]:
+        """IDs de los dispositivos que pertenecen a un device_group. Usa /api/v2/devices/search."""
+        payload = {"limit": 500, "device_group_id": str(group_id)}
+        data = self.request("POST", "/api/v2/devices/search", json=payload).json()
+        rows = data.get("DeviceCollection", {}).get("rows", [])
+        return [int(row["id"]) for row in rows]
+
+    def add_user_to_device(
+        self, user_ids: int | list[int], device_id: int, *, overwrite: bool = True
+    ) -> dict:
+        """Envía (agrega) uno o más usuarios a un dispositivo puntual, sin resincronizar todo.
+
+        Endpoint: POST /api/users/export (ids de usuario separados por '+' en la query).
+        """
+        ids = user_ids if isinstance(user_ids, list) else [user_ids]
+        id_param = "+".join(str(i) for i in ids)
+        payload = {"DeviceCollection": {"rows": [{"id": str(device_id)}]}}
+        return self.request(
+            "POST",
+            "/api/users/export",
+            params={"overwrite": str(overwrite).lower(), "id": id_param},
+            json=payload,
+        ).json()
+
+    def add_user_to_device_group(
+        self, user_ids: int | list[int], group_id: int, *, overwrite: bool = True
+    ) -> dict:
+        """Envía uno o más usuarios a TODOS los dispositivos de un device_group, en una sola llamada."""
+        device_ids = self.list_devices_by_group(group_id)
+        ids = user_ids if isinstance(user_ids, list) else [user_ids]
+        id_param = "+".join(str(i) for i in ids)
+        payload = {"DeviceCollection": {"rows": [{"id": str(d)} for d in device_ids]}}
+        return self.request(
+            "POST",
+            "/api/users/export",
+            params={"overwrite": str(overwrite).lower(), "id": id_param},
+            json=payload,
+        ).json()
+
+    def remove_user_from_device(self, device_id: int, user_id: int | str = "*") -> dict:
+        """Borra un usuario puntual (o todos, con user_id='*') de la caché local de un dispositivo."""
+        return self.request(
+            "DELETE",
+            f"/api/devices/{device_id}/users",
+            params={"id": str(user_id)},
+        ).json()
+
+    def remove_user_from_device_group(self, group_id: int, user_id: int | str = "*") -> dict:
+        """Borra un usuario puntual (o todos) de TODOS los dispositivos de un device_group.
+
+        No existe un endpoint de borrado masivo por grupo; se itera dispositivo por
+        dispositivo. Devuelve {device_id: respuesta} para poder ver qué falló.
+        """
+        device_ids = self.list_devices_by_group(group_id)
+        results: dict[int, dict] = {}
+        for device_id in device_ids:
+            results[device_id] = self.remove_user_from_device(device_id, user_id)
+        return results
 
     def search_users_v2(
         self,

@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from access_control.api.v1.api_views import (
+    AccessCheckAPI,
     AnsesCandidatesAPI,
     AnsesProcessedExportAPI,
     AnsesVerifyAPI,
@@ -15,6 +16,7 @@ from access_control.api.v1.api_views import (
     BioStarDeviceUserdataAPI,
     BioStarDeviceUsersAPI,
     BioStarUserListAPI,
+    BioStarUserLookupAPI,
     BioStarUserSearchAPI,
     BioStarUserSyncAPI,
     ExternalAccessLogSyncAPI,
@@ -65,6 +67,7 @@ urlpatterns = router.urls + [
         name="biostar_device_userdata_api",
     ),
     path("biostar/users/", BioStarUserListAPI.as_view(), name="biostar_users_list_api"),
+    path("biostar/users/lookup/", BioStarUserLookupAPI.as_view(), name="biostar_users_lookup_api"),
     path("biostar/users/search/", BioStarUserSearchAPI.as_view(), name="biostar_users_search_api"),
     path("biostar/users/sync/", BioStarUserSyncAPI.as_view(), name="biostar_users_sync_api"),
     path(
@@ -82,6 +85,7 @@ urlpatterns = router.urls + [
         WhitelistBatchCreateAPI.as_view(),
         name="whitelist_batch_create_api",
     ),
+    path("access-check/", AccessCheckAPI.as_view(), name="access_check_api"),
     path("reports/access-by-category/", AccessByCategoryReportView.as_view(), name="report_access_by_category"),
     path("reports/access-by-site/", AccessBySiteReportView.as_view(), name="report_access_by_site"),
     path("reports/access-heatmap/", AccessHeatmapReportView.as_view(), name="report_access_heatmap"),

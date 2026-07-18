@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Monitor de puerta</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body { font-family: system-ui, "Segoe UI", Roboto, sans-serif; background: #0d1117; color: #e6edf3; overflow: hidden; }
+
+    .topbar { position: fixed; top: 0; left: 0; right: 0; height: 52px; z-index: 10; display: flex; align-items: center; gap: 14px; padding: 0 14px; background: rgba(0,0,0,.4); }
+    .burger { font-size: 24px; background: none; border: 0; color: #e6edf3; cursor: pointer; padding: 6px 10px; border-radius: 8px; }
+    .burger:hover { background: rgba(255,255,255,.1); }
+    .titulo { font-size: 18px; font-weight: 700; }
+    .reloj { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 18px; opacity: .8; }
+
+    .columns { position: fixed; top: 52px; left: 0; right: 0; bottom: 0; display: flex; }
+    .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; border-right: 1px solid #21262d; }
+    .col:last-child { border-right: 0; }
+    .col__head { flex: 0 0 auto; padding: 7px; text-align: center; font-weight: 700; background: rgba(0,0,0,.25); font-size: clamp(12px, 1.5vw, 20px); }
+
+    .col__current { flex: 1 1 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px; text-align: center; overflow: hidden; }
+    .cfoto { max-width: 92%; max-height: 72%; aspect-ratio: 3/4; object-fit: cover; border-radius: 12px; background: #161b22; border: 6px solid #30363d; transition: border-color .15s, box-shadow .15s; }
+    .cfoto.ok { border-color: #2ea043; box-shadow: 0 0 22px rgba(46,160,67,.4); }
+    .cfoto.no { border-color: #f85149; box-shadow: 0 0 22px rgba(248,81,73,.4); }
+    .cfoto.warn { border-color: #d29922; box-shadow: 0 0 22px rgba(210,153,34,.5); }
+    .cfoto.sinfoto { display: flex; align-items: center; justify-content: center; font-size: 68px; color: #30363d; width: 46%; }
+    .cname { margin-top: 8px; font-weight: 700; font-size: clamp(15px, 1.7vw, 28px); line-height: 1.1; }
+    .cmsg { margin-top: 5px; font-weight: 600; font-size: clamp(11px, 1.05vw, 16px); padding: 3px 10px; border-radius: 8px; max-width: 94%; }
+    .cmsg.ok { background: rgba(46,160,67,.16); color: #56d364; border: 1px solid #2ea043; }
+    .cmsg.no { background: rgba(248,81,73,.16); color: #ff7b72; border: 1px solid #f85149; }
+    .cmsg.warn { background: rgba(210,153,34,.18); color: #e3b341; border: 1px solid #d29922; }
+    .cextra { margin-top: 6px; font-size: clamp(11px, 1.1vw, 16px); opacity: .85; line-height: 1.3; }
+    .cextra .cat { font-weight: 600; }
+    .cextra .cuota { opacity: .8; }
+    .ctime { margin-top: 5px; font-size: 12px; opacity: .5; }
+    .idle { opacity: .45; font-size: clamp(14px, 1.6vw, 22px); text-align: center; padding: 20px; }
+
+    .col__history { flex: 1 1 50%; display: flex; border-top: 1px solid #21262d; overflow: hidden; }
+    .hlist { flex: 1 1 auto; min-width: 0; overflow: hidden; padding: 2px 4px; }
+    .hrow { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border-bottom: 1px solid #171d25; }
+    .hthumb { width: 34px; height: 44px; object-fit: cover; border-radius: 6px; flex: 0 0 auto; background: #21262d; border: 1px solid #30363d; }
+    .hbody { min-width: 0; flex: 1; }
+    .hname { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hmsg { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .85; }
+    .hmsg.ok { color: #56d364; } .hmsg.no { color: #ff7b72; } .hmsg.warn { color: #e3b341; }
+    .htime { font-size: 11px; opacity: .5; flex: 0 0 auto; }
+    .hempty { opacity: .35; font-size: 13px; padding: 8px; text-align: center; }
+    .hnav { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 4px 7px; border-left: 1px solid #21262d; }
+    .hbtn { width: 40px; height: 38px; font-size: 16px; background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 8px; cursor: pointer; }
+    .hbtn:hover:not(:disabled) { background: #2d333b; }
+    .hbtn:disabled { opacity: .3; cursor: default; }
+    .hpage { font-size: 11px; opacity: .65; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+    .drawer { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 20; display: none; }
+    .drawer.open { display: flex; }
+    .drawer__panel { width: min(380px, 88vw); background: #161b22; height: 100%; padding: 18px; overflow-y: auto; box-shadow: 4px 0 30px rgba(0,0,0,.5); }
+    .drawer__title { font-size: 17px; font-weight: 700; margin: 2px 0 6px; }
+    .drawer__hint { font-size: 12px; opacity: .6; margin-bottom: 12px; }
+    .drawer__input { width: 100%; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 8px; padding: 9px 11px; margin-bottom: 12px; font-size: 14px; }
+    .acc-item { display: flex; align-items: center; gap: 10px; padding: 10px 8px; border-bottom: 1px solid #21262d; cursor: pointer; font-size: 15px; }
+    .acc-item input { width: 18px; height: 18px; }
+    .btn { width: 100%; background: #2ea043; color: #fff; border: 0; border-radius: 10px; padding: 12px; font-size: 15px; font-weight: 600; margin-top: 14px; cursor: pointer; }
+    .btn:hover { background: #2c974b; }
+    .cfglink { display: block; text-align: center; margin-top: 12px; color: #58a6ff; text-decoration: none; font-size: 13px; }
+    .cfglink:hover { text-decoration: underline; }
+    .ip { margin-top: 12px; font-size: 12px; opacity: .5; }
+
+    .hrow { cursor: pointer; }
+    .hrow:hover { background: rgba(255,255,255,.05); }
+    .col__current { cursor: pointer; }
+
+    /* Ícono de lectura: facial (rostro) vs credencial (tarjeta) */
+    .licon-wrap { flex: 0 0 auto; display: flex; align-items: center; }
+    .licon { width: 17px; height: 19px; }
+    .licon.facial { color: #58a6ff; }
+    .licon.credencial { color: #d29922; }
+    .clectura { margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; opacity: .8; }
+    .clectura .licon { width: 16px; height: 18px; }
+
+    /* Modal de detalle */
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 30; display: none; align-items: center; justify-content: center; padding: 20px; }
+    .modal.open { display: flex; }
+    .modal__box { background: #161b22; border: 1px solid #30363d; border-radius: 16px; max-width: 760px; width: 100%; max-height: 92vh; overflow-y: auto; padding: 22px; position: relative; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+    .modal__close { position: absolute; top: 12px; right: 14px; background: none; border: 0; color: #e6edf3; font-size: 28px; cursor: pointer; line-height: 1; }
+    .modal__grid { display: flex; gap: 22px; flex-wrap: wrap; }
+    .modal__foto { width: 260px; max-width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 12px; border: 5px solid #30363d; background: #0d1117; flex: 0 0 auto; }
+    .modal__foto.ok { border-color: #2ea043; } .modal__foto.no { border-color: #f85149; } .modal__foto.warn { border-color: #d29922; }
+    .modal__info { flex: 1 1 300px; min-width: 260px; }
+    .modal__nombre { font-size: 26px; font-weight: 700; margin: 0 0 8px; }
+    .modal__msg { display: inline-block; font-weight: 600; padding: 6px 14px; border-radius: 10px; margin-bottom: 14px; }
+    .modal__msg.ok { background: rgba(46,160,67,.16); color: #56d364; border: 1px solid #2ea043; }
+    .modal__msg.no { background: rgba(248,81,73,.16); color: #ff7b72; border: 1px solid #f85149; }
+    .modal__msg.warn { background: rgba(210,153,34,.18); color: #e3b341; border: 1px solid #d29922; }
+    .modal__dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; margin: 0 0 14px; }
+    .modal__dl dt { opacity: .6; }
+    .modal__dl dd { margin: 0; font-weight: 600; }
+    .modal__contratos strong { font-size: 14px; }
+    .contrato { display: inline-block; background: #21262d; border: 1px solid #30363d; border-radius: 999px; padding: 4px 12px; margin: 4px 6px 0 0; font-size: 13px; }
+    .contrato.cs { border-color: #2ea043; }
+    .modal__vacio { opacity: .5; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <button class="burger" id="burger" title="Configurar pantalla">&#9776;</button>
+    <span class="titulo" id="titulo">Monitor</span>
+    <span class="reloj" id="reloj">--:--:--</span>
+  </div>
+
+  <div class="columns" id="columns">
+    <div class="col"><div class="col__current"><div class="idle">Cargando…</div></div></div>
+  </div>
+
+  <div class="drawer" id="drawer">
+    <div class="drawer__panel">
+      <div class="drawer__title">Puerta de esta pantalla</div>
+      <div class="drawer__hint">Elegí UNA puerta. Sus molinetes son las columnas.</div>
+      <input class="drawer__input" id="nombre" placeholder="Nombre de la pantalla (opcional)" />
+      <div id="accesos"></div>
+      <button class="btn" id="aplicar">Aplicar</button>
+      <a class="cfglink" href="/xsys/molinetes/" target="_blank">&#9881; Administrar molinetes por puerta</a>
+      <div class="ip" id="ip"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="modal__box">
+      <button class="modal__close" id="modal-close" title="Cerrar">&times;</button>
+      <div class="modal__grid">
+        <img class="modal__foto" id="m-foto" alt="" />
+        <div class="modal__info">
+          <div class="modal__nombre" id="m-nombre"></div>
+          <div class="modal__msg" id="m-msg"></div>
+          <dl class="modal__dl">
+            <dt>Lugar de acceso</dt><dd id="m-lugar">—</dd>
+            <dt>Lectura</dt><dd id="m-lectura" style="display:flex;align-items:center;gap:6px">—</dd>
+            <dt>Categoría</dt><dd id="m-cat">—</dd>
+            <dt>Última cuota paga</dt><dd id="m-cuota">—</dd>
+            <dt>Fecha / hora</dt><dd id="m-fecha">—</dd>
+          </dl>
+          <div class="modal__contratos">
+            <strong>Contratos adquiridos</strong>
+            <div id="m-contratos" class="modal__vacio">Cargando…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var API = "/api/xsys";
+    var drawer = document.getElementById("drawer");
+    var colState = {};        // key -> ultimo id_es (panel superior)
+    var hist = {};            // key -> { list, page, topId } (historial paginado)
+    var colData = {};         // key -> columna completa (para el modal)
+    var currentKeys = ["\x00"]; // firma de columnas (centinela para forzar 1er render)
+    var currentPuerta = null;
+    var currentPuertaDesc = "";
+    var PER_PAGE = 5;
+
+    function genToken() {
+      try {
+        var a = new Uint8Array(16);
+        (window.crypto || window.msCrypto).getRandomValues(a);
+        return Array.prototype.map.call(a, function (b) { return ("0" + b.toString(16)).slice(-2); }).join("");
+      } catch (e) { return "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12); }
+    }
+    var TOKEN = localStorage.getItem("xsys_pantalla_token");
+    if (!TOKEN) { TOKEN = genToken(); localStorage.setItem("xsys_pantalla_token", TOKEN); }
+    function hdr(extra) {
+      var h = { "Accept": "application/json", "X-Pantalla-Token": TOKEN };
+      if (extra) for (var k in extra) h[k] = extra[k];
+      return h;
+    }
+    function esc(v) {
+      return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+    function hora(iso) { try { return new Date(iso).toLocaleTimeString("es-AR"); } catch (e) { return ""; } }
+    function fechaCorta(iso) { try { return new Date(iso).toLocaleDateString("es-AR"); } catch (e) { return ""; } }
+
+    document.getElementById("burger").addEventListener("click", abrirDrawer);
+    drawer.addEventListener("click", function (e) { if (e.target === drawer) drawer.classList.remove("open"); });
+    document.getElementById("aplicar").addEventListener("click", aplicar);
+    setInterval(function () { document.getElementById("reloj").textContent = new Date().toLocaleTimeString("es-AR"); }, 1000);
+
+    function abrirDrawer() {
+      fetch(API + "/puertas/", { headers: hdr() }).then(function (r) { return r.json(); }).then(function (d) {
+        renderPuertas(d.puertas || [], currentPuerta);
+        drawer.classList.add("open");
+      });
+    }
+    function renderPuertas(puertas, seleccionada) {
+      document.getElementById("accesos").innerHTML = puertas.map(function (a) {
+        return '<label class="acc-item"><input type="radio" name="puerta" value="' + a.id_acceso + '"' +
+               (a.id_acceso === seleccionada ? " checked" : "") + '><span>' + esc(a.descripcion) + '</span></label>';
+      }).join("") || '<div class="hempty">No hay puertas sincronizadas.</div>';
+    }
+    function aplicar() {
+      var sel = document.querySelector('#accesos input:checked');
+      if (!sel) return;
+      var nombre = document.getElementById("nombre").value.trim();
+      fetch(API + "/puerta/seleccionar/", {
+        method: "POST", headers: hdr({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ id_acceso: parseInt(sel.value, 10), nombre: nombre }),
+      }).then(function () { drawer.classList.remove("open"); colState = {}; hist = {}; currentKeys = ["\x00"]; poll(); });
+    }
+
+    function claseEstado(ev) {
+      if (ev.estado === "anomalia") return "warn";
+      if (ev.estado === "ok" || ev.estado === "no") return ev.estado;
+      return ev.permitido ? "ok" : "no";
+    }
+    var SVG_FACIAL = '<svg class="licon facial" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="3.2"/><path d="M5 20c0-3.6 3.2-5.6 7-5.6s7 2 7 5.6"/></svg>';
+    var SVG_CRED = '<svg class="licon credencial" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2"/><rect x="6" y="9" width="4.5" height="4.5" rx="1"/><line x1="13.5" y1="9.5" x2="18" y2="9.5"/><line x1="13.5" y1="13" x2="18" y2="13"/></svg>';
+    function lecturaIcono(ev) {
+      var facial = ev.lectura === "facial";
+      return '<span class="licon-wrap" title="' + (facial ? "Facial" : "Credencial") + '">' + (facial ? SVG_FACIAL : SVG_CRED) + '</span>';
+    }
+    function fotoBig(ev) {
+      var marco = claseEstado(ev);
+      return ev.foto_url
+        ? '<img class="cfoto ' + marco + '" src="' + esc(ev.foto_url) + '" alt="" onerror="this.outerHTML=\'<div class=&quot;cfoto sinfoto ' + marco + '&quot;>&#128100;</div>\'">'
+        : '<div class="cfoto sinfoto ' + marco + '">&#128100;</div>';
+    }
+    function currentHTML(ev) {
+      if (!ev) return '<div class="idle">Sin ingresos</div>';
+      var clase = claseEstado(ev);
+      var extra = "";
+      if (ev.categoria || ev.ult_cuota_paga) {
+        var partes = [];
+        if (ev.categoria) partes.push('<span class="cat">' + esc(ev.categoria) + '</span>');
+        if (ev.ult_cuota_paga) partes.push('<span class="cuota">Últ. cuota: ' + esc(fechaCorta(ev.ult_cuota_paga)) + '</span>');
+        extra = '<div class="cextra">' + partes.join(" · ") + '</div>';
+      }
+      return fotoBig(ev) +
+        '<div class="cname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
+        '<div class="cmsg ' + clase + '">' + esc(ev.mensaje || (ev.permitido ? "Permitido" : "Denegado")) + '</div>' +
+        extra +
+        '<div class="clectura">' + lecturaIcono(ev) + (ev.lectura === "facial" ? "Facial" : "Credencial") + '</div>' +
+        '<div class="ctime">' + esc(hora(ev.fecha)) + '</div>';
+    }
+    function historialHTML(lista) {
+      if (!lista || !lista.length) return '<div class="hempty">Sin historial</div>';
+      return lista.map(function (ev) {
+        var thumb = ev.foto_thumb_url
+          ? '<img class="hthumb" src="' + esc(ev.foto_thumb_url) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+          : '<div class="hthumb"></div>';
+        var clase = claseEstado(ev);
+        return '<div class="hrow" data-ides="' + esc(ev.id_es) + '">' + thumb + lecturaIcono(ev) +
+          '<div class="hbody"><div class="hname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
+          '<div class="hmsg ' + clase + '">' + esc(ev.mensaje || "") + '</div></div>' +
+          '<div class="htime">' + esc(hora(ev.fecha)) + '</div></div>';
+      }).join("");
+    }
+
+    function rebuildSkeleton(columnas) {
+      var cont = document.getElementById("columns");
+      if (!columnas.length) {
+        cont.innerHTML = '<div class="col"><div class="col__current"><div class="idle">Esta puerta no tiene molinetes.<br>Configuralos con &#9881;.</div></div></div>';
+        colState = {}; hist = {}; return;
+      }
+      cont.innerHTML = columnas.map(function (c) {
+        return '<div class="col" data-col="' + esc(c.key) + '">' +
+          '<div class="col__head">' + esc(c.nombre) + '</div>' +
+          '<div class="col__current"></div>' +
+          '<div class="col__history">' +
+            '<div class="hlist"></div>' +
+            '<div class="hnav">' +
+              '<button class="hbtn" data-act="up" title="Página anterior">&#9650;</button>' +
+              '<button class="hbtn" data-act="reset" title="Volver arriba de todo">&#8635;</button>' +
+              '<button class="hbtn" data-act="down" title="Página siguiente">&#9660;</button>' +
+              '<div class="hpage">1</div>' +
+            '</div>' +
+          '</div></div>';
+      }).join("");
+      colState = {}; hist = {};
+    }
+
+    function renderHist(key) {
+      var st = hist[key];
+      var col = document.querySelector('.col[data-col="' + cssq(key) + '"]');
+      if (!st || !col) return;
+      var maxPage = Math.max(0, Math.ceil(st.list.length / PER_PAGE) - 1);
+      if (st.page > maxPage) st.page = maxPage;
+      var items = st.list.slice(st.page * PER_PAGE, st.page * PER_PAGE + PER_PAGE);
+      col.querySelector(".hlist").innerHTML = historialHTML(items);
+      col.querySelector(".hpage").textContent = (st.page + 1) + "/" + (maxPage + 1);
+      col.querySelector('[data-act="up"]').disabled = st.page === 0;
+      col.querySelector('[data-act="reset"]').disabled = st.page === 0;
+      col.querySelector('[data-act="down"]').disabled = st.page >= maxPage;
+    }
+    function cssq(s) { return String(s).replace(/"/g, '\\"'); }
+
+    document.getElementById("columns").addEventListener("click", function (e) {
+      var btn = e.target.closest ? e.target.closest(".hbtn") : null;
+      if (btn) {  // paginación
+        var col = btn.closest(".col");
+        var key = col.getAttribute("data-col");
+        var st = hist[key]; if (!st) return;
+        var maxPage = Math.max(0, Math.ceil(st.list.length / PER_PAGE) - 1);
+        var act = btn.getAttribute("data-act");
+        if (act === "up") st.page = Math.max(0, st.page - 1);
+        else if (act === "down") st.page = Math.min(maxPage, st.page + 1);
+        else if (act === "reset") { st.page = 0; st.topId = st.list.length ? st.list[0].id_es : null; }
+        renderHist(key);
+        return;
+      }
+      // click en fila de historial o en el panel superior -> modal de detalle
+      var colEl = e.target.closest ? e.target.closest(".col") : null;
+      if (!colEl) return;
+      var ckey = colEl.getAttribute("data-col");
+      var cd = colData[ckey]; if (!cd) return;
+      var ev = null;
+      var row = e.target.closest(".hrow");
+      if (row) {
+        var ides = parseInt(row.getAttribute("data-ides"), 10);
+        var cand = (cd.historial || []).slice();
+        if (cd.ultimo) cand.push(cd.ultimo);
+        for (var i = 0; i < cand.length; i++) if (cand[i].id_es === ides) { ev = cand[i]; break; }
+      } else if (e.target.closest(".col__current")) {
+        ev = cd.ultimo;
+      }
+      if (ev) openModal(ev, cd.nombre);
+    });
+
+    function fechaHora(iso) { try { return new Date(iso).toLocaleString("es-AR"); } catch (e) { return ""; } }
+
+    function openModal(ev, molinete) {
+      var cls = claseEstado(ev);
+      var foto = document.getElementById("m-foto");
+      if (ev.foto_url) { foto.src = ev.foto_url; foto.style.display = ""; } else { foto.removeAttribute("src"); foto.style.display = "none"; }
+      foto.className = "modal__foto " + cls;
+      document.getElementById("m-nombre").textContent = ev.nombre || ("Cliente " + (ev.id_cliente || ""));
+      var msg = document.getElementById("m-msg"); msg.textContent = ev.mensaje || ""; msg.className = "modal__msg " + cls;
+      document.getElementById("m-lugar").textContent = (currentPuertaDesc ? currentPuertaDesc + " · " : "") + (molinete || "");
+      document.getElementById("m-lectura").innerHTML = lecturaIcono(ev) + " " + (ev.lectura === "facial" ? "Facial" : "Credencial");
+      document.getElementById("m-cat").textContent = ev.categoria || "—";
+      document.getElementById("m-cuota").textContent = ev.ult_cuota_paga ? fechaCorta(ev.ult_cuota_paga) : "—";
+      document.getElementById("m-fecha").textContent = fechaHora(ev.fecha);
+      document.getElementById("m-contratos").innerHTML = '<span class="modal__vacio">Cargando…</span>';
+      document.getElementById("modal").classList.add("open");
+      if (!ev.id_cliente) { document.getElementById("m-contratos").innerHTML = '<span class="modal__vacio">Sin socio</span>'; return; }
+      fetch(API + "/socios/" + ev.id_cliente + "/detalle/", { headers: hdr() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.categoria) document.getElementById("m-cat").textContent = d.categoria;
+          if (d.ult_cuota_paga) document.getElementById("m-cuota").textContent = fechaCorta(d.ult_cuota_paga);
+          var lista = d.contratos || [];
+          document.getElementById("m-contratos").innerHTML = lista.length
+            ? lista.map(function (c) {
+                var cs = /CUOTA SOCIAL/i.test(c.descripcion) ? " cs" : "";
+                return '<span class="contrato' + cs + '">' + esc(c.descripcion) + '</span>';
+              }).join("")
+            : '<span class="modal__vacio">Sin contratos</span>';
+        })
+        .catch(function () { document.getElementById("m-contratos").innerHTML = '<span class="modal__vacio">No se pudieron cargar</span>'; });
+    }
+    document.getElementById("modal-close").addEventListener("click", function () { document.getElementById("modal").classList.remove("open"); });
+    document.getElementById("modal").addEventListener("click", function (e) { if (e.target === this) this.classList.remove("open"); });
+
+    function updateColumna(c) {
+      colData[c.key] = c;
+      var col = document.querySelector('.col[data-col="' + cssq(c.key) + '"]');
+      if (!col) return;
+      var ultId = c.ultimo ? c.ultimo.id_es : null;
+      if (colState[c.key] !== ultId) {
+        colState[c.key] = ultId;
+        col.querySelector(".col__current").innerHTML = currentHTML(c.ultimo);
+      }
+      var st = hist[c.key] || (hist[c.key] = { list: [], page: 0, topId: null });
+      st.list = c.historial || [];
+      var newest = st.list.length ? st.list[0].id_es : null;
+      if (st.page === 0 && newest !== st.topId) { st.topId = newest; renderHist(c.key); }
+    }
+
+    function mostrarSinConfig(puertas) {
+      document.getElementById("titulo").textContent = "Sin configurar";
+      document.getElementById("columns").innerHTML =
+        '<div class="col"><div class="col__current"><div class="idle">Elegí la puerta con &#9776;</div></div></div>';
+      currentPuerta = null; currentKeys = ["\x00"];
+      if (!drawer.classList.contains("open")) { renderPuertas(puertas || [], null); drawer.classList.add("open"); }
+    }
+
+    function poll() {
+      fetch(API + "/puerta/estado/", { headers: hdr() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          document.getElementById("ip").textContent = "IP: " + (d.ip || "") + " · token " + TOKEN.slice(0, 8);
+          if (!d.configurada) { mostrarSinConfig(d.puertas); return; }
+          document.getElementById("titulo").textContent = d.nombre || "Monitor";
+          currentPuerta = d.puerta ? d.puerta.id_acceso : null;
+          currentPuertaDesc = d.puerta ? d.puerta.descripcion : "";
+          var keys = (d.columnas || []).map(function (c) { return c.key; });
+          if (keys.join("|") !== currentKeys.join("|")) { currentKeys = keys; rebuildSkeleton(d.columnas); }
+          (d.columnas || []).forEach(updateColumna);
+        })
+        .catch(function () { /* red intermitente: reintenta */ });
+    }
+
+    poll();
+    setInterval(poll, 1000);
+  })();
+  </script>
+</body>
+</html>
