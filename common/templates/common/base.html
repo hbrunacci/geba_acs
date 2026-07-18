@@ -17,6 +17,13 @@
       integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
       crossorigin="anonymous"
     />
+    <meta name="theme-color" content="#141b2d" />
+    <meta name="application-name" content="ACS" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="ACS" />
+    <link rel="manifest" href="{% static 'common/manifest.webmanifest' %}" />
+    <link rel="icon" type="image/svg+xml" href="{% static 'common/img/pwa-icon.svg' %}" />
+    <link rel="apple-touch-icon" href="{% static 'common/img/pwa-icon.svg' %}" />
     <link rel="stylesheet" href="{% static 'common/css/dashboard.css' %}" />
     {% block extra_css %}{% endblock extra_css %}
     {% block extra_head %}{% endblock extra_head %}
@@ -99,6 +106,14 @@
           </p>
         </div>
         <div class="header__actions d-flex flex-wrap gap-2">
+          <button
+            class="button button--install-app"
+            type="button"
+            data-pwa-install
+            aria-live="polite"
+          >
+            Usa la pagina como app
+          </button>
           {% block header_actions %}{% endblock header_actions %}
         </div>
       </header>

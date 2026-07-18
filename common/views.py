@@ -1,6 +1,12 @@
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.contrib.auth.views import LoginView as DjangoLoginView, LogoutView as DjangoLogoutView
+from django.contrib.auth.views import (
+    LoginView as DjangoLoginView,
+    LogoutView as DjangoLogoutView,
+)
+from django.contrib.staticfiles import finders
+from django.http import Http404, HttpResponse
 from django.urls import reverse_lazy
+from django.views import View
 from django.views.generic import TemplateView
 
 
@@ -50,3 +56,19 @@ class LoginView(DjangoLoginView):
 
 class LogoutView(DjangoLogoutView):
     next_page = reverse_lazy("common:login")
+
+
+class ServiceWorkerView(View):
+    def get(self, request, *args, **kwargs):
+        service_worker_path = finders.find("common/js/service-worker.js")
+        if not service_worker_path:
+            raise Http404("Service worker no encontrado")
+
+        with open(service_worker_path, encoding="utf-8") as service_worker_file:
+            response = HttpResponse(
+                service_worker_file.read(),
+                content_type="application/javascript; charset=utf-8",
+            )
+        response["Service-Worker-Allowed"] = "/"
+        response["Cache-Control"] = "no-cache"
+        return response
