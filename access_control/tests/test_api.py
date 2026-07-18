@@ -3,6 +3,8 @@ from unittest.mock import patch
 import zipfile
 from io import BytesIO
 
+import requests
+
 from django.contrib.auth import get_user_model
 from django.db.utils import OperationalError
 from django.urls import reverse
@@ -886,3 +888,103 @@ class ACSTestConsoleAPITestCase(BaseAPITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["accepted"], False)
         self.assertEqual(response.data["ping"]["reachable"], False)
+
+
+class BioStarUserLookupAPITestCase(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.url = reverse("biostar_users_lookup_api")
+
+    def test_requires_authentication(self):
+        response = self.client.get(self.url, {"id_cliente": "831446"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_requires_exactly_one_identifier(self):
+        self.authenticate()
+        response = self.client.get(self.url, {})
+        self.assertEqual(response.status_code, 400)
+
+        response = self.client.get(self.url, {"id_cliente": "831446", "doc_nro": "47391818"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_id_cliente_skips_mssql_and_queries_biostar_directly(self):
+        self.authenticate()
+        with patch("access_control.api.v1.api_views.BioStar2Client") as client_cls, \
+                patch("access_control.api.v1.api_views.MSSQLAccessCheckService") as service_cls:
+            client_cls.from_db_and_env.return_value.get_user.return_value = {
+                "user_id": "831446",
+                "name": "MILLARENGO ORIANA",
+            }
+            response = self.client.get(self.url, {"id_cliente": "831446"})
+
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.data["found"])
+            self.assertEqual(response.data["id_cliente"], 831446)
+            self.assertEqual(response.data["biostar_user"]["name"], "MILLARENGO ORIANA")
+            service_cls.assert_not_called()
+            client_cls.from_db_and_env.return_value.get_user.assert_called_once_with(831446)
+
+    def test_doc_nro_resolves_via_mssql_then_queries_biostar(self):
+        self.authenticate()
+        with patch("access_control.api.v1.api_views.BioStar2Client") as client_cls, \
+                patch("access_control.api.v1.api_views.MSSQLAccessCheckService") as service_cls:
+            service_cls.return_value.resolve_id_cliente.return_value = 831446
+            client_cls.from_db_and_env.return_value.get_user.return_value = {
+                "user_id": "831446",
+                "name": "MILLARENGO ORIANA",
+            }
+
+            response = self.client.get(self.url, {"doc_nro": "47391818"})
+
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.data["found"])
+            service_cls.return_value.resolve_id_cliente.assert_called_once_with(
+                identifier_type="doc_nro", identifier_value="47391818"
+            )
+            client_cls.from_db_and_env.return_value.get_user.assert_called_once_with(831446)
+
+    def test_identifier_not_found_in_mssql(self):
+        self.authenticate()
+        with patch("access_control.api.v1.api_views.BioStar2Client") as client_cls, \
+                patch("access_control.api.v1.api_views.MSSQLAccessCheckService") as service_cls:
+            service_cls.return_value.resolve_id_cliente.return_value = None
+
+            response = self.client.get(self.url, {"credencial": "2B5204E4"})
+
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.data["found"])
+            client_cls.from_db_and_env.return_value.get_user.assert_not_called()
+
+    def test_not_found_in_biostar(self):
+        self.authenticate()
+        with patch("access_control.api.v1.api_views.BioStar2Client") as client_cls, \
+                patch("access_control.api.v1.api_views.MSSQLAccessCheckService"):
+            client_cls.from_db_and_env.return_value.get_user.return_value = None
+
+            response = self.client.get(self.url, {"id_cliente": "1"})
+
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.data["found"])
+            self.assertIsNone(response.data["biostar_user"])
+
+    def test_biostar_connection_error_returns_502(self):
+        self.authenticate()
+        with patch("access_control.api.v1.api_views.BioStar2Client") as client_cls:
+            client_cls.from_db_and_env.return_value.get_user.side_effect = requests.exceptions.ConnectionError(
+                "no route to host"
+            )
+
+            response = self.client.get(self.url, {"id_cliente": "831446"})
+
+            self.assertEqual(response.status_code, 502)
+
+    def test_mssql_error_returns_400(self):
+        self.authenticate()
+        with patch("access_control.api.v1.api_views.MSSQLAccessCheckService") as service_cls:
+            service_cls.return_value.resolve_id_cliente.side_effect = api_views.AccessCheckError(
+                "no se pudo conectar"
+            )
+
+            response = self.client.get(self.url, {"doc_nro": "47391818"})
+
+            self.assertEqual(response.status_code, 400)

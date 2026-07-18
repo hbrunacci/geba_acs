@@ -144,11 +144,30 @@ class BioStar2Client:
     def list_users(self, *, limit: int = 200, offset: int = 0) -> dict:
         return self.request("GET", "/api/users", params={"limit": limit, "offset": offset}).json()
 
+    def get_user(self, user_id: int) -> dict | None:
+        """Trae el detalle en vivo de un usuario puntual. None si no existe en BioStar (404)."""
+        try:
+            return self.request("GET", f"/api/users/{user_id}").json()
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 404:
+                return None
+            raise
+
     def list_device_groups(self) -> dict:
         """
         Lista grupos de dispositivos en BioStar 2
         """
         return self.request("GET", "/api/device_groups").json()
+
+    def move_device_group(self, device_id: int, group_id: int) -> dict:
+        """Mueve un dispositivo a otro grupo de dispositivos (device_group).
+
+        No existe un endpoint dedicado "move_device_group" en esta instancia de
+        BioStar 2 (probado, devuelve 400 "Request is not supported"). Lo que sí
+        funciona es un PUT a /api/devices/{id} con el objeto Device parcial.
+        """
+        payload = {"Device": {"id": str(device_id), "device_group_id": {"id": str(group_id)}}}
+        return self.request("PUT", f"/api/devices/{device_id}", json=payload).json()
 
     def list_device_users(self, device_id: int, *, limit: int = 1, offset: int = 0) -> dict:
         return self.request(
