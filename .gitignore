@@ -40,3 +40,6 @@ scripts/geba_xsys_2026.sql
 # IDE
 .idea/
 .vscode/
+
+# Auto-deploy (scripts/auto_deploy.ps1)
+auto_deploy.lock
