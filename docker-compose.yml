@@ -1,21 +1,70 @@
-version: "3.9"
-
 services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_DB: acs
-      POSTGRES_USER: acs
-      POSTGRES_PASSWORD: acs
+      POSTGRES_DB: ${POSTGRES_DB:-acs}
+      POSTGRES_USER: ${POSTGRES_USER:-acs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acs}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5434:5432"
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    # Config sensible (MSSQL_XSYS_*, BIOSTAR_*, etc.) desde .env; el bloque
+    # environment de abajo la pisa para el cableado de Postgres/Django en Docker.
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acs}
+      POSTGRES_USER: ${POSTGRES_USER:-acs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acs}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      DJANGO_DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-*}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      # Liveness por socket (no depende de ALLOWED_HOSTS ni del status HTTP).
+      test: ["CMD", "python", "-c", "import socket,sys; socket.create_connection(('localhost',8000),3).close()"]
+      interval: 15s
+      timeout: 5s
       retries: 5
+      start_period: 40s
+
+  # Sincronización incremental del espejo xSys cada X horas (default 6h).
+  sync:
+    build: .
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acs}
+      POSTGRES_USER: ${POSTGRES_USER:-acs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acs}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      DJANGO_DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
+    command: >
+      sh -c "while true; do
+               python manage.py xsys_sync || echo 'xsys_sync fallo (se reintenta)';
+               sleep ${XSYS_SYNC_INTERVAL:-21600};
+             done"
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres_data:

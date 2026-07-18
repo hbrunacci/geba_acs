@@ -1,0 +1,35 @@
+# Entorno / VCS
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+
+# Base local / datos / secretos (NO deben ir a la imagen)
+db.sqlite3
+.env
+*.csv
+*.xlsx
+access_control/services/vpn_credentials.txt
+access_control/services/vpn_servidores_bloqueados.json
+access_control/proton_configs/
+
+# Dumps / temporales / debug
+scripts/geba_xsys_2026.sql
+debug_get.html
+debug_post.html
+**/debug_get.html
+**/debug_post.html
+test_resultado.txt
+test_consulta.py
+*_old.py
+
+# IDE / build
+.idea
+.vscode
+staticfiles
+media
+Dockerfile
+.dockerignore

@@ -1,0 +1,8 @@
+# Normalización de finales de línea (clave para deploy en Windows).
+* text=auto
+
+# Scripts de shell y entrypoint del contenedor SIEMPRE con LF, o no arrancan
+# dentro de la imagen Linux (bash: bad interpreter).
+*.sh text eol=lf
+entrypoint.sh text eol=lf
+Dockerfile text eol=lf
