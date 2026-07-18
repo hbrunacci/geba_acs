@@ -1,8 +1,42 @@
+# Python / entorno
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 *.log
+.DS_Store
+
+# Django / base local / build de estáticos y media
 db.sqlite3
+/staticfiles/
+/media/
+
+# Entorno: el .env real se ignora; el template .env.dist SÍ se versiona
 .env
 .env.*
-.DS_Store
+!.env.dist
+
+# Secretos / credenciales (NUNCA versionar)
+**/vpn_credentials.txt
+
+# Configs / estado runtime de VPN
+access_control/proton_configs/
+**/vpn_servidores_bloqueados.json
+
+# Datos (socios / fallecidos) — no versionar
+*.csv
+*.xlsx
+
+# Volcados grandes / backups / temporales
+scripts/geba_xsys_2026.sql
+/test_consulta.py
+/test_resultado.txt
+*_old.py
+
+# HTML de debug
+**/debug_get.html
+**/debug_post.html
+
+# IDE
+.idea/
+.vscode/
