@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     "people.apps.PeopleConfig",
     "institutions.apps.InstitutionsConfig",
     "access_control.apps.AccessControlConfig",
+    "xsys.apps.XsysConfig",
 ]
 
 MIDDLEWARE = [
@@ -150,4 +151,36 @@ MSSQL_CLIENT_LOOKUP = {
     "PASSWORD": os.getenv("MSSQL_CLIENT_LOOKUP_PASSWORD", MSSQL_ACCESS_LOG["PASSWORD"]),
     "TABLE": os.getenv("MSSQL_CLIENT_LOOKUP_TABLE", "clientes"),
     "DRIVER": os.getenv("MSSQL_CLIENT_LOOKUP_DRIVER", MSSQL_ACCESS_LOG["DRIVER"]),
+}
+
+MSSQL_ACCESS_CHECK = {
+    "ENABLED": os.getenv("MSSQL_ACCESS_CHECK_ENABLED", "1") == "1",
+    "HOST": os.getenv("MSSQL_ACCESS_CHECK_HOST", MSSQL_ACCESS_LOG["HOST"]),
+    "PORT": _get_int_env("MSSQL_ACCESS_CHECK_PORT", MSSQL_ACCESS_LOG["PORT"]),
+    "DATABASE": os.getenv("MSSQL_ACCESS_CHECK_DATABASE", MSSQL_ACCESS_LOG["DATABASE"]),
+    "USER": os.getenv("MSSQL_ACCESS_CHECK_USER", MSSQL_ACCESS_LOG["USER"]),
+    "PASSWORD": os.getenv("MSSQL_ACCESS_CHECK_PASSWORD", MSSQL_ACCESS_LOG["PASSWORD"]),
+    "DRIVER": os.getenv("MSSQL_ACCESS_CHECK_DRIVER", MSSQL_ACCESS_LOG["DRIVER"]),
+}
+
+# Conexión dedicada del espejo local xSys (app `xsys`).
+# OJO: el puerto real del MSSQL es 49331 (no 1433) y el handshake TLS falla
+# salvo que se fuerce Encrypt=no + TrustServerCertificate=yes.
+MSSQL_XSYS = {
+    "ENABLED": os.getenv("MSSQL_XSYS_ENABLED", "1") == "1",
+    "HOST": os.getenv("MSSQL_XSYS_HOST", MSSQL_ACCESS_LOG["HOST"]),
+    "PORT": _get_int_env("MSSQL_XSYS_PORT", 49331),
+    "DATABASE": os.getenv("MSSQL_XSYS_DATABASE", MSSQL_ACCESS_LOG["DATABASE"]),
+    "USER": os.getenv("MSSQL_XSYS_USER", MSSQL_ACCESS_LOG["USER"]),
+    "PASSWORD": os.getenv("MSSQL_XSYS_PASSWORD", MSSQL_ACCESS_LOG["PASSWORD"]),
+    "DRIVER": os.getenv("MSSQL_XSYS_DRIVER", MSSQL_ACCESS_LOG["DRIVER"]),
+    "ENCRYPT": os.getenv("MSSQL_XSYS_ENCRYPT", "no"),
+    "TRUST_SERVER_CERTIFICATE": os.getenv("MSSQL_XSYS_TRUST_CERT", "yes"),
+    "LOGIN_TIMEOUT": _get_int_env("MSSQL_XSYS_LOGIN_TIMEOUT", 15),
+    "QUERY_TIMEOUT": _get_int_env("MSSQL_XSYS_QUERY_TIMEOUT", 60),
+    "BATCH_SIZE": _get_int_env("MSSQL_XSYS_BATCH_SIZE", 1000),
+    # Acceso/controlador usados para recalcular la lista blanca general
+    # (default: Cuota Social = acceso 22).
+    "WHITELIST_ACCESO": _get_int_env("MSSQL_XSYS_WHITELIST_ACCESO", 22),
+    "WHITELIST_CONTROLADOR": _get_int_env("MSSQL_XSYS_WHITELIST_CONTROLADOR", 0) or None,
 }
