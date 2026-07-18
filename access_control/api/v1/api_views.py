@@ -681,6 +681,65 @@ class WhitelistBatchCreateAPI(views.APIView):
         )
 
 
+class AccessCheckAPI(views.APIView):
+    """Verificación rápida (alternativa a CP_SCA_RegistrarAcceso) de si un socio puede ingresar por un acceso."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    IDENTIFIER_PARAMS = ("doc_nro", "id_cliente", "credencial")
+    DOOR_PARAMS = ("id_acceso", "id_controlador")
+
+    def get(self, request):
+        params = request.query_params
+
+        present_identifiers = [name for name in self.IDENTIFIER_PARAMS if params.get(name)]
+        if len(present_identifiers) != 1:
+            return Response(
+                {
+                    "detail": "Debe indicar exactamente uno de estos parámetros: "
+                    + ", ".join(self.IDENTIFIER_PARAMS)
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        identifier_type = present_identifiers[0]
+        identifier_value = params[identifier_type]
+
+        present_doors = [name for name in self.DOOR_PARAMS if params.get(name)]
+        if len(present_doors) != 1:
+            return Response(
+                {
+                    "detail": "Debe indicar exactamente uno de estos parámetros: "
+                    + ", ".join(self.DOOR_PARAMS)
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        id_acceso = None
+        id_controlador = None
+        try:
+            if present_doors[0] == "id_acceso":
+                id_acceso = int(params["id_acceso"])
+            else:
+                id_controlador = int(params["id_controlador"])
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "id_acceso / id_controlador deben ser numéricos."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            result = MSSQLAccessCheckService().check_access(
+                identifier_type=identifier_type,
+                identifier_value=identifier_value,
+                id_acceso=id_acceso,
+                id_controlador=id_controlador,
+            )
+        except AccessCheckError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(result, status=status.HTTP_200_OK)
+
+
 class AnsesCandidatesAPI(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 

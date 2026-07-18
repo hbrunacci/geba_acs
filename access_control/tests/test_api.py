@@ -15,6 +15,7 @@ from rest_framework.test import APITestCase
 from access_control.models import AnsesVerificationRecord, ExternalAccessLogEntry, ParkingMovement
 from access_control.models.models import AccessEvent
 from access_control.api.v1 import api_views
+from access_control.services import AccessCheckError
 from access_control.services.intelectron.api3000_service import (
     Api3000CommandError,
     Api3000ConnectionError,
@@ -888,6 +889,73 @@ class ACSTestConsoleAPITestCase(BaseAPITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["accepted"], False)
         self.assertEqual(response.data["ping"]["reachable"], False)
+
+
+class AccessCheckAPITestCase(BaseAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.url = reverse("access_check_api")
+
+    def test_requires_authentication(self):
+        response = self.client.get(self.url, {"id_cliente": "831446", "id_acceso": "18"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_requires_exactly_one_identifier(self):
+        self.authenticate()
+        response = self.client.get(self.url, {"id_acceso": "18"})
+        self.assertEqual(response.status_code, 400)
+
+        response = self.client.get(
+            self.url, {"id_cliente": "831446", "doc_nro": "47391818", "id_acceso": "18"}
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_requires_exactly_one_door(self):
+        self.authenticate()
+        response = self.client.get(self.url, {"id_cliente": "831446"})
+        self.assertEqual(response.status_code, 400)
+
+        response = self.client.get(
+            self.url, {"id_cliente": "831446", "id_acceso": "18", "id_controlador": "67"}
+        )
+        self.assertEqual(response.status_code, 400)
+
+    @patch("access_control.api.v1.api_views.MSSQLAccessCheckService")
+    def test_returns_service_result(self, service_cls):
+        self.authenticate()
+        service_cls.return_value.check_access.return_value = {
+            "found": True,
+            "id_cliente": 831446,
+            "razon_social": "MILLARENGO ORIANA",
+            "id_acceso": 18,
+            "acceso_descripcion": "San Martin Auto",
+            "can_enter": False,
+            "motivo_code": 112,
+            "motivo": "No cumple ninguna condición habilitante",
+            "detalle": "",
+        }
+
+        response = self.client.get(self.url, {"id_cliente": "831446", "id_acceso": "18"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["can_enter"])
+        self.assertEqual(response.data["motivo_code"], 112)
+        service_cls.return_value.check_access.assert_called_once_with(
+            identifier_type="id_cliente",
+            identifier_value="831446",
+            id_acceso=18,
+            id_controlador=None,
+        )
+
+    @patch("access_control.api.v1.api_views.MSSQLAccessCheckService")
+    def test_service_error_returns_400(self, service_cls):
+        self.authenticate()
+        service_cls.return_value.check_access.side_effect = AccessCheckError("no se pudo conectar")
+
+        response = self.client.get(self.url, {"doc_nro": "47391818", "id_controlador": "67"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("no se pudo conectar", response.data["detail"])
 
 
 class BioStarUserLookupAPITestCase(BaseAPITestCase):

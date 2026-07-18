@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from access_control.api.v1.api_views import (
+    AccessCheckAPI,
     AnsesCandidatesAPI,
     AnsesProcessedExportAPI,
     AnsesVerifyAPI,
@@ -84,6 +85,7 @@ urlpatterns = router.urls + [
         WhitelistBatchCreateAPI.as_view(),
         name="whitelist_batch_create_api",
     ),
+    path("access-check/", AccessCheckAPI.as_view(), name="access_check_api"),
     path("reports/access-by-category/", AccessByCategoryReportView.as_view(), name="report_access_by_category"),
     path("reports/access-by-site/", AccessBySiteReportView.as_view(), name="report_access_by_site"),
     path("reports/access-heatmap/", AccessHeatmapReportView.as_view(), name="report_access_heatmap"),
