@@ -179,6 +179,65 @@ class BioStar2Client:
     def discover_device_userdata(self, device_id: int) -> dict:
         return self.request("GET", f"/api/devices/{device_id}/discover_userdata").json()
 
+    def list_devices_by_group(self, group_id: int) -> list[int]:
+        """IDs de los dispositivos que pertenecen a un device_group. Usa /api/v2/devices/search."""
+        payload = {"limit": 500, "device_group_id": str(group_id)}
+        data = self.request("POST", "/api/v2/devices/search", json=payload).json()
+        rows = data.get("DeviceCollection", {}).get("rows", [])
+        return [int(row["id"]) for row in rows]
+
+    def add_user_to_device(
+        self, user_ids: int | list[int], device_id: int, *, overwrite: bool = True
+    ) -> dict:
+        """Envía (agrega) uno o más usuarios a un dispositivo puntual, sin resincronizar todo.
+
+        Endpoint: POST /api/users/export (ids de usuario separados por '+' en la query).
+        """
+        ids = user_ids if isinstance(user_ids, list) else [user_ids]
+        id_param = "+".join(str(i) for i in ids)
+        payload = {"DeviceCollection": {"rows": [{"id": str(device_id)}]}}
+        return self.request(
+            "POST",
+            "/api/users/export",
+            params={"overwrite": str(overwrite).lower(), "id": id_param},
+            json=payload,
+        ).json()
+
+    def add_user_to_device_group(
+        self, user_ids: int | list[int], group_id: int, *, overwrite: bool = True
+    ) -> dict:
+        """Envía uno o más usuarios a TODOS los dispositivos de un device_group, en una sola llamada."""
+        device_ids = self.list_devices_by_group(group_id)
+        ids = user_ids if isinstance(user_ids, list) else [user_ids]
+        id_param = "+".join(str(i) for i in ids)
+        payload = {"DeviceCollection": {"rows": [{"id": str(d)} for d in device_ids]}}
+        return self.request(
+            "POST",
+            "/api/users/export",
+            params={"overwrite": str(overwrite).lower(), "id": id_param},
+            json=payload,
+        ).json()
+
+    def remove_user_from_device(self, device_id: int, user_id: int | str = "*") -> dict:
+        """Borra un usuario puntual (o todos, con user_id='*') de la caché local de un dispositivo."""
+        return self.request(
+            "DELETE",
+            f"/api/devices/{device_id}/users",
+            params={"id": str(user_id)},
+        ).json()
+
+    def remove_user_from_device_group(self, group_id: int, user_id: int | str = "*") -> dict:
+        """Borra un usuario puntual (o todos) de TODOS los dispositivos de un device_group.
+
+        No existe un endpoint de borrado masivo por grupo; se itera dispositivo por
+        dispositivo. Devuelve {device_id: respuesta} para poder ver qué falló.
+        """
+        device_ids = self.list_devices_by_group(group_id)
+        results: dict[int, dict] = {}
+        for device_id in device_ids:
+            results[device_id] = self.remove_user_from_device(device_id, user_id)
+        return results
+
     def search_users_v2(
         self,
         *,
