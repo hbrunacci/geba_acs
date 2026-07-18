@@ -29,13 +29,14 @@ from bs4 import BeautifulSoup
 
 
 # ── Configuración ──────────────────────────────────────────────────────────────
-EXCEL_PATH  = "depuracion_GEBA_definitivo.xlsx"
+BASE_DIR    = Path(__file__).resolve().parent
+EXCEL_PATH  = BASE_DIR / "depuracion_GEBA_definitivo.xlsx"
 SHEET_NAME  = "05. Presuntos fallecidos"
 OUTPUT_CSV  = "resultados_fallecidos.csv"
 URL         = "https://www.busca-datos.com.ar/"
-PAUSA_MIN   = 1.5    # segundos mínimos entre consultas
-PAUSA_MAX   = 3.0    # segundos máximos entre consultas
-REINTENTOS  = 3      # intentos ante error de red
+PAUSA_MIN   = 6    # segundos mínimos entre consultas
+PAUSA_MAX   = 8    # segundos máximos entre consultas
+REINTENTOS  = 1      # intentos ante error de red
 # ──────────────────────────────────────────────────────────────────────────────
 
 FIELDNAMES = [
@@ -51,21 +52,28 @@ FIELDNAMES = [
 
 
 # ── Carga de socios ────────────────────────────────────────────────────────────
-def cargar_socios(excel_path: str, sheet_name: str) -> pd.DataFrame:
-    df = pd.read_excel(excel_path, sheet_name=sheet_name, header=None)
-    df.columns = df.iloc[1]
-    df = df.iloc[2:].reset_index(drop=True)
-    df.columns.name = None
+def cargar_socios(excel_path: str | Path, sheet_name: str) -> pd.DataFrame:
+    df = pd.read_excel(excel_path, sheet_name=sheet_name, header=2)
+    df.columns = [str(column).strip() for column in df.columns]
     df = df.rename(columns={
         "Nº Socio": "nro_socio", "DNI": "dni",
         "Apellido": "apellido",  "Nombre": "nombre",
         "F. Nac.":  "fecha_nac", "Edad": "edad",
     })
+
+    columnas_requeridas = ["nro_socio", "dni", "apellido", "nombre", "fecha_nac", "edad"]
+    faltantes = [column for column in columnas_requeridas if column not in df.columns]
+    if faltantes:
+        raise ValueError(
+            f"Faltan columnas esperadas en {excel_path}: {faltantes}. "
+            f"Columnas encontradas: {list(df.columns)}"
+        )
+
     df["dni"] = pd.to_numeric(df["dni"], errors="coerce")
     df = df.dropna(subset=["dni"])
     df["dni"] = df["dni"].astype(int).astype(str)
     df["nro_socio"] = pd.to_numeric(df["nro_socio"], errors="coerce").fillna(0).astype(int)
-    return df[["nro_socio", "dni", "apellido", "nombre", "fecha_nac", "edad"]]
+    return df[columnas_requeridas]
 
 
 # ── Consulta web ───────────────────────────────────────────────────────────────
