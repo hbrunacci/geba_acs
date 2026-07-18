@@ -204,7 +204,15 @@ def _registrar_pantalla(request) -> PantallaPuerta | None:
 HISTORIAL_LEN = 50
 
 
-def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict) -> dict:
+def _tipo_lectura(id_controlador, controladores: dict) -> str:
+    """'facial' si el controlador es un facial (Tipo_Cont F/W), si no 'credencial'."""
+    ctrl = controladores.get(id_controlador)
+    if ctrl and (ctrl.tipo_cont or "").upper() in ("F", "W"):
+        return "facial"
+    return "credencial"
+
+
+def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None) -> dict:
     socio = socios.get(ev.id_cliente)
     tiene_foto = ev.id_cliente in fotos
     # Mensaje original de xSys (motivo de pantalla u observación).
@@ -240,6 +248,7 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         "permitido": permitido,
         "cuota_al_dia": al_dia,
         "estado": estado,
+        "lectura": _tipo_lectura(ev.id_controlador, controladores or {}),
         "mensaje": mensaje,
         "mensaje_original": mensaje_original,
         "id_cliente": ev.id_cliente,
@@ -358,9 +367,11 @@ class PuertaEstadoAPI(APIView):
         todos = [e for evs in eventos_por_col for e in evs]
         cids = {e.id_cliente for e in todos if e.id_cliente}
         mids = {e.id_cd_motivo for e in todos if e.id_cd_motivo}
+        ctrl_ids = {e.id_controlador for e in todos if e.id_controlador}
         socios = {s.id_cliente: s for s in XsysSocio.objects.filter(pk__in=cids)}
         fotos = set(XsysSocioFoto.objects.filter(id_cliente__in=cids).values_list("id_cliente", flat=True))
         motivos = {m.id_cd_motivo: m for m in XsysMotivo.objects.filter(pk__in=mids)}
+        ctrls = {c.id_controlador: c for c in XsysControlador.objects.filter(pk__in=ctrl_ids)}
 
         columnas = []
         for cd, evs in zip(cols_def, eventos_por_col):
@@ -368,8 +379,8 @@ class PuertaEstadoAPI(APIView):
                 "key": cd["key"],
                 "nombre": cd["nombre"],
                 "controladores": cd["controladores"],
-                "ultimo": _evento_payload(evs[0], socios, fotos, motivos) if evs else None,
-                "historial": [_evento_payload(e, socios, fotos, motivos) for e in evs[1:]],
+                "ultimo": _evento_payload(evs[0], socios, fotos, motivos, ctrls) if evs else None,
+                "historial": [_evento_payload(e, socios, fotos, motivos, ctrls) for e in evs[1:]],
             })
         return Response({
             "configurada": True,

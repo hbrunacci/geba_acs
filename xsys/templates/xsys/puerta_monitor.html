@@ -72,6 +72,14 @@
     .hrow:hover { background: rgba(255,255,255,.05); }
     .col__current { cursor: pointer; }
 
+    /* Ícono de lectura: facial (rostro) vs credencial (tarjeta) */
+    .licon-wrap { flex: 0 0 auto; display: flex; align-items: center; }
+    .licon { width: 17px; height: 19px; }
+    .licon.facial { color: #58a6ff; }
+    .licon.credencial { color: #d29922; }
+    .clectura { margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; opacity: .8; }
+    .clectura .licon { width: 16px; height: 18px; }
+
     /* Modal de detalle */
     .modal { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 30; display: none; align-items: center; justify-content: center; padding: 20px; }
     .modal.open { display: flex; }
@@ -128,6 +136,7 @@
           <div class="modal__msg" id="m-msg"></div>
           <dl class="modal__dl">
             <dt>Lugar de acceso</dt><dd id="m-lugar">—</dd>
+            <dt>Lectura</dt><dd id="m-lectura" style="display:flex;align-items:center;gap:6px">—</dd>
             <dt>Categoría</dt><dd id="m-cat">—</dd>
             <dt>Última cuota paga</dt><dd id="m-cuota">—</dd>
             <dt>Fecha / hora</dt><dd id="m-fecha">—</dd>
@@ -207,6 +216,12 @@
       if (ev.estado === "ok" || ev.estado === "no") return ev.estado;
       return ev.permitido ? "ok" : "no";
     }
+    var SVG_FACIAL = '<svg class="licon facial" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="3.2"/><path d="M5 20c0-3.6 3.2-5.6 7-5.6s7 2 7 5.6"/></svg>';
+    var SVG_CRED = '<svg class="licon credencial" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2"/><rect x="6" y="9" width="4.5" height="4.5" rx="1"/><line x1="13.5" y1="9.5" x2="18" y2="9.5"/><line x1="13.5" y1="13" x2="18" y2="13"/></svg>';
+    function lecturaIcono(ev) {
+      var facial = ev.lectura === "facial";
+      return '<span class="licon-wrap" title="' + (facial ? "Facial" : "Credencial") + '">' + (facial ? SVG_FACIAL : SVG_CRED) + '</span>';
+    }
     function fotoBig(ev) {
       var marco = claseEstado(ev);
       return ev.foto_url
@@ -227,6 +242,7 @@
         '<div class="cname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
         '<div class="cmsg ' + clase + '">' + esc(ev.mensaje || (ev.permitido ? "Permitido" : "Denegado")) + '</div>' +
         extra +
+        '<div class="clectura">' + lecturaIcono(ev) + (ev.lectura === "facial" ? "Facial" : "Credencial") + '</div>' +
         '<div class="ctime">' + esc(hora(ev.fecha)) + '</div>';
     }
     function historialHTML(lista) {
@@ -236,7 +252,7 @@
           ? '<img class="hthumb" src="' + esc(ev.foto_thumb_url) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
           : '<div class="hthumb"></div>';
         var clase = claseEstado(ev);
-        return '<div class="hrow" data-ides="' + esc(ev.id_es) + '">' + thumb +
+        return '<div class="hrow" data-ides="' + esc(ev.id_es) + '">' + thumb + lecturaIcono(ev) +
           '<div class="hbody"><div class="hname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
           '<div class="hmsg ' + clase + '">' + esc(ev.mensaje || "") + '</div></div>' +
           '<div class="htime">' + esc(hora(ev.fecha)) + '</div></div>';
@@ -323,6 +339,7 @@
       document.getElementById("m-nombre").textContent = ev.nombre || ("Cliente " + (ev.id_cliente || ""));
       var msg = document.getElementById("m-msg"); msg.textContent = ev.mensaje || ""; msg.className = "modal__msg " + cls;
       document.getElementById("m-lugar").textContent = (currentPuertaDesc ? currentPuertaDesc + " · " : "") + (molinete || "");
+      document.getElementById("m-lectura").innerHTML = lecturaIcono(ev) + " " + (ev.lectura === "facial" ? "Facial" : "Credencial");
       document.getElementById("m-cat").textContent = ev.categoria || "—";
       document.getElementById("m-cuota").textContent = ev.ult_cuota_paga ? fechaCorta(ev.ult_cuota_paga) : "—";
       document.getElementById("m-fecha").textContent = fechaHora(ev.fecha);

@@ -76,6 +76,15 @@ class PuertaMonitorTests(TestCase):
         self.assertEqual(ev["mensaje"], "Acceso Concedido")
         self.assertEqual(ev["estado"], "ok")
 
+    def test_lectura_facial_vs_credencial(self):
+        PantallaPuerta.objects.create(token=TOKEN, id_acceso=14)
+        self._ev(8000, 59)   # ctrl 59 = molinete (Tipo_Cont K) -> credencial
+        self._ev(8001, 90)   # ctrl 90 = facial (Tipo_Cont F) -> facial
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        by = {c["nombre"]: c for c in d["columnas"]}
+        self.assertEqual(by["Alcorta Mol1"]["ultimo"]["lectura"], "credencial")
+        self.assertEqual(by["Alcorta Facial"]["ultimo"]["lectura"], "facial")
+
     def test_mensaje_deducido_anomalia_amarillo(self):
         from datetime import datetime as _dt
         from django.utils import timezone as _tz
