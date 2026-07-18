@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Monitor de puerta</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+      background: #0d1117; color: #e6edf3; overflow: hidden;
+    }
+    .topbar {
+      position: fixed; top: 0; left: 0; right: 0; height: 56px;
+      display: flex; align-items: center; gap: 16px; padding: 0 16px;
+      background: rgba(0,0,0,.35); z-index: 10;
+    }
+    .burger {
+      font-size: 26px; background: none; border: 0; color: #e6edf3;
+      cursor: pointer; line-height: 1; padding: 6px 10px; border-radius: 8px;
+    }
+    .burger:hover { background: rgba(255,255,255,.1); }
+    .puerta-label { font-size: 20px; font-weight: 600; }
+    .reloj { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 20px; opacity: .8; }
+
+    .stage {
+      height: 100%; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; text-align: center; padding: 72px 24px 24px;
+    }
+    .foto {
+      width: min(46vh, 380px); height: min(58vh, 480px); object-fit: cover;
+      border-radius: 18px; background: #161b22; border: 3px solid #30363d;
+      box-shadow: 0 10px 40px rgba(0,0,0,.5);
+    }
+    .foto.sinfoto { display: flex; align-items: center; justify-content: center; font-size: 90px; color: #30363d; }
+    .nombre { margin-top: 22px; font-size: clamp(28px, 5vh, 52px); font-weight: 700; }
+    .mensaje {
+      margin-top: 14px; font-size: clamp(22px, 4vh, 40px); font-weight: 600;
+      padding: 12px 26px; border-radius: 14px; max-width: 90vw;
+    }
+    .mensaje.ok  { background: rgba(46,160,67,.18); color: #56d364; border: 2px solid #2ea043; }
+    .mensaje.no  { background: rgba(248,81,73,.18); color: #ff7b72; border: 2px solid #f85149; }
+    .hora-evento { margin-top: 10px; opacity: .6; font-size: 18px; }
+    .idle { opacity: .5; font-size: 26px; }
+
+    /* Panel hamburguesa */
+    .drawer {
+      position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 20;
+      display: none; align-items: stretch;
+    }
+    .drawer.open { display: flex; }
+    .drawer__panel {
+      width: min(360px, 85vw); background: #161b22; height: 100%;
+      padding: 20px; overflow-y: auto; box-shadow: 4px 0 30px rgba(0,0,0,.5);
+    }
+    .drawer__title { font-size: 18px; font-weight: 700; margin: 4px 0 16px; }
+    .puerta-item {
+      display: block; width: 100%; text-align: left; background: #21262d; color: #e6edf3;
+      border: 1px solid #30363d; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px;
+      font-size: 17px; cursor: pointer;
+    }
+    .puerta-item:hover { background: #2d333b; }
+    .puerta-item.activa { border-color: #2ea043; }
+    .ip { margin-top: 14px; font-size: 13px; opacity: .5; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <button class="burger" id="burger" title="Elegir puerta">&#9776;</button>
+    <span class="puerta-label" id="puerta-label">—</span>
+    <span class="reloj" id="reloj">--:--:--</span>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="idle" id="idle">Sin datos todavía…</div>
+  </div>
+
+  <div class="drawer" id="drawer">
+    <div class="drawer__panel">
+      <div class="drawer__title">Puerta de esta pantalla</div>
+      <div id="puertas"></div>
+      <div class="ip" id="ip"></div>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var API = "/api/xsys";
+    var drawer = document.getElementById("drawer");
+    var lastId = null;
+    var currentPuerta = null;
+
+    // Token propio de esta pantalla (persistido en el navegador).
+    function genToken() {
+      try {
+        var a = new Uint8Array(16);
+        (window.crypto || window.msCrypto).getRandomValues(a);
+        return Array.prototype.map.call(a, function (b) {
+          return ("0" + b.toString(16)).slice(-2);
+        }).join("");
+      } catch (e) {
+        return "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+      }
+    }
+    var TOKEN = localStorage.getItem("xsys_pantalla_token");
+    if (!TOKEN) { TOKEN = genToken(); localStorage.setItem("xsys_pantalla_token", TOKEN); }
+
+    function hdr(extra) {
+      var h = { "Accept": "application/json", "X-Pantalla-Token": TOKEN };
+      if (extra) for (var k in extra) h[k] = extra[k];
+      return h;
+    }
+
+    document.getElementById("burger").addEventListener("click", function () {
+      cargarPuertas(); drawer.classList.add("open");
+    });
+    drawer.addEventListener("click", function (e) { if (e.target === drawer) drawer.classList.remove("open"); });
+
+    setInterval(function () {
+      var d = new Date();
+      document.getElementById("reloj").textContent = d.toLocaleTimeString("es-AR");
+    }, 1000);
+
+    function esc(v) {
+      return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+
+    function cargarPuertas() {
+      fetch(API + "/puertas/", { headers: hdr() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { renderPuertas(d.puertas || []); });
+    }
+
+    function renderPuertas(puertas) {
+      var cont = document.getElementById("puertas");
+      cont.innerHTML = puertas.map(function (p) {
+        var activa = p.id_acceso === currentPuerta ? " activa" : "";
+        return '<button class="puerta-item' + activa + '" data-id="' + p.id_acceso + '">' +
+               esc(p.descripcion) + '</button>';
+      }).join("") || '<div class="idle">No hay puertas sincronizadas.</div>';
+      cont.querySelectorAll("[data-id]").forEach(function (el) {
+        el.addEventListener("click", function () { seleccionar(parseInt(el.getAttribute("data-id"), 10)); });
+      });
+    }
+
+    function seleccionar(id) {
+      fetch(API + "/puerta/seleccionar/", {
+        method: "POST",
+        headers: hdr({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ id_acceso: id }),
+      }).then(function () {
+        currentPuerta = id;
+        drawer.classList.remove("open");
+        lastId = null;
+        poll();
+      });
+    }
+
+    function renderEvento(ev, puertaDesc) {
+      document.getElementById("puerta-label").textContent = puertaDesc || "—";
+      var stage = document.getElementById("stage");
+      if (!ev) {
+        stage.innerHTML = '<div class="idle">Sin ingresos todavía en esta puerta.</div>';
+        return;
+      }
+      var foto = ev.foto_url
+        ? '<img class="foto" src="' + esc(ev.foto_url) + '" alt="" onerror="this.outerHTML=\'<div class=&quot;foto sinfoto&quot;>&#128100;</div>\'">'
+        : '<div class="foto sinfoto">&#128100;</div>';
+      var clase = ev.permitido ? "ok" : "no";
+      var hora = ev.fecha ? new Date(ev.fecha).toLocaleTimeString("es-AR") : "";
+      stage.innerHTML =
+        foto +
+        '<div class="nombre">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
+        '<div class="mensaje ' + clase + '">' + esc(ev.mensaje || (ev.permitido ? "Acceso permitido" : "Acceso denegado")) + '</div>' +
+        '<div class="hora-evento">' + esc(hora) + '</div>';
+    }
+
+    function poll() {
+      fetch(API + "/puerta/ultimo/", { headers: hdr() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          document.getElementById("ip").textContent = "IP: " + (d.ip || "");
+          if (!d.configurada) {
+            currentPuerta = null;
+            document.getElementById("puerta-label").textContent = "Elegí una puerta";
+            document.getElementById("stage").innerHTML =
+              '<div class="idle">Esta pantalla no tiene puerta asignada.<br>Tocá &#9776; para elegirla.</div>';
+            renderPuertas(d.puertas || []);
+            drawer.classList.add("open");
+            return;
+          }
+          currentPuerta = d.puerta.id_acceso;
+          var ev = d.evento;
+          if (ev && ev.id_es !== lastId) {
+            lastId = ev.id_es;
+            renderEvento(ev, d.puerta.descripcion);
+          } else if (!ev) {
+            renderEvento(null, d.puerta.descripcion);
+          } else {
+            document.getElementById("puerta-label").textContent = d.puerta.descripcion;
+          }
+        })
+        .catch(function () { /* red intermitente: reintenta al próximo tick */ });
+    }
+
+    poll();
+    setInterval(poll, 1000);
+  })();
+  </script>
+</body>
+</html>

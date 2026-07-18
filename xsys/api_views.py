@@ -1,18 +1,36 @@
 from __future__ import annotations
 
 from django.http import HttpResponse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.generics import ListAPIView
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from xsys.models import XsysSocio, XsysSocioFoto, XsysWhitelist
+from access_control.models.models import ExternalAccessLogEntry
+
+from xsys.models import (
+    PantallaPuerta,
+    XsysAcceso,
+    XsysMotivo,
+    XsysSocio,
+    XsysSocioFoto,
+    XsysWhitelist,
+)
 from xsys.serializers import (
     XsysSocioLookupSerializer,
     XsysSocioSerializer,
     XsysWhitelistSerializer,
 )
 from xsys.services.access import resolver_acceso, resolver_socio
+
+
+def _client_ip(request) -> str:
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "") or "0.0.0.0"
 
 
 def _resolve_socio(*, id_cliente=None, doc=None, credencial=None) -> XsysSocio | None:
@@ -152,3 +170,136 @@ class SocioFotoAPI(APIView):
         response["Cache-Control"] = "private, max-age=300"
         response["Content-Length"] = str(len(data))
         return response
+
+
+# ----------------------------------------------------------------------------
+# Monitor de puerta (kiosco): endpoints abiertos (AllowAny), pantalla
+# identificada por TOKEN (header X-Pantalla-Token). La IP se guarda solo como
+# dato informativo del lugar.
+# ----------------------------------------------------------------------------
+
+def _pantalla_token(request) -> str:
+    return (request.META.get("HTTP_X_PANTALLA_TOKEN", "") or "").strip()[:64]
+
+
+def _registrar_pantalla(request) -> PantallaPuerta | None:
+    """Upsert de la pantalla por token; None si no vino token."""
+    token = _pantalla_token(request)
+    if not token:
+        return None
+    ua = (request.META.get("HTTP_USER_AGENT", "") or "")[:255]
+    pantalla, _ = PantallaPuerta.objects.get_or_create(token=token)
+    PantallaPuerta.objects.filter(pk=pantalla.pk).update(
+        last_seen=timezone.now(), user_agent=ua, ip=_client_ip(request)
+    )
+    pantalla.refresh_from_db()
+    return pantalla
+
+
+def _evento_payload(ev: ExternalAccessLogEntry) -> dict:
+    socio = XsysSocio.objects.filter(pk=ev.id_cliente).first() if ev.id_cliente else None
+    tiene_foto = bool(socio) and XsysSocioFoto.objects.filter(id_cliente=socio.id_cliente).exists()
+    mensaje = ""
+    if ev.id_cd_motivo:
+        motivo = XsysMotivo.objects.filter(pk=ev.id_cd_motivo).first()
+        if motivo:
+            mensaje = motivo.mensaje_pantalla
+    if not mensaje:
+        mensaje = (ev.observacion or "").strip()
+    return {
+        "id_es": ev.external_id,
+        "fecha": ev.fecha.isoformat() if ev.fecha else None,
+        "resultado": ev.resultado,
+        "permitido": ev.resultado == "S",
+        "mensaje": mensaje,
+        "id_cliente": ev.id_cliente,
+        "nombre": (
+            (f"{socio.apellido}, {socio.nombre}".strip(", ") or socio.razon_social)
+            if socio else ""
+        ),
+        "foto_url": f"/api/xsys/socios/{socio.id_cliente}/foto/" if tiene_foto else None,
+    }
+
+
+class PuertasListAPI(APIView):
+    """GET /api/xsys/puertas/ → lista de puertas activas (para la hamburguesa)."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        puertas = [
+            {"id_acceso": a.id_acceso, "descripcion": a.descripcion or f"Acceso {a.id_acceso}"}
+            for a in XsysAcceso.objects.filter(activo=1).order_by("descripcion")
+        ]
+        return Response({"puertas": puertas})
+
+
+class PuertaSeleccionarAPI(APIView):
+    """POST /api/xsys/puerta/seleccionar/ {id_acceso} → ata el token a esa puerta."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        token = _pantalla_token(request)
+        if not token:
+            return Response({"detail": "Falta el token de pantalla."}, status=status.HTTP_400_BAD_REQUEST)
+        id_acceso = request.data.get("id_acceso")
+        if id_acceso in (None, ""):
+            return Response({"detail": "id_acceso requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            id_acceso = int(id_acceso)
+        except (TypeError, ValueError):
+            return Response({"detail": "id_acceso inválido."}, status=status.HTTP_400_BAD_REQUEST)
+        if not XsysAcceso.objects.filter(pk=id_acceso).exists():
+            return Response({"detail": "La puerta no existe en el espejo local."}, status=status.HTTP_404_NOT_FOUND)
+        nombre = (request.data.get("nombre") or "").strip()[:60]
+        defaults = {"id_acceso": id_acceso, "last_seen": timezone.now(), "ip": _client_ip(request)}
+        if nombre:
+            defaults["nombre"] = nombre
+        PantallaPuerta.objects.update_or_create(token=token, defaults=defaults)
+        return Response({"ok": True, "token": token, "id_acceso": id_acceso})
+
+
+class PuertaUltimoAPI(APIView):
+    """GET /api/xsys/puerta/ultimo/ → último ingreso de la puerta de este token.
+
+    Se identifica por el header ``X-Pantalla-Token``. Todo se resuelve del espejo
+    local. Si el token no tiene puerta configurada, devuelve la lista de puertas
+    para elegir en la hamburguesa.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        pantalla = _registrar_pantalla(request)
+        if pantalla is None:
+            return Response({"detail": "Falta el token de pantalla."}, status=status.HTTP_400_BAD_REQUEST)
+        if not pantalla.id_acceso:
+            return Response({
+                "configurada": False,
+                "ip": pantalla.ip,
+                "puertas": [
+                    {"id_acceso": a.id_acceso, "descripcion": a.descripcion or f"Acceso {a.id_acceso}"}
+                    for a in XsysAcceso.objects.filter(activo=1).order_by("descripcion")
+                ],
+            })
+
+        acceso = XsysAcceso.objects.filter(pk=pantalla.id_acceso).first()
+        ev = (
+            ExternalAccessLogEntry.objects
+            .filter(id_acceso=pantalla.id_acceso, tipo="E")
+            .order_by("-external_id")
+            .first()
+        )
+        return Response({
+            "configurada": True,
+            "ip": pantalla.ip,
+            "puerta": {
+                "id_acceso": pantalla.id_acceso,
+                "descripcion": (acceso.descripcion if acceso else f"Acceso {pantalla.id_acceso}"),
+            },
+            "evento": _evento_payload(ev) if ev else None,
+        })

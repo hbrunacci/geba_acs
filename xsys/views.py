@@ -11,6 +11,15 @@ STREAM_LABELS = {
 }
 
 
+def xsys_puerta_monitor(request):
+    """Pantalla de monitor de una puerta (kiosco, sin login).
+
+    Todos los datos salen del espejo local vía la API AllowAny; la propia pantalla
+    se identifica por su IP y elige la puerta con la hamburguesa.
+    """
+    return render(request, "xsys/puerta_monitor.html")
+
+
 @login_required
 def xsys_socio_console(request):
     """Consola de búsqueda de socios del espejo xSys (datos + foto + lista blanca)."""

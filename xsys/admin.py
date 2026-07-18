@@ -2,7 +2,37 @@ from __future__ import annotations
 
 from django.contrib import admin
 
-from xsys.models import SyncState, XsysNovedad, XsysSocio, XsysSocioFoto, XsysWhitelist
+from xsys.models import (
+    PantallaPuerta,
+    SyncState,
+    XsysAcceso,
+    XsysMotivo,
+    XsysNovedad,
+    XsysSocio,
+    XsysSocioFoto,
+    XsysWhitelist,
+)
+
+
+@admin.register(XsysAcceso)
+class XsysAccesoAdmin(admin.ModelAdmin):
+    list_display = ("id_acceso", "descripcion", "descripcion_corta", "activo", "synced_at")
+    search_fields = ("id_acceso", "descripcion")
+    list_filter = ("activo",)
+
+
+@admin.register(XsysMotivo)
+class XsysMotivoAdmin(admin.ModelAdmin):
+    list_display = ("id_cd_motivo", "descripcion_pantalla", "descripcion", "tipo", "activo")
+    search_fields = ("id_cd_motivo", "descripcion", "descripcion_pantalla")
+    list_filter = ("activo", "tipo")
+
+
+@admin.register(PantallaPuerta)
+class PantallaPuertaAdmin(admin.ModelAdmin):
+    list_display = ("ip", "id_acceso", "nombre", "last_seen")
+    search_fields = ("ip", "nombre")
+    list_filter = ("id_acceso",)
 
 
 @admin.register(XsysSocio)

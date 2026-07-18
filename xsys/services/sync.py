@@ -16,7 +16,15 @@ from django.utils import timezone
 
 from access_control.models.models import ExternalAccessLogEntry
 
-from xsys.models import SyncState, XsysNovedad, XsysSocio, XsysSocioFoto, XsysWhitelist
+from xsys.models import (
+    SyncState,
+    XsysAcceso,
+    XsysMotivo,
+    XsysNovedad,
+    XsysSocio,
+    XsysSocioFoto,
+    XsysWhitelist,
+)
 
 from .images import make_thumbnail
 from .mssql import get_config, xsys_cursor
@@ -197,6 +205,61 @@ class XsysSyncService:
                     written += 1
         return written
 
+    def sync_accesos(self, cursor) -> int:
+        """Espejo de CD_Accesos (puertas). Tabla chica: upsert completo."""
+        cursor.execute(
+            "SELECT Id_Acceso, Descripcion, Descripcion_Corta, Activo FROM CD_Accesos"
+        )
+        rows = cursor.fetchall()
+        now = timezone.now()
+        objs = [
+            XsysAcceso(
+                id_acceso=r[0],
+                descripcion=(r[1] or "").strip(),
+                descripcion_corta=(r[2] or "").strip(),
+                activo=r[3],
+                synced_at=now,
+            )
+            for r in rows
+        ]
+        if objs:
+            XsysAcceso.objects.bulk_create(
+                objs,
+                update_conflicts=True,
+                unique_fields=["id_acceso"],
+                update_fields=["descripcion", "descripcion_corta", "activo", "synced_at"],
+            )
+        return len(objs)
+
+    def sync_motivos(self, cursor) -> int:
+        """Espejo de CD_Motivos (mensajes de pantalla). Tabla chica: upsert completo."""
+        cursor.execute(
+            "SELECT Id_CD_Motivo, Tipo, Descripcion, Descripcion_Display, "
+            "Descripcion_Pantalla, Activo FROM CD_Motivos"
+        )
+        rows = cursor.fetchall()
+        now = timezone.now()
+        objs = [
+            XsysMotivo(
+                id_cd_motivo=r[0],
+                tipo=(r[1] or "").strip(),
+                descripcion=(r[2] or "").strip()[:200],
+                descripcion_display=(r[3] or "").strip(),
+                descripcion_pantalla=(r[4] or "").strip(),
+                activo=r[5],
+                synced_at=now,
+            )
+            for r in rows
+        ]
+        if objs:
+            XsysMotivo.objects.bulk_create(
+                objs,
+                update_conflicts=True,
+                unique_fields=["id_cd_motivo"],
+                update_fields=["tipo", "descripcion", "descripcion_display", "descripcion_pantalla", "activo", "synced_at"],
+            )
+        return len(objs)
+
     def read_novedades(self, cursor, last_id: int, limit: int | None = None) -> list[tuple]:
         top = f"TOP {int(limit)} " if limit else ""
         cursor.execute(
@@ -285,6 +348,8 @@ class XsysSyncService:
     ) -> dict[str, int]:
         stats: dict[str, int] = {}
         with xsys_cursor(self.config) as cursor:
+            stats["accesos"] = self.sync_accesos(cursor)
+            stats["motivos"] = self.sync_motivos(cursor)
             stats["socios"] = self.sync_socios_all(cursor)
             stats["fotos"] = self.sync_fotos_all(cursor)
 
@@ -356,6 +421,9 @@ class XsysSyncService:
         last_id = state.last_id or 0
 
         with xsys_cursor(self.config) as cursor:
+            # Tablas de referencia (chicas) se refrescan en cada corrida.
+            stats["accesos"] = self.sync_accesos(cursor)
+            stats["motivos"] = self.sync_motivos(cursor)
             rows = self.read_novedades(cursor, last_id, limit=limit)
             stats["novedades"] = len(rows)
             if rows:
