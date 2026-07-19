@@ -187,7 +187,13 @@ class XsysSyncService:
         return total
 
     def sync_fotos_all(self, cursor) -> int:
-        cursor.execute("SELECT Id_Cliente, Nro, Fecha, Foto FROM Clientes_Fotos")
+        # Solo fotos de socios activos (Activo=1); filtro server-side vía JOIN.
+        cursor.execute(
+            "SELECT F.Id_Cliente, F.Nro, F.Fecha, F.Foto "
+            "FROM Clientes_Fotos F "
+            "JOIN Clientes C ON C.Id_Cliente = F.Id_Cliente "
+            "WHERE C.Activo = 1"
+        )
         written = 0
         while True:
             rows = cursor.fetchmany(self.batch_size)
@@ -436,9 +442,11 @@ class XsysSyncService:
             stats["controladores"] = self.sync_controladores(cursor)
             stats["motivos"] = self.sync_motivos(cursor)
             stats["socios"] = self.sync_socios_all(cursor)
-            stats["fotos"] = self.sync_fotos_all(cursor)
             stats["contratos"] = self.sync_contratos_all(cursor)
 
+            # La whitelist se resuelve ANTES de las fotos: solo se descargan las
+            # fotos de los socios habilitados (lista blanca), no de todos los
+            # activos. Reduce drásticamente el volumen (miles vs. decenas de miles).
             if seed_whitelist:
                 stats["whitelist_seed"] = self.seed_whitelist_from_suprema(cursor)
             if recompute_whitelist:
@@ -446,6 +454,11 @@ class XsysSyncService:
                     XsysSocio.objects.filter(activo=1).values_list("id_cliente", flat=True)
                 )
                 stats["whitelist"] = self.recompute_whitelist(ids)
+
+            habilitados = list(
+                XsysWhitelist.objects.filter(habilitado=True).values_list("id_cliente", flat=True)
+            )
+            stats["fotos"] = self.sync_fotos_by_ids(cursor, habilitados)
 
             # Novedades / fotos: fijar high-water sin backfill.
             max_nov = self._max_scalar(cursor, "SELECT MAX(Id_Novedad) FROM CD_Clientes_Novedades") or 0
@@ -517,9 +530,15 @@ class XsysSyncService:
                 self._record_novedades(rows)
                 affected = sorted({r[1] for r in rows if r[1] is not None})
                 stats["socios"] = self.sync_socios_by_ids(cursor, affected)
-                stats["fotos"] = self.sync_fotos_by_ids(cursor, affected)
                 stats["contratos"] = self.sync_contratos_by_ids(cursor, affected)
                 stats["whitelist"] = self.recompute_whitelist(affected)
+                # Fotos solo de los afectados que quedaron habilitados (whitelist).
+                habilitados = list(
+                    XsysWhitelist.objects.filter(
+                        id_cliente__in=affected, habilitado=True
+                    ).values_list("id_cliente", flat=True)
+                )
+                stats["fotos"] = self.sync_fotos_by_ids(cursor, habilitados)
                 new_last = max(r[0] for r in rows)
             else:
                 new_last = last_id
