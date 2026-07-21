@@ -244,9 +244,14 @@ class XsysSyncService:
         return len(objs)
 
     def sync_controladores(self, cursor) -> int:
-        """Espejo de CD_Controladores (molinetes/lectores). Tabla chica: upsert."""
+        """Espejo de CD_Controladores (molinetes/lectores). Tabla chica: upsert.
+
+        ``ip`` = Intelek_IP (IP configurada del controlador) o, si está vacía,
+        Ult_IP (última IP vista). Vacío si xSys no tiene ninguna.
+        """
         cursor.execute(
-            "SELECT Id_Controlador, Id_Acceso, Descripcion, Tipo, Tipo_Cont, Activo FROM CD_Controladores"
+            "SELECT Id_Controlador, Id_Acceso, Descripcion, Tipo, Tipo_Cont, Activo, "
+            "Intelek_IP, Ult_IP FROM CD_Controladores"
         )
         rows = cursor.fetchall()
         now = timezone.now()
@@ -258,6 +263,7 @@ class XsysSyncService:
                 tipo=(r[3] or "").strip(),
                 tipo_cont=(r[4] or "").strip(),
                 activo=r[5],
+                ip=((r[6] or "").strip() or (r[7] or "").strip())[:40],
                 synced_at=now,
             )
             for r in rows
@@ -267,7 +273,7 @@ class XsysSyncService:
                 objs,
                 update_conflicts=True,
                 unique_fields=["id_controlador"],
-                update_fields=["id_acceso", "descripcion", "tipo", "tipo_cont", "activo", "synced_at"],
+                update_fields=["id_acceso", "descripcion", "tipo", "tipo_cont", "activo", "ip", "synced_at"],
             )
         return len(objs)
 

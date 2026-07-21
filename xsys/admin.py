@@ -37,8 +37,8 @@ class PantallaPuertaAdmin(admin.ModelAdmin):
 
 @admin.register(XsysControlador)
 class XsysControladorAdmin(admin.ModelAdmin):
-    list_display = ("id_controlador", "id_acceso", "descripcion", "tipo_cont", "activo")
-    search_fields = ("id_controlador", "descripcion")
+    list_display = ("id_controlador", "id_acceso", "descripcion", "tipo_cont", "activo", "ip")
+    search_fields = ("id_controlador", "descripcion", "ip")
     list_filter = ("activo", "tipo_cont", "id_acceso")
 
 

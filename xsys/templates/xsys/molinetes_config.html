@@ -171,8 +171,9 @@
       var chk = pool.has(c.id_controlador) ? " checked" : "";
       var tag = (c.tipo_cont || "").toUpperCase();
       var tipo = (tag === "F" || tag === "W") ? " · facial" : "";
+      var ipTxt = c.ip ? " · IP " + esc(c.ip) : "";
       return '<label class="d-block small py-1"><input type="checkbox" class="cat-ctrl" value="' + c.id_controlador + '"' + chk + '> ' +
-        "#" + c.id_controlador + " · " + esc(c.descripcion) + '<span class="text-muted">' + tipo + " · acceso " + c.id_acceso + (c.activo ? "" : " · inactivo") + "</span></label>";
+        "#" + c.id_controlador + " · " + esc(c.descripcion) + '<span class="text-muted">' + tipo + " · acceso " + c.id_acceso + ipTxt + (c.activo ? "" : " · inactivo") + "</span></label>";
     }).join("");
     cont.querySelectorAll(".cat-ctrl").forEach(function (el) {
       el.addEventListener("change", function () {
