@@ -148,6 +148,10 @@ def _content_type(data: bytes) -> str:
 class SocioFotoAPI(APIView):
     """GET /api/xsys/socios/<id_cliente>/foto/[?nro=][?thumb=1] → bytes de la imagen."""
 
+    # Pública: la pantalla de puerta (sin login) carga las fotos por esta API.
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
     def get(self, request, id_cliente: int):
         nro = request.query_params.get("nro")
         thumb = request.query_params.get("thumb") in ("1", "true", "yes")
