@@ -9,10 +9,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from access_control.models.models import ExternalAccessLogEntry
+from institutions.models import AccessDoor, DoorController, DoorTurnstileGroup
 
 from xsys.models import (
     PantallaPuerta,
-    PuertaMolinete,
     XsysAcceso,
     XsysContrato,
     XsysControlador,
@@ -26,6 +26,7 @@ from xsys.serializers import (
     XsysSocioSerializer,
     XsysWhitelistSerializer,
 )
+from xsys.services import foto_fetch
 from xsys.services.access import resolver_acceso, resolver_socio
 from xsys.services.cuota import cuota_al_dia
 
@@ -94,6 +95,8 @@ class SocioLookupAPI(APIView):
 
         whitelist = XsysWhitelist.objects.filter(id_cliente=socio.id_cliente).first()
         foto_disponible = XsysSocioFoto.objects.filter(id_cliente=socio.id_cliente).exists()
+        if not foto_disponible:
+            foto_fetch.request_foto(socio.id_cliente)  # buscar en xSys async
 
         payload = {"socio": socio, "whitelist": whitelist, "foto_disponible": foto_disponible}
         return Response(XsysSocioLookupSerializer(payload, context={"request": request}).data)
@@ -267,25 +270,26 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
     }
 
 
-def _accesos_disponibles() -> list[dict]:
+def _puertas_disponibles() -> list[dict]:
+    """Puertas locales activas (para la hamburguesa del monitor)."""
     return [
-        {"id_acceso": a.id_acceso, "descripcion": a.descripcion or f"Acceso {a.id_acceso}"}
-        for a in XsysAcceso.objects.filter(activo=1).order_by("descripcion")
+        {"id": d.id, "nombre": d.name, "xsys_id_acceso": d.xsys_id_acceso}
+        for d in AccessDoor.objects.filter(is_active=True).order_by("name")
     ]
 
 
 class PuertasListAPI(APIView):
-    """GET /api/xsys/puertas/ → lista de accesos activos (para la hamburguesa)."""
+    """GET /api/xsys/puertas/ → puertas activas (para la hamburguesa)."""
 
     permission_classes = [AllowAny]
     authentication_classes = []
 
     def get(self, request):
-        return Response({"puertas": _accesos_disponibles()})
+        return Response({"puertas": _puertas_disponibles()})
 
 
 class PuertaSeleccionarAPI(APIView):
-    """POST /api/xsys/puerta/seleccionar/ {id_acceso} → puerta que muestra el token."""
+    """POST /api/xsys/puerta/seleccionar/ {puerta_id} → puerta que muestra el token."""
 
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -294,41 +298,49 @@ class PuertaSeleccionarAPI(APIView):
         token = _pantalla_token(request)
         if not token:
             return Response({"detail": "Falta el token de pantalla."}, status=status.HTTP_400_BAD_REQUEST)
-        id_acceso = request.data.get("id_acceso")
-        if id_acceso in (None, ""):  # compat: aceptar id_accesos[0]
+        puerta_id = request.data.get("puerta_id")
+        if puerta_id in (None, ""):  # compat: aceptar id_acceso viejo o id_accesos[0]
+            puerta_id = request.data.get("id_acceso")
             lst = request.data.get("id_accesos")
-            if isinstance(lst, (list, tuple)) and lst:
-                id_acceso = lst[0]
-        if id_acceso in (None, ""):
-            return Response({"detail": "id_acceso requerido."}, status=status.HTTP_400_BAD_REQUEST)
+            if puerta_id in (None, "") and isinstance(lst, (list, tuple)) and lst:
+                puerta_id = lst[0]
+        if puerta_id in (None, ""):
+            return Response({"detail": "puerta_id requerido."}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            id_acceso = int(id_acceso)
+            puerta_id = int(puerta_id)
         except (TypeError, ValueError):
-            return Response({"detail": "id_acceso inválido."}, status=status.HTTP_400_BAD_REQUEST)
-        if not XsysAcceso.objects.filter(pk=id_acceso).exists():
-            return Response({"detail": "La puerta no existe en el espejo local."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "puerta_id inválido."}, status=status.HTTP_400_BAD_REQUEST)
+        door = AccessDoor.objects.filter(pk=puerta_id).first()
+        if door is None:
+            return Response({"detail": "La puerta no existe."}, status=status.HTTP_404_NOT_FOUND)
         nombre = (request.data.get("nombre") or "").strip()[:60]
-        defaults = {"id_acceso": id_acceso, "last_seen": timezone.now(), "ip": _client_ip(request)}
+        defaults = {"door": door, "last_seen": timezone.now(), "ip": _client_ip(request)}
         if nombre:
             defaults["nombre"] = nombre
         PantallaPuerta.objects.update_or_create(token=token, defaults=defaults)
-        return Response({"ok": True, "token": token, "id_acceso": id_acceso})
+        return Response({"ok": True, "token": token, "puerta_id": door.id})
 
 
-def _columnas_de_puerta(id_acceso: int) -> list[dict]:
-    """Columnas (molinetes) de una puerta: los grupos administrables definidos, o
-    fallback automático = un molinete por controlador activo del acceso."""
-    grupos = list(PuertaMolinete.objects.filter(id_acceso=id_acceso).order_by("orden", "id"))
+def _columnas_de_puerta(door: AccessDoor) -> list[dict]:
+    """Columnas de una puerta: los grupos de molinetes definidos, o fallback
+    automático = una columna por cada controlador asignado a la puerta."""
+    grupos = list(door.turnstile_groups.order_by("orden", "id"))
     if grupos:
         return [
             {"key": f"g{g.id}", "nombre": g.nombre, "controladores": [int(c) for c in (g.id_controladores or [])]}
             for g in grupos
         ]
-    return [
-        {"key": f"c{c.id_controlador}", "nombre": c.descripcion or f"Ctrl {c.id_controlador}",
-         "controladores": [c.id_controlador]}
-        for c in XsysControlador.objects.filter(id_acceso=id_acceso, activo=1).order_by("descripcion")
-    ]
+    asignados = list(door.controllers.order_by("orden", "id"))
+    descs = {
+        c.id_controlador: c
+        for c in XsysControlador.objects.filter(pk__in=[a.id_controlador for a in asignados])
+    }
+    cols = []
+    for a in asignados:
+        x = descs.get(a.id_controlador)
+        nombre = x.descripcion if (x and x.descripcion) else f"Ctrl {a.id_controlador}"
+        cols.append({"key": f"c{a.id_controlador}", "nombre": nombre, "controladores": [a.id_controlador]})
+    return cols
 
 
 class PuertaEstadoAPI(APIView):
@@ -345,16 +357,15 @@ class PuertaEstadoAPI(APIView):
         pantalla = _registrar_pantalla(request)
         if pantalla is None:
             return Response({"detail": "Falta el token de pantalla."}, status=status.HTTP_400_BAD_REQUEST)
-        if not pantalla.id_acceso:
+        door = pantalla.door
+        if door is None:
             return Response({
                 "configurada": False,
                 "ip": pantalla.ip,
-                "puertas": _accesos_disponibles(),
+                "puertas": _puertas_disponibles(),
             })
 
-        puerta = pantalla.id_acceso
-        acceso = XsysAcceso.objects.filter(pk=puerta).first()
-        cols_def = _columnas_de_puerta(puerta)
+        cols_def = _columnas_de_puerta(door)
 
         # Eventos por columna (por conjunto de controladores del molinete).
         eventos_por_col = []
@@ -374,6 +385,9 @@ class PuertaEstadoAPI(APIView):
         ctrl_ids = {e.id_controlador for e in todos if e.id_controlador}
         socios = {s.id_cliente: s for s in XsysSocio.objects.filter(pk__in=cids)}
         fotos = set(XsysSocioFoto.objects.filter(id_cliente__in=cids).values_list("id_cliente", flat=True))
+        # Fallback async: los socios sin foto local se buscan en xSys en segundo
+        # plano; la foto aparecerá en un refresco posterior.
+        foto_fetch.request_many(cids - fotos)
         motivos = {m.id_cd_motivo: m for m in XsysMotivo.objects.filter(pk__in=mids)}
         ctrls = {c.id_controlador: c for c in XsysControlador.objects.filter(pk__in=ctrl_ids)}
 
@@ -389,54 +403,182 @@ class PuertaEstadoAPI(APIView):
         return Response({
             "configurada": True,
             "ip": pantalla.ip,
-            "nombre": pantalla.nombre or (acceso.descripcion if acceso else ""),
-            "puerta": {"id_acceso": puerta, "descripcion": (acceso.descripcion if acceso else f"Acceso {puerta}")},
+            "nombre": pantalla.nombre or door.name,
+            "puerta": {"id": door.id, "nombre": door.name, "xsys_id_acceso": door.xsys_id_acceso},
             "columnas": columnas,
         })
 
 
 # ----------------------------------------------------------------------------
-# Administración de molinetes (columnas) por puerta. Requiere login.
+# Armado de puertas (requiere login). Flujo en 3 pasos:
+#   1) alta de la puerta            -> PuertasConfigAPI / PuertaConfigDetailAPI
+#   2) asignar controladores xSys   -> PuertaControladoresAPI (+ catálogo)
+#   3) definir grupos de molinetes  -> MolinetesConfigAPI / *DetailAPI / *AutoAPI
 # ----------------------------------------------------------------------------
 
-class ControladoresPorAccesoAPI(APIView):
-    """GET /api/xsys/config/controladores/?id_acceso= → controladores de la puerta."""
+def _puerta_dict(d: AccessDoor) -> dict:
+    return {
+        "id": d.id,
+        "nombre": d.name,
+        "code": d.code,
+        "xsys_id_acceso": d.xsys_id_acceso,
+        "is_active": d.is_active,
+        "controladores": list(d.controllers.order_by("orden", "id").values_list("id_controlador", flat=True)),
+        "molinetes": d.turnstile_groups.count(),
+    }
+
+
+def _int_or_none(value):
+    s = str(value).strip() if value is not None else ""
+    return int(s) if s.lstrip("-").isdigit() else None
+
+
+class PuertasConfigAPI(APIView):
+    """GET (listar todas las puertas) / POST (alta de puerta)."""
 
     def get(self, request):
-        try:
-            id_acceso = int(request.query_params.get("id_acceso"))
-        except (TypeError, ValueError):
-            return Response({"detail": "id_acceso requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"puertas": [_puerta_dict(d) for d in AccessDoor.objects.all().order_by("name")]})
+
+    def post(self, request):
+        d = request.data
+        nombre = (d.get("nombre") or "").strip()[:255]
+        if not nombre:
+            return Response({"detail": "nombre requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        door = AccessDoor.objects.create(
+            name=nombre,
+            code=(d.get("code") or "").strip()[:32],
+            xsys_id_acceso=_int_or_none(d.get("xsys_id_acceso")),
+        )
+        return Response(_puerta_dict(door), status=status.HTTP_201_CREATED)
+
+
+class PuertaConfigDetailAPI(APIView):
+    """PUT / DELETE /api/xsys/config/puertas/<id>/."""
+
+    def put(self, request, pid: int):
+        door = AccessDoor.objects.filter(pk=pid).first()
+        if not door:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        d = request.data
+        if "nombre" in d:
+            door.name = (d.get("nombre") or "").strip()[:255] or door.name
+        if "code" in d:
+            door.code = (d.get("code") or "").strip()[:32]
+        if "xsys_id_acceso" in d:
+            door.xsys_id_acceso = _int_or_none(d.get("xsys_id_acceso"))
+        if "is_active" in d:
+            door.is_active = _flag(d.get("is_active"))
+        door.save()
+        return Response(_puerta_dict(door))
+
+    def delete(self, request, pid: int):
+        AccessDoor.objects.filter(pk=pid).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ControladoresXsysAPI(APIView):
+    """GET /api/xsys/config/controladores-xsys/?id_acceso= → catálogo de
+    controladores de xSys para asignar a una puerta. Sin id_acceso: todos.
+    Incluye la lista de accesos activos para poder filtrar en la UI."""
+
+    def get(self, request):
+        qs = XsysControlador.objects.all()
+        id_acceso = request.query_params.get("id_acceso")
+        if id_acceso not in (None, ""):
+            try:
+                qs = qs.filter(id_acceso=int(id_acceso))
+            except (TypeError, ValueError):
+                return Response({"detail": "id_acceso inválido."}, status=status.HTTP_400_BAD_REQUEST)
         ctrls = [
-            {"id_controlador": c.id_controlador, "descripcion": c.descripcion or f"Ctrl {c.id_controlador}",
+            {"id_controlador": c.id_controlador, "id_acceso": c.id_acceso,
+             "descripcion": c.descripcion or f"Ctrl {c.id_controlador}",
              "tipo_cont": c.tipo_cont, "activo": c.activo}
-            for c in XsysControlador.objects.filter(id_acceso=id_acceso).order_by("descripcion")
+            for c in qs.order_by("id_acceso", "descripcion")
         ]
-        return Response({"id_acceso": id_acceso, "controladores": ctrls})
+        accesos = [
+            {"id_acceso": a.id_acceso, "descripcion": a.descripcion or f"Acceso {a.id_acceso}"}
+            for a in XsysAcceso.objects.filter(activo=1).order_by("descripcion")
+        ]
+        return Response({"controladores": ctrls, "accesos": accesos})
 
 
-def _molinete_dict(m: PuertaMolinete) -> dict:
-    return {"id": m.id, "id_acceso": m.id_acceso, "nombre": m.nombre,
+class PuertaControladoresAPI(APIView):
+    """GET / PUT los controladores asignados a la puerta (el pool del paso 2).
+
+    GET  → controladores del pool, enriquecidos con datos de xSys.
+    PUT {id_controladores:[...]} → reemplaza el pool completo (y limpia de los
+    grupos los controladores que dejaron de estar asignados)."""
+
+    def get(self, request, pid: int):
+        door = AccessDoor.objects.filter(pk=pid).first()
+        if not door:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        asignados = list(door.controllers.order_by("orden", "id"))
+        descs = {
+            c.id_controlador: c
+            for c in XsysControlador.objects.filter(pk__in=[a.id_controlador for a in asignados])
+        }
+        out = []
+        for a in asignados:
+            x = descs.get(a.id_controlador)
+            out.append({
+                "id_controlador": a.id_controlador,
+                "descripcion": (x.descripcion if x and x.descripcion else f"Ctrl {a.id_controlador}"),
+                "tipo_cont": (x.tipo_cont if x else ""),
+                "activo": (x.activo if x else None),
+            })
+        return Response({"puerta_id": door.id, "controladores": out})
+
+    def put(self, request, pid: int):
+        door = AccessDoor.objects.filter(pk=pid).first()
+        if not door:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        try:
+            ids = [int(c) for c in (request.data.get("id_controladores") or [])]
+        except (TypeError, ValueError):
+            return Response({"detail": "id_controladores inválido."}, status=status.HTTP_400_BAD_REQUEST)
+        ids = list(dict.fromkeys(ids))  # dedup preservando orden
+        door.controllers.all().delete()
+        DoorController.objects.bulk_create(
+            [DoorController(door=door, id_controlador=cid, orden=i) for i, cid in enumerate(ids)]
+        )
+        # Limpiar de los grupos los controladores que ya no están en el pool.
+        for g in door.turnstile_groups.all():
+            filtrados = [c for c in (g.id_controladores or []) if c in ids]
+            if filtrados != list(g.id_controladores or []):
+                g.id_controladores = filtrados
+                g.save(update_fields=["id_controladores", "updated_at"])
+        return Response({"puerta_id": door.id, "id_controladores": ids})
+
+
+def _molinete_dict(m: DoorTurnstileGroup) -> dict:
+    return {"id": m.id, "puerta_id": m.door_id, "nombre": m.nombre,
             "id_controladores": m.id_controladores or [], "orden": m.orden}
 
 
 class MolinetesConfigAPI(APIView):
-    """GET ?id_acceso= (listar) / POST (crear) molinetes de una puerta."""
+    """GET ?puerta_id= (listar) / POST (crear) grupos de molinetes de una puerta."""
 
     def get(self, request):
         try:
-            id_acceso = int(request.query_params.get("id_acceso"))
+            pid = int(request.query_params.get("puerta_id"))
         except (TypeError, ValueError):
-            return Response({"detail": "id_acceso requerido."}, status=status.HTTP_400_BAD_REQUEST)
-        molinetes = [_molinete_dict(m) for m in PuertaMolinete.objects.filter(id_acceso=id_acceso).order_by("orden", "id")]
-        return Response({"id_acceso": id_acceso, "molinetes": molinetes})
+            return Response({"detail": "puerta_id requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        molinetes = [
+            _molinete_dict(m)
+            for m in DoorTurnstileGroup.objects.filter(door_id=pid).order_by("orden", "id")
+        ]
+        return Response({"puerta_id": pid, "molinetes": molinetes})
 
     def post(self, request):
         d = request.data
         try:
-            id_acceso = int(d.get("id_acceso"))
+            pid = int(d.get("puerta_id"))
         except (TypeError, ValueError):
-            return Response({"detail": "id_acceso requerido."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "puerta_id requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        door = AccessDoor.objects.filter(pk=pid).first()
+        if not door:
+            return Response({"detail": "La puerta no existe."}, status=status.HTTP_404_NOT_FOUND)
         nombre = (d.get("nombre") or "").strip()[:60]
         if not nombre:
             return Response({"detail": "nombre requerido."}, status=status.HTTP_400_BAD_REQUEST)
@@ -444,8 +586,11 @@ class MolinetesConfigAPI(APIView):
             ctrls = [int(c) for c in (d.get("id_controladores") or [])]
         except (TypeError, ValueError):
             return Response({"detail": "id_controladores inválido."}, status=status.HTTP_400_BAD_REQUEST)
-        orden = int(d.get("orden") or PuertaMolinete.objects.filter(id_acceso=id_acceso).count())
-        m = PuertaMolinete.objects.create(id_acceso=id_acceso, nombre=nombre, id_controladores=ctrls, orden=orden)
+        # Solo controladores que pertenezcan al pool de la puerta.
+        pool = set(door.controllers.values_list("id_controlador", flat=True))
+        ctrls = [c for c in ctrls if c in pool]
+        orden = int(d.get("orden") or door.turnstile_groups.count())
+        m = DoorTurnstileGroup.objects.create(door=door, nombre=nombre, id_controladores=ctrls, orden=orden)
         return Response(_molinete_dict(m), status=status.HTTP_201_CREATED)
 
 
@@ -453,7 +598,7 @@ class MolineteConfigDetailAPI(APIView):
     """PUT / DELETE /api/xsys/config/molinetes/<id>/."""
 
     def put(self, request, mid: int):
-        m = PuertaMolinete.objects.filter(pk=mid).first()
+        m = DoorTurnstileGroup.objects.filter(pk=mid).first()
         if not m:
             return Response(status=status.HTTP_404_NOT_FOUND)
         d = request.data
@@ -461,9 +606,11 @@ class MolineteConfigDetailAPI(APIView):
             m.nombre = (d.get("nombre") or "").strip()[:60] or m.nombre
         if "id_controladores" in d:
             try:
-                m.id_controladores = [int(c) for c in (d.get("id_controladores") or [])]
+                ctrls = [int(c) for c in (d.get("id_controladores") or [])]
             except (TypeError, ValueError):
                 return Response({"detail": "id_controladores inválido."}, status=status.HTTP_400_BAD_REQUEST)
+            pool = set(m.door.controllers.values_list("id_controlador", flat=True))
+            m.id_controladores = [c for c in ctrls if c in pool]
         if "orden" in d:
             try:
                 m.orden = int(d.get("orden"))
@@ -473,30 +620,39 @@ class MolineteConfigDetailAPI(APIView):
         return Response(_molinete_dict(m))
 
     def delete(self, request, mid: int):
-        PuertaMolinete.objects.filter(pk=mid).delete()
+        DoorTurnstileGroup.objects.filter(pk=mid).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class MolinetesAutoAPI(APIView):
-    """POST /api/xsys/config/molinetes/auto/ {id_acceso} → crea un molinete por
-    cada controlador activo del acceso (si no hay molinetes definidos)."""
+    """POST /api/xsys/config/molinetes/auto/ {puerta_id} → crea un grupo por cada
+    controlador asignado a la puerta que todavía no esté en algún grupo."""
 
     def post(self, request):
         try:
-            id_acceso = int(request.data.get("id_acceso"))
+            pid = int(request.data.get("puerta_id"))
         except (TypeError, ValueError):
-            return Response({"detail": "id_acceso requerido."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "puerta_id requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        door = AccessDoor.objects.filter(pk=pid).first()
+        if not door:
+            return Response({"detail": "La puerta no existe."}, status=status.HTTP_404_NOT_FOUND)
         existentes = set()
-        for m in PuertaMolinete.objects.filter(id_acceso=id_acceso):
-            existentes.update(int(c) for c in (m.id_controladores or []))
+        for g in door.turnstile_groups.all():
+            existentes.update(int(c) for c in (g.id_controladores or []))
+        asignados = list(door.controllers.order_by("orden", "id"))
+        descs = {
+            c.id_controlador: c
+            for c in XsysControlador.objects.filter(pk__in=[a.id_controlador for a in asignados])
+        }
         creados = 0
-        base = PuertaMolinete.objects.filter(id_acceso=id_acceso).count()
-        for c in XsysControlador.objects.filter(id_acceso=id_acceso, activo=1).order_by("descripcion"):
-            if c.id_controlador in existentes:
+        base = door.turnstile_groups.count()
+        for a in asignados:
+            if a.id_controlador in existentes:
                 continue
-            PuertaMolinete.objects.create(
-                id_acceso=id_acceso, nombre=c.descripcion or f"Ctrl {c.id_controlador}",
-                id_controladores=[c.id_controlador], orden=base + creados,
+            x = descs.get(a.id_controlador)
+            nombre = x.descripcion if (x and x.descripcion) else f"Ctrl {a.id_controlador}"
+            DoorTurnstileGroup.objects.create(
+                door=door, nombre=nombre[:60], id_controladores=[a.id_controlador], orden=base + creados,
             )
             creados += 1
         return Response({"creados": creados})
@@ -512,6 +668,8 @@ class SocioDetalleAPI(APIView):
     def get(self, request, id_cliente: int):
         socio = XsysSocio.objects.filter(pk=id_cliente).first()
         tiene_foto = XsysSocioFoto.objects.filter(id_cliente=id_cliente).exists()
+        if not tiene_foto:
+            foto_fetch.request_foto(id_cliente)  # buscar en xSys async
         contratos = [
             {
                 "descripcion": c.descripcion,

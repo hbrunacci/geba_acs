@@ -121,7 +121,7 @@
       <input class="drawer__input" id="nombre" placeholder="Nombre de la pantalla (opcional)" />
       <div id="accesos"></div>
       <button class="btn" id="aplicar">Aplicar</button>
-      <a class="cfglink" href="/xsys/molinetes/" target="_blank">&#9881; Administrar molinetes por puerta</a>
+      <a class="cfglink" href="/xsys/molinetes/" target="_blank">&#9881; Administrar puertas y molinetes</a>
       <div class="ip" id="ip"></div>
     </div>
   </div>
@@ -197,9 +197,9 @@
     }
     function renderPuertas(puertas, seleccionada) {
       document.getElementById("accesos").innerHTML = puertas.map(function (a) {
-        return '<label class="acc-item"><input type="radio" name="puerta" value="' + a.id_acceso + '"' +
-               (a.id_acceso === seleccionada ? " checked" : "") + '><span>' + esc(a.descripcion) + '</span></label>';
-      }).join("") || '<div class="hempty">No hay puertas sincronizadas.</div>';
+        return '<label class="acc-item"><input type="radio" name="puerta" value="' + a.id + '"' +
+               (a.id === seleccionada ? " checked" : "") + '><span>' + esc(a.nombre) + '</span></label>';
+      }).join("") || '<div class="hempty">No hay puertas configuradas.</div>';
     }
     function aplicar() {
       var sel = document.querySelector('#accesos input:checked');
@@ -207,7 +207,7 @@
       var nombre = document.getElementById("nombre").value.trim();
       fetch(API + "/puerta/seleccionar/", {
         method: "POST", headers: hdr({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ id_acceso: parseInt(sel.value, 10), nombre: nombre }),
+        body: JSON.stringify({ puerta_id: parseInt(sel.value, 10), nombre: nombre }),
       }).then(function () { drawer.classList.remove("open"); colState = {}; hist = {}; currentKeys = ["\x00"]; poll(); });
     }
 
@@ -394,8 +394,8 @@
           document.getElementById("ip").textContent = "IP: " + (d.ip || "") + " · token " + TOKEN.slice(0, 8);
           if (!d.configurada) { mostrarSinConfig(d.puertas); return; }
           document.getElementById("titulo").textContent = d.nombre || "Monitor";
-          currentPuerta = d.puerta ? d.puerta.id_acceso : null;
-          currentPuertaDesc = d.puerta ? d.puerta.descripcion : "";
+          currentPuerta = d.puerta ? d.puerta.id : null;
+          currentPuertaDesc = d.puerta ? d.puerta.nombre : "";
           var keys = (d.columnas || []).map(function (c) { return c.key; });
           if (keys.join("|") !== currentKeys.join("|")) { currentKeys = keys; rebuildSkeleton(d.columnas); }
           (d.columnas || []).forEach(updateColumna);

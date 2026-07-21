@@ -4,7 +4,6 @@ from django.contrib import admin
 
 from xsys.models import (
     PantallaPuerta,
-    PuertaMolinete,
     SyncState,
     XsysAcceso,
     XsysControlador,
@@ -32,7 +31,7 @@ class XsysMotivoAdmin(admin.ModelAdmin):
 
 @admin.register(PantallaPuerta)
 class PantallaPuertaAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "token", "id_acceso", "ip", "last_seen")
+    list_display = ("nombre", "token", "door", "ip", "last_seen")
     search_fields = ("token", "nombre", "ip")
 
 
@@ -41,13 +40,6 @@ class XsysControladorAdmin(admin.ModelAdmin):
     list_display = ("id_controlador", "id_acceso", "descripcion", "tipo_cont", "activo")
     search_fields = ("id_controlador", "descripcion")
     list_filter = ("activo", "tipo_cont", "id_acceso")
-
-
-@admin.register(PuertaMolinete)
-class PuertaMolineteAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "id_acceso", "id_controladores", "orden")
-    search_fields = ("nombre",)
-    list_filter = ("id_acceso",)
 
 
 @admin.register(XsysSocio)

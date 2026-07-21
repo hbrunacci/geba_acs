@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 from people.models import GuestType, PersonType
 
@@ -72,17 +73,78 @@ class AccessDevice(models.Model):
 
 
 class AccessDoor(models.Model):
-    site = models.ForeignKey("institutions.Site", on_delete=models.CASCADE, related_name="doors")
+    """Puerta / puesto de control. Entidad propia, independiente de xSys.
+
+    El armado es: (1) alta de la puerta, (2) asignarle controladores de xSys
+    (``DoorController``) y (3) definir sus grupos de molinetes / columnas del
+    monitor (``DoorTurnstileGroup``). ``site`` es opcional (una puerta puede
+    existir sin sede) y ``xsys_id_acceso`` es un vínculo opcional al acceso
+    (``CD_Accesos``) del espejo, útil como atajo para importar controladores.
+    """
+
+    site = models.ForeignKey(
+        "institutions.Site",
+        on_delete=models.CASCADE,
+        related_name="doors",
+        null=True,
+        blank=True,
+    )
     name = models.CharField(max_length=255)
-    code = models.CharField(max_length=32)
+    code = models.CharField(max_length=32, blank=True, default="")
+    xsys_id_acceso = models.IntegerField(null=True, blank=True, db_index=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
-        ordering = ["site__name", "name"]
-        unique_together = ("site", "code")
+        ordering = ["name"]
 
     def __str__(self):
-        return f"{self.site.name} - {self.name}"
+        base = f"{self.site.name} - " if self.site_id else ""
+        return f"{base}{self.name}"
+
+
+class DoorController(models.Model):
+    """Controlador de xSys (molinete / facial / lector) asignado a una puerta.
+
+    Un mismo controlador puede asignarse a más de una puerta. Se guarda por
+    ``id_controlador`` (referencia laxa a ``xsys.XsysControlador``; sin FK
+    cross-app al espejo, como el resto de las referencias a xSys).
+    """
+
+    door = models.ForeignKey(
+        "institutions.AccessDoor", on_delete=models.CASCADE, related_name="controllers"
+    )
+    id_controlador = models.IntegerField(db_index=True)
+    orden = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["door__name", "orden", "id"]
+        unique_together = ("door", "id_controlador")
+
+    def __str__(self):
+        return f"{self.door} · ctrl {self.id_controlador}"
+
+
+class DoorTurnstileGroup(models.Model):
+    """Grupo de molinetes = una COLUMNA del monitor de la puerta.
+
+    Agrupa uno o varios controladores asignados a la puerta (ej. el molinete y
+    su facial en el mismo lugar físico, o cada uno por separado).
+    """
+
+    door = models.ForeignKey(
+        "institutions.AccessDoor", on_delete=models.CASCADE, related_name="turnstile_groups"
+    )
+    nombre = models.CharField(max_length=60)
+    id_controladores = models.JSONField(default=list, blank=True)
+    orden = models.IntegerField(default=0)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["door__name", "orden", "id"]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.door})"
 
 
 class DoorDevice(models.Model):

@@ -1,37 +1,68 @@
 {% extends "common/base.html" %}
 
-{% block page_title %}Molinetes por puerta{% endblock page_title %}
-{% block header_title %}Molinetes por puerta{% endblock header_title %}
+{% block page_title %}Puertas y molinetes{% endblock page_title %}
+{% block header_title %}Puertas y molinetes{% endblock header_title %}
 {% block header_subtitle %}
-  Definí las columnas del monitor: cada molinete agrupa uno o más controladores (ej. molinete + su facial).
+  Armá una puerta en 3 pasos: 1) dala de alta, 2) asignale los controladores de xSys y 3) definí sus grupos de molinetes (las columnas del monitor).
 {% endblock header_subtitle %}
 
 {% block content %}
 {% csrf_token %}
+
+<!-- Paso 1: puertas -->
 <section class="card mb-3">
+  <div class="card__header"><h5 class="card__title">1 · Puertas</h5></div>
   <div class="card__body">
-    <label class="form-label" for="puerta">Puerta (acceso)</label>
-    <select id="puerta" class="form-select" style="max-width: 420px"></select>
+    <div class="row g-2 align-items-end mb-3">
+      <div class="col-sm-5">
+        <label class="form-label" for="np-nombre">Nueva puerta</label>
+        <input id="np-nombre" class="form-control form-control-sm" placeholder="Nombre (ej: San Martín - Alcorta)" />
+      </div>
+      <div class="col-sm-4">
+        <label class="form-label" for="np-acceso">Acceso xSys (opcional)</label>
+        <select id="np-acceso" class="form-select form-select-sm"></select>
+      </div>
+      <div class="col-sm-3">
+        <button id="np-crear" class="btn btn-primary btn-sm w-100">Crear puerta</button>
+      </div>
+    </div>
+    <div id="puertas" class="small text-muted">—</div>
   </div>
 </section>
 
 <div id="panel" class="row g-3 d-none">
+  <!-- Paso 2: controladores de la puerta -->
   <div class="col-lg-5">
     <section class="card h-100">
-      <div class="card__header"><h5 class="card__title">Controladores de la puerta</h5></div>
+      <div class="card__header"><h5 class="card__title">2 · Controladores de <span id="cfg-nombre"></span></h5></div>
       <div class="card__body">
-        <div id="controladores" class="small text-muted">—</div>
-        <button id="auto" class="btn btn-outline-secondary btn-sm mt-3">Auto: 1 molinete por controlador</button>
+        <p class="small text-muted">Elegí qué controladores de xSys pertenecen a esta puerta. Podés filtrar por acceso; un controlador puede estar en más de una puerta.</p>
+        <div class="row g-2 align-items-end mb-2">
+          <div class="col-8">
+            <label class="form-label" for="ctrl-acceso">Filtrar por acceso xSys</label>
+            <select id="ctrl-acceso" class="form-select form-select-sm"></select>
+          </div>
+          <div class="col-4">
+            <button id="ctrl-guardar" class="btn btn-primary btn-sm w-100">Guardar</button>
+          </div>
+        </div>
+        <div id="ctrl-lista" style="max-height: 340px; overflow:auto"></div>
+        <div class="small text-muted mt-2">Asignados: <span id="ctrl-count">0</span></div>
       </div>
     </section>
   </div>
+
+  <!-- Paso 3: grupos de molinetes -->
   <div class="col-lg-7">
     <section class="card mb-3">
-      <div class="card__header"><h5 class="card__title">Nueva columna (molinete)</h5></div>
+      <div class="card__header"><h5 class="card__title">3 · Nuevo grupo de molinetes (columna)</h5></div>
       <div class="card__body">
         <input id="nuevo-nombre" class="form-control form-control-sm mb-2" placeholder="Nombre de la columna (ej: Molinete 1)" />
-        <div id="nuevo-ctrls" class="mb-2"></div>
-        <button id="crear" class="btn btn-primary btn-sm">Crear columna</button>
+        <div id="nuevo-ctrls" class="mb-2 small text-muted">Asigná controladores en el paso 2.</div>
+        <div class="d-flex gap-2">
+          <button id="crear" class="btn btn-primary btn-sm">Crear columna</button>
+          <button id="auto" class="btn btn-outline-secondary btn-sm">Auto: 1 columna por controlador</button>
+        </div>
       </div>
     </section>
     <section class="card">
@@ -49,46 +80,135 @@
   function getCookie(name) { var m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)'); return m ? m.pop() : ''; }
   function hdr(json) { var h = { "Accept": "application/json", "X-CSRFToken": getCookie("csrftoken") }; if (json) h["Content-Type"] = "application/json"; return h; }
   function esc(v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function jget(u) { return fetch(u, { headers: hdr() }).then(function (r) { return r.json(); }); }
+  function jsend(u, m, b) { return fetch(u, { method: m, headers: hdr(true), body: JSON.stringify(b || {}) }); }
 
-  var puertaSel = document.getElementById("puerta");
-  var ctrlsCache = [];
+  var currentPuerta = null;      // id de la puerta en edición
+  var accesosCache = [];         // accesos xSys (para los selects)
+  var catalogo = [];             // controladores xSys (catálogo del filtro actual)
+  var pool = new Set();          // controladores asignados a la puerta (persiste entre filtros)
+  var ctrlNames = {};            // id_controlador -> descripcion (para render de columnas)
 
-  fetch(API + "/puertas/", { headers: hdr() }).then(function (r) { return r.json(); }).then(function (d) {
-    puertaSel.innerHTML = '<option value="">— elegí una puerta —</option>' +
-      (d.puertas || []).map(function (p) { return '<option value="' + p.id_acceso + '">' + esc(p.descripcion) + '</option>'; }).join("");
-  });
-
-  puertaSel.addEventListener("change", cargar);
-  document.getElementById("auto").addEventListener("click", auto);
-  document.getElementById("crear").addEventListener("click", crear);
-
-  function puerta() { return parseInt(puertaSel.value, 10); }
-
-  function cargar() {
-    var id = puerta();
-    if (!id) { document.getElementById("panel").classList.add("d-none"); return; }
-    document.getElementById("panel").classList.remove("d-none");
-    fetch(API + "/config/controladores/?id_acceso=" + id, { headers: hdr() }).then(function (r) { return r.json(); }).then(function (d) {
-      ctrlsCache = d.controladores || [];
-      document.getElementById("controladores").innerHTML = ctrlsCache.length
-        ? ctrlsCache.map(function (c) { return "#" + c.id_controlador + " · " + esc(c.descripcion) + (c.activo ? "" : " (inactivo)"); }).join("<br>")
-        : "Sin controladores.";
-      document.getElementById("nuevo-ctrls").innerHTML = ctrlsCache.map(function (c) {
-        return '<label class="d-block small"><input type="checkbox" value="' + c.id_controlador + '"> ' + esc(c.descripcion) + '</label>';
-      }).join("");
-    });
-    cargarMolinetes();
+  // -- Paso 1: puertas ------------------------------------------------------
+  function cargarAccesosEnSelect(sel, incluyeVacio) {
+    sel.innerHTML = (incluyeVacio ? '<option value="">— sin acceso / todos —</option>' : '') +
+      accesosCache.map(function (a) { return '<option value="' + a.id_acceso + '">' + esc(a.descripcion) + '</option>'; }).join("");
   }
 
-  function ctrlNombre(id) { for (var i = 0; i < ctrlsCache.length; i++) if (ctrlsCache[i].id_controlador === id) return ctrlsCache[i].descripcion; return "#" + id; }
+  function cargarPuertas() {
+    jget(API + "/config/puertas/").then(function (d) {
+      var cont = document.getElementById("puertas");
+      var ps = d.puertas || [];
+      if (!ps.length) { cont.innerHTML = '<div class="text-muted">No hay puertas. Creá la primera arriba.</div>'; return; }
+      cont.innerHTML = ps.map(function (p) {
+        var meta = (p.controladores || []).length + " ctrl · " + p.molinetes + " col" + (p.xsys_id_acceso ? " · acceso " + p.xsys_id_acceso : "");
+        return '<div class="d-flex align-items-center justify-content-between border-bottom py-2">' +
+          '<div><strong>' + esc(p.nombre) + '</strong>' + (p.is_active ? "" : ' <span class="text-muted">(inactiva)</span>') +
+          '<br><small class="text-muted">' + esc(meta) + '</small></div>' +
+          '<div class="d-flex gap-2">' +
+            '<button class="btn btn-outline-primary btn-sm" data-cfg="' + p.id + '" data-nombre="' + esc(p.nombre) + '">Configurar</button>' +
+            '<button class="btn btn-outline-danger btn-sm" data-delp="' + p.id + '">Eliminar</button>' +
+          '</div></div>';
+      }).join("");
+      cont.querySelectorAll("[data-cfg]").forEach(function (b) {
+        b.addEventListener("click", function () { seleccionarPuerta(parseInt(b.getAttribute("data-cfg"), 10), b.getAttribute("data-nombre")); });
+      });
+      cont.querySelectorAll("[data-delp]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          if (!confirm("¿Eliminar la puerta y sus grupos?")) return;
+          fetch(API + "/config/puertas/" + b.getAttribute("data-delp") + "/", { method: "DELETE", headers: hdr() }).then(function () {
+            if (currentPuerta === parseInt(b.getAttribute("data-delp"), 10)) { currentPuerta = null; document.getElementById("panel").classList.add("d-none"); }
+            cargarPuertas();
+          });
+        });
+      });
+    });
+  }
+
+  document.getElementById("np-crear").addEventListener("click", function () {
+    var nombre = document.getElementById("np-nombre").value.trim();
+    if (!nombre) { alert("Poné un nombre."); return; }
+    var acc = document.getElementById("np-acceso").value;
+    jsend(API + "/config/puertas/", "POST", { nombre: nombre, xsys_id_acceso: acc || null }).then(function (r) { return r.json(); }).then(function (p) {
+      document.getElementById("np-nombre").value = "";
+      cargarPuertas();
+      seleccionarPuerta(p.id, p.nombre);
+    });
+  });
+
+  // -- Paso 2: controladores ------------------------------------------------
+  function seleccionarPuerta(id, nombre) {
+    currentPuerta = id;
+    document.getElementById("cfg-nombre").textContent = nombre || ("#" + id);
+    document.getElementById("panel").classList.remove("d-none");
+    // pool actual de la puerta
+    jget(API + "/config/puertas/" + id + "/controladores/").then(function (d) {
+      pool = new Set((d.controladores || []).map(function (c) { return c.id_controlador; }));
+      (d.controladores || []).forEach(function (c) { ctrlNames[c.id_controlador] = c.descripcion; });
+      renderCtrlCount();
+      // filtro por defecto: el acceso de la puerta si lo tiene (lo trae la lista de puertas)
+      cargarCatalogo(document.getElementById("ctrl-acceso").value);
+      cargarMolinetes();
+      renderNuevoCtrls();
+    });
+  }
+
+  document.getElementById("ctrl-acceso").addEventListener("change", function () { cargarCatalogo(this.value); });
+
+  function cargarCatalogo(idAcceso) {
+    var url = API + "/config/controladores-xsys/" + (idAcceso ? "?id_acceso=" + idAcceso : "");
+    jget(url).then(function (d) {
+      catalogo = d.controladores || [];
+      catalogo.forEach(function (c) { ctrlNames[c.id_controlador] = c.descripcion; });
+      renderCatalogo();
+    });
+  }
+
+  function renderCatalogo() {
+    var cont = document.getElementById("ctrl-lista");
+    if (!catalogo.length) { cont.innerHTML = '<div class="text-muted small">Sin controladores para este filtro.</div>'; return; }
+    cont.innerHTML = catalogo.map(function (c) {
+      var chk = pool.has(c.id_controlador) ? " checked" : "";
+      var tag = (c.tipo_cont || "").toUpperCase();
+      var tipo = (tag === "F" || tag === "W") ? " · facial" : "";
+      return '<label class="d-block small py-1"><input type="checkbox" class="cat-ctrl" value="' + c.id_controlador + '"' + chk + '> ' +
+        "#" + c.id_controlador + " · " + esc(c.descripcion) + '<span class="text-muted">' + tipo + " · acceso " + c.id_acceso + (c.activo ? "" : " · inactivo") + "</span></label>";
+    }).join("");
+    cont.querySelectorAll(".cat-ctrl").forEach(function (el) {
+      el.addEventListener("change", function () {
+        var id = parseInt(el.value, 10);
+        if (el.checked) pool.add(id); else pool.delete(id);
+        renderCtrlCount();
+      });
+    });
+  }
+
+  function renderCtrlCount() { document.getElementById("ctrl-count").textContent = pool.size; }
+
+  document.getElementById("ctrl-guardar").addEventListener("click", function () {
+    if (!currentPuerta) return;
+    fetch(API + "/config/puertas/" + currentPuerta + "/controladores/", {
+      method: "PUT", headers: hdr(true), body: JSON.stringify({ id_controladores: Array.from(pool) }),
+    }).then(function () { renderNuevoCtrls(); cargarMolinetes(); cargarPuertas(); });
+  });
+
+  // -- Paso 3: grupos de molinetes -----------------------------------------
+  function renderNuevoCtrls() {
+    var cont = document.getElementById("nuevo-ctrls");
+    var ids = Array.from(pool);
+    if (!ids.length) { cont.innerHTML = '<div class="text-muted small">Asigná controladores en el paso 2 y guardá.</div>'; return; }
+    cont.innerHTML = ids.map(function (id) {
+      return '<label class="d-inline-block small me-3"><input type="checkbox" class="new-ctrl" value="' + id + '"> ' + esc(ctrlNames[id] || ("#" + id)) + '</label>';
+    }).join("");
+  }
 
   function cargarMolinetes() {
-    fetch(API + "/config/molinetes/?id_acceso=" + puerta(), { headers: hdr() }).then(function (r) { return r.json(); }).then(function (d) {
+    jget(API + "/config/molinetes/?puerta_id=" + currentPuerta).then(function (d) {
       var cont = document.getElementById("molinetes");
       var ms = d.molinetes || [];
       if (!ms.length) { cont.innerHTML = '<div class="text-muted small">No hay columnas. Usá "Auto" o creá una.</div>'; return; }
       cont.innerHTML = ms.map(function (m) {
-        var ctrls = (m.id_controladores || []).map(function (id) { return esc(ctrlNombre(id)); }).join(", ") || "—";
+        var ctrls = (m.id_controladores || []).map(function (id) { return esc(ctrlNames[id] || ("#" + id)); }).join(", ") || "—";
         return '<div class="d-flex align-items-center justify-content-between border-bottom py-2">' +
           '<div><strong>' + esc(m.nombre) + '</strong><br><small class="text-muted">' + ctrls + '</small></div>' +
           '<button class="btn btn-outline-danger btn-sm" data-del="' + m.id + '">Eliminar</button></div>';
@@ -101,23 +221,28 @@
     });
   }
 
-  function crear() {
+  document.getElementById("crear").addEventListener("click", function () {
     var nombre = document.getElementById("nuevo-nombre").value.trim();
     var ids = Array.prototype.slice.call(document.querySelectorAll("#nuevo-ctrls input:checked")).map(function (el) { return parseInt(el.value, 10); });
     if (!nombre) { alert("Poné un nombre."); return; }
-    fetch(API + "/config/molinetes/", {
-      method: "POST", headers: hdr(true),
-      body: JSON.stringify({ id_acceso: puerta(), nombre: nombre, id_controladores: ids }),
-    }).then(function () {
+    jsend(API + "/config/molinetes/", "POST", { puerta_id: currentPuerta, nombre: nombre, id_controladores: ids }).then(function () {
       document.getElementById("nuevo-nombre").value = "";
-      document.querySelectorAll("#nuevo-ctrls input:checked").forEach(function (el) { el.checked = false; });
-      cargarMolinetes();
+      renderNuevoCtrls();
+      cargarMolinetes(); cargarPuertas();
     });
-  }
+  });
 
-  function auto() {
-    fetch(API + "/config/molinetes/auto/", { method: "POST", headers: hdr(true), body: JSON.stringify({ id_acceso: puerta() }) }).then(cargarMolinetes);
-  }
+  document.getElementById("auto").addEventListener("click", function () {
+    jsend(API + "/config/molinetes/auto/", "POST", { puerta_id: currentPuerta }).then(function () { cargarMolinetes(); cargarPuertas(); });
+  });
+
+  // -- init -----------------------------------------------------------------
+  jget(API + "/config/controladores-xsys/").then(function (d) {
+    accesosCache = d.accesos || [];
+    cargarAccesosEnSelect(document.getElementById("np-acceso"), true);
+    cargarAccesosEnSelect(document.getElementById("ctrl-acceso"), true);
+    cargarPuertas();
+  });
 })();
 </script>
 {% endblock extra_js %}

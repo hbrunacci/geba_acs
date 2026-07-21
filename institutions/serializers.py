@@ -60,7 +60,7 @@ class EventSerializer(serializers.ModelSerializer):
 class AccessDoorSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccessDoor
-        fields = ["id", "site", "name", "code", "is_active"]
+        fields = ["id", "site", "name", "code", "xsys_id_acceso", "is_active"]
 
 
 class DoorDeviceSerializer(serializers.ModelSerializer):

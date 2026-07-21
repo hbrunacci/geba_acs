@@ -90,6 +90,13 @@ else:
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
+            # Modo nativo: varios escritores (poller + fetch de fotos + requests).
+            # WAL mejora la concurrencia lectura/escritura; timeout espera el lock
+            # en vez de tirar "database is locked".
+            "OPTIONS": {
+                "timeout": 30,
+                "init_command": "PRAGMA journal_mode=WAL;",
+            },
         }
     }
 

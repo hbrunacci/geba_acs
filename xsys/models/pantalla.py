@@ -9,14 +9,21 @@ class PantallaPuerta(models.Model):
 
     Cada pantalla genera un token propio (persistido en su navegador) y lo manda
     en cada request (header ``X-Pantalla-Token``). La hamburguesa de la UI setea
-    qué accesos muestra la pantalla (``id_accesos``): uno por columna. La ``ip`` se
-    guarda solo como dato informativo (de qué lugar viene el request).
+    qué puerta muestra la pantalla (``door``). La ``ip`` se guarda solo como dato
+    informativo (de qué lugar viene el request).
     """
 
     token = models.CharField(max_length=64, unique=True, db_index=True)
-    # Puerta (Id_Acceso) que muestra la pantalla. Sus columnas son los molinetes
-    # (grupos administrables) definidos para esa puerta.
-    id_acceso = models.IntegerField(null=True, blank=True, db_index=True)
+    # Puerta local (institutions.AccessDoor) que muestra la pantalla. Sus columnas
+    # son los grupos de molinetes definidos para esa puerta.
+    door = models.ForeignKey(
+        "institutions.AccessDoor",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="pantallas",
+        db_index=True,
+    )
     nombre = models.CharField(max_length=60, blank=True, default="")
     ip = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.CharField(max_length=255, blank=True, default="")
@@ -31,4 +38,4 @@ class PantallaPuerta(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover
         etiqueta = self.nombre or self.token[:8]
-        return f"{etiqueta} → acceso {self.id_acceso}"
+        return f"{etiqueta} → puerta {self.door_id}"
