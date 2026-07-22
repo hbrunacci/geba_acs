@@ -5,15 +5,25 @@ from django.contrib.auth.views import (
 )
 from django.contrib.staticfiles import finders
 from django.http import Http404, HttpResponse
+from django.shortcuts import redirect
 from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import TemplateView
+
+from common.roles import es_admin
 
 
 class DashboardView(LoginRequiredMixin, TemplateView):
     template_name = "common/dashboard.html"
     login_url = "common:login"
     redirect_field_name = "next"
+
+    def dispatch(self, request, *args, **kwargs):
+        # El resumen es solo para administradores; los demás roles (ej. grupo de
+        # Puertas) van directo a su pantalla al iniciar sesión.
+        if request.user.is_authenticated and not es_admin(request.user):
+            return redirect("xsys_molinetes_config")
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

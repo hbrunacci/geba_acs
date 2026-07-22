@@ -1,6 +1,7 @@
-from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 from rest_framework import viewsets
+
+from common.roles import admin_requerido
 
 from .models import DocumentType, GuestInvitation, Person, PersonCategory, PersonCategoryDocumentRequirement, PersonDocument
 from .serializers import (
@@ -45,7 +46,7 @@ class PersonDocumentViewSet(viewsets.ModelViewSet):
     serializer_class = PersonDocumentSerializer
 
 
-@login_required
+@admin_requerido
 def people_configuration_console(request):
     """Consola para gestionar categorías y documentación de personas."""
     return render(request, "people/people_configuration_console.html")

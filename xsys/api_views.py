@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from access_control.models.models import ExternalAccessLogEntry
+from common.roles import PuedeConfigPuertas
 from institutions.models import AccessDoor, DoorController, DoorTurnstileGroup
 
 from xsys.models import (
@@ -433,7 +434,16 @@ def _int_or_none(value):
     return int(s) if s.lstrip("-").isdigit() else None
 
 
-class PuertasConfigAPI(APIView):
+class _ConfigPuertasAPIView(APIView):
+    """Base de las APIs de configuración de puertas/molinetes.
+
+    Solo accesible por administradores o por el grupo Configuración de Puertas.
+    """
+
+    permission_classes = [PuedeConfigPuertas]
+
+
+class PuertasConfigAPI(_ConfigPuertasAPIView):
     """GET (listar todas las puertas) / POST (alta de puerta)."""
 
     def get(self, request):
@@ -452,7 +462,7 @@ class PuertasConfigAPI(APIView):
         return Response(_puerta_dict(door), status=status.HTTP_201_CREATED)
 
 
-class PuertaConfigDetailAPI(APIView):
+class PuertaConfigDetailAPI(_ConfigPuertasAPIView):
     """PUT / DELETE /api/xsys/config/puertas/<id>/."""
 
     def put(self, request, pid: int):
@@ -476,7 +486,7 @@ class PuertaConfigDetailAPI(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class ControladoresXsysAPI(APIView):
+class ControladoresXsysAPI(_ConfigPuertasAPIView):
     """GET /api/xsys/config/controladores-xsys/?id_acceso= → catálogo de
     controladores de xSys para asignar a una puerta. Sin id_acceso: todos.
     Incluye la lista de accesos activos para poder filtrar en la UI."""
@@ -502,7 +512,7 @@ class ControladoresXsysAPI(APIView):
         return Response({"controladores": ctrls, "accesos": accesos})
 
 
-class PuertaControladoresAPI(APIView):
+class PuertaControladoresAPI(_ConfigPuertasAPIView):
     """GET / PUT los controladores asignados a la puerta (el pool del paso 2).
 
     GET  → controladores del pool, enriquecidos con datos de xSys.
@@ -557,7 +567,7 @@ def _molinete_dict(m: DoorTurnstileGroup) -> dict:
             "id_controladores": m.id_controladores or [], "orden": m.orden}
 
 
-class MolinetesConfigAPI(APIView):
+class MolinetesConfigAPI(_ConfigPuertasAPIView):
     """GET ?puerta_id= (listar) / POST (crear) grupos de molinetes de una puerta."""
 
     def get(self, request):
@@ -595,7 +605,7 @@ class MolinetesConfigAPI(APIView):
         return Response(_molinete_dict(m), status=status.HTTP_201_CREATED)
 
 
-class MolineteConfigDetailAPI(APIView):
+class MolineteConfigDetailAPI(_ConfigPuertasAPIView):
     """PUT / DELETE /api/xsys/config/molinetes/<id>/."""
 
     def put(self, request, mid: int):
@@ -625,7 +635,7 @@ class MolineteConfigDetailAPI(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class MolinetesAutoAPI(APIView):
+class MolinetesAutoAPI(_ConfigPuertasAPIView):
     """POST /api/xsys/config/molinetes/auto/ {puerta_id} → crea un grupo por cada
     controlador asignado a la puerta que todavía no esté en algún grupo."""
 

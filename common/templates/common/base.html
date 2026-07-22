@@ -40,6 +40,7 @@
         {% block sidebar %}
         {% with request.resolver_match.url_name as current_url %}
         <ul class="nav__list">
+          {% if nav_is_admin %}
           <li class="nav__item{% if current_url == 'dashboard' %} nav__item--active{% endif %}">
             <a href="{% url 'common:dashboard' %}">Resumen</a>
           </li>
@@ -74,9 +75,16 @@
           <li class="nav__item{% if current_url == 'xsys_socio_console' %} nav__item--active{% endif %}">
             <a href="{% url 'xsys_socio_console' %}">Socios (espejo xSys)</a>
           </li>
+          {% endif %}
+          {% if nav_can_puertas %}
           <li class="nav__item{% if current_url == 'xsys_molinetes_config' %} nav__item--active{% endif %}">
             <a href="{% url 'xsys_molinetes_config' %}">Molinetes por puerta</a>
           </li>
+          <li class="nav__item">
+            <a href="{% url 'xsys_puerta_monitor' %}" target="_blank" rel="noopener">Visor de puerta</a>
+          </li>
+          {% endif %}
+          {% if nav_is_admin %}
           <li class="nav__item{% if current_url == 'parking_movements_console' %} nav__item--active{% endif %}">
             <a href="{% url 'parking_movements_console' %}">Estacionamiento</a>
           </li>
@@ -86,6 +94,7 @@
           <li class="nav__item{% if current_url == 'api3000_test_console' %} nav__item--active{% endif %}">
             <a href="{% url 'api3000_test_console' %}">Consola API3000</a>
           </li>
+          {% endif %}
         </ul>
         {% endwith %}
         {% endblock sidebar %}

@@ -5,9 +5,10 @@ import ipaddress
 import re
 import subprocess
 
-from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 from django.db.models import Count
+
+from common.roles import admin_requerido
 from django.db.utils import OperationalError
 from django.db.models.functions import ExtractHour, TruncDate
 
@@ -60,43 +61,43 @@ def _parking_stay_duration_seconds(stay_duration):
     return int(stay_duration.total_seconds())
 
 
-@login_required
+@admin_requerido
 def biostar_devices_console(request):
     """Consola web para ver lectores BioStar."""
     return render(request, "access_control/biostar_devices.html")
 
 
-@login_required
+@admin_requerido
 def biostar_users_console(request):
     """Consola web para ver personas BioStar."""
     return render(request, "access_control/biostar_users.html")
 
 
-@login_required
+@admin_requerido
 def external_access_console(request):
     """Consola web para ver y sincronizar movimientos externos."""
     return render(request, "access_control/external_access_console.html")
 
 
 
-@login_required
+@admin_requerido
 def parking_movements_console(request):
     """Consola para registrar ingresos y salidas de automóviles."""
     return render(request, "access_control/parking_movements_console.html")
 
-@login_required
+@admin_requerido
 def access_reports_console(request):
     """Consola visual para reportes de accesos."""
     return render(request, "access_control/access_reports_console.html")
 
 
-@login_required
+@admin_requerido
 def anses_verification_console(request):
     """Consola para verificar situación ANSES de socios de +90 años."""
     return render(request, "access_control/anses_verification_console.html")
 
 
-@login_required
+@admin_requerido
 def api3000_test_console(request):
     """Consola de pruebas de funciones del wrapper API3000."""
     return render(

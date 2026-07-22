@@ -1,6 +1,6 @@
-from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
+from common.roles import admin_requerido, puertas_requerido
 from xsys.models import SyncState, XsysSocio, XsysSocioFoto, XsysWhitelist
 
 STREAM_LABELS = {
@@ -20,13 +20,13 @@ def xsys_puerta_monitor(request):
     return render(request, "xsys/puerta_monitor.html")
 
 
-@login_required
+@puertas_requerido
 def xsys_molinetes_config(request):
     """Administración de molinetes (columnas) por puerta."""
     return render(request, "xsys/molinetes_config.html")
 
 
-@login_required
+@admin_requerido
 def xsys_socio_console(request):
     """Consola de búsqueda de socios del espejo xSys (datos + foto + lista blanca)."""
     estados = []
