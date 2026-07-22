@@ -1,7 +1,8 @@
 # Deploy con Docker (Windows)
 
 Stack: **web** (Django + gunicorn, con ODBC Driver 18 para llegar a xSys) +
-**db** (PostgreSQL 16) + **sync** (sincronización incremental de xSys cada X horas).
+**db** (PostgreSQL 16) + **sync** (sincronización incremental de xSys cada X horas) +
+**poller** (réplica en tiempo real de CD_ES desde MSSQL, cada 1s).
 
 ## Requisitos
 - **Docker Desktop** en Windows (backend WSL2, contenedores Linux).
@@ -39,10 +40,45 @@ Stack: **web** (Django + gunicorn, con ODBC Driver 18 para llegar a xSys) +
    Miniaturas de fotos ya cargadas: `docker compose exec web python manage.py xsys_thumbnails`.
 
 ## Operación
-- Logs: `docker compose logs -f web` (o `sync`, `db`).
+- Logs: `docker compose logs -f web` (o `sync`, `poller`, `db`).
 - Backup de la base: la data vive en el volumen `postgres_data`.
-- Actualizar la app: `git pull` y `docker compose up -d --build`.
+- Actualizar la app: `git pull` (ver **Código en vivo** abajo — normalmente NO hace falta rebuild).
 - Parar todo: `docker compose down` (agregar `-v` también borra la base — cuidado).
+
+## Código en vivo (sin rebuild por cada cambio)
+
+El código del repo va **montado como volumen** (`.:/app`) en `web`, `sync` y
+`poller` (ver `volumes:` en `docker-compose.yml`). O sea: **lo que corre dentro
+del contenedor es el código del host**, no una copia horneada en la imagen. Un
+`git pull` alcanza para que el código nuevo esté disponible; ya casi nunca hace
+falta reconstruir la imagen.
+
+Qué se necesita según el tipo de cambio:
+
+| Cambió… | Qué hacer | Por qué |
+| --- | --- | --- |
+| Un `.py` | **Nada** | `web` corre `gunicorn --reload`: detecta el cambio y recarga los workers solo |
+| Un template `.html` | **Nada**, refrescar el browser | `DJANGO_TEMPLATE_RELOAD=1` desactiva la caché de templates: se releen del disco en cada render |
+| Código de `sync` / `poller` | `docker compose restart sync poller` | esos servicios no tienen `--reload`; un restart (segundos) los reinicia con el código nuevo |
+| `requirements.txt` o `Dockerfile` | `docker compose up -d --build` | ahí sí cambian las dependencias del sistema/Python, que viven dentro de la imagen |
+
+> **Un paso único al aplicar ESTE esquema por primera vez** (o cuando cambia el
+> propio `docker-compose.yml`): hay que recrear los contenedores para que tomen
+> el volumen y el nuevo `command`:
+> ```powershell
+> git pull
+> docker compose up -d --build
+> ```
+> De ahí en más, los cambios de código son en vivo como dice la tabla.
+
+### Volver al modo "sin volumen" (código horneado)
+
+Si en algún momento se quiere el comportamiento clásico (imagen inmutable, sin
+montar el host — por ejemplo para máxima reproducibilidad en un server que no
+edita código a mano), comentar los bloques `volumes: - .:/app` de `web`/`sync`/
+`poller`, sacar `--reload` del `command` de `web`, poner `DJANGO_TEMPLATE_RELOAD=0`
+(o quitarlo) y reconstruir con `docker compose up -d --build`. En ese modo, cada
+cambio de código vuelve a requerir rebuild.
 
 ## Auto-deploy (sin tocar el server a mano)
 
@@ -88,6 +124,16 @@ demora) pero muchísimo más simple y no depende de tocar el firewall.
         ▼
  log en auto_deploy.log
 ```
+
+> **Interacción con el código en vivo**: ahora que el código va montado como
+> volumen (ver **Código en vivo** arriba), el `git reset --hard` del auto-deploy
+> ya deja el código nuevo corriendo, y `gunicorn --reload` recarga los workers
+> solo. El `docker compose up -d --build` que hace el script sigue funcionando —
+> reconstruye la imagen (paso ocioso para cambios solo de código) y recrea los
+> contenedores. Si se quiere acelerar, se puede editar `auto_deploy.ps1` para
+> usar `docker compose up -d` (sin `--build`) y dejar el `--build` solo para
+> cuando cambian `requirements.txt` / `Dockerfile`; hoy se deja `--build` por
+> seguridad, ya que nunca rompe.
 
 Dos archivos nuevos en `scripts/`:
 
