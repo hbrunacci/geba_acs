@@ -59,6 +59,7 @@ def compute_habilitacion(
     service: MSSQLAccessCheckService | None = None,
     id_acceso: int | None = None,
     id_controlador: int | None = None,
+    cursor=None,
 ) -> dict[str, Any]:
     """Devuelve el resultado de habilitación de un socio para el acceso general.
 
@@ -78,6 +79,7 @@ def compute_habilitacion(
         identifier_value=str(id_cliente),
         id_acceso=id_acceso,
         id_controlador=id_controlador,
+        cursor=cursor,
     )
 
     if not result.get("found"):

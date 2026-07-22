@@ -18,6 +18,7 @@ services:
 
   web:
     build: .
+    image: geba_acs-web:latest
     # Config sensible (MSSQL_XSYS_*, BIOSTAR_*, etc.) desde .env; el bloque
     # environment de abajo la pisa para el cableado de Postgres/Django en Docker.
     env_file: .env
@@ -47,6 +48,7 @@ services:
   # Sincronización incremental del espejo xSys cada X horas (default 6h).
   sync:
     build: .
+    image: geba_acs-web:latest
     env_file: .env
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-acs}
@@ -70,6 +72,7 @@ services:
   # lo replica local. Las pantallas de los puestos consultan al `web`, no a MSSQL.
   poller:
     build: .
+    image: geba_acs-web:latest
     env_file: .env
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-acs}

@@ -401,16 +401,25 @@ class MSSQLAccessCheckService:
         id_acceso: int | None = None,
         id_controlador: int | None = None,
         fecha: datetime | None = None,
+        cursor=None,
     ) -> dict[str, Any]:
-        """Determina si un socio puede ingresar por un acceso, sin escribir en MSSQL."""
+        """Determina si un socio puede ingresar por un acceso, sin escribir en MSSQL.
+
+        Si se pasa ``cursor`` (de una conexión ya abierta) se reutiliza y NO se
+        abre ni cierra una conexión nueva. Esto permite evaluar muchos socios
+        sobre una única conexión MSSQL (evita miles de handshakes TLS al validar
+        la lista blanca completa).
+        """
 
         if id_acceso is None and id_controlador is None:
             raise AccessCheckError("Debe indicar id_acceso o id_controlador.")
 
         fecha = fecha or datetime.now()
-        connection = self._connect()
+        own_connection = cursor is None
+        connection = self._connect() if own_connection else None
         try:
-            cursor = connection.cursor()
+            if own_connection:
+                cursor = connection.cursor()
 
             resolved_id_acceso = self._resolve_id_acceso(cursor, id_acceso, id_controlador)
             if not resolved_id_acceso:
@@ -548,10 +557,11 @@ class MSSQLAccessCheckService:
 
             return resolved(False, "sin_habilitacion")
         finally:
-            try:
-                connection.close()
-            except Exception:  # pragma: no cover - cierre defensivo
-                pass
+            if own_connection and connection is not None:
+                try:
+                    connection.close()
+                except Exception:  # pragma: no cover - cierre defensivo
+                    pass
 
 
 class ExternalAccessLogSynchronizer:
