@@ -29,8 +29,23 @@ services:
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       DJANGO_DEBUG: "0"
+      # Templates sin cachear: un cambio de .html se ve al refrescar, sin restart.
+      DJANGO_TEMPLATE_RELOAD: "1"
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-*}
+    # Código montado en vivo: los cambios NO requieren rebuild de la imagen.
+    # gunicorn --reload recarga los workers al tocar un .py; los templates se
+    # leen sin caché (DJANGO_TEMPLATE_RELOAD=1). Solo hace falta rebuild si
+    # cambian requirements.txt o el Dockerfile.
+    volumes:
+      - .:/app
+    command:
+      - gunicorn
+      - acs.wsgi:application
+      - --bind=0.0.0.0:8000
+      - --workers=3
+      - --timeout=120
+      - --reload
     ports:
       - "80:8000"
     depends_on:
@@ -63,6 +78,9 @@ services:
                python manage.py xsys_sync || echo 'xsys_sync fallo (se reintenta)';
                sleep ${XSYS_SYNC_INTERVAL:-21600};
              done"
+    # Código en vivo: `docker compose restart sync` aplica cambios sin rebuild.
+    volumes:
+      - .:/app
     depends_on:
       web:
         condition: service_healthy
@@ -83,6 +101,9 @@ services:
       DJANGO_DEBUG: "0"
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
     command: ["python", "manage.py", "xsys_poll", "--interval", "1"]
+    # Código en vivo: `docker compose restart poller` aplica cambios sin rebuild.
+    volumes:
+      - .:/app
     depends_on:
       web:
         condition: service_healthy

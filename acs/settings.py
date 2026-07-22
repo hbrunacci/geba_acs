@@ -83,6 +83,18 @@ TEMPLATES = [
     }
 ]
 
+# Con DEBUG=0 Django cachea los templates en memoria (cached.Loader), así que un
+# cambio de .html no se ve hasta reiniciar el worker. Con DJANGO_TEMPLATE_RELOAD=1
+# usamos loaders sin caché: el template se relee del disco en cada render. Pensado
+# para el deploy con el código montado como volumen (ver docker-compose.yml), donde
+# se busca que un cambio de template se vea al refrescar, sin rebuild ni restart.
+if os.getenv("DJANGO_TEMPLATE_RELOAD", "1" if DEBUG else "0") == "1":
+    TEMPLATES[0]["APP_DIRS"] = False
+    TEMPLATES[0]["OPTIONS"]["loaders"] = [
+        "django.template.loaders.filesystem.Loader",
+        "django.template.loaders.app_directories.Loader",
+    ]
+
 WSGI_APPLICATION = "acs.wsgi.application"
 
 if os.getenv("POSTGRES_DB"):
