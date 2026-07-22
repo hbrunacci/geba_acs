@@ -22,11 +22,13 @@
     .col__head { flex: 0 0 auto; padding: 7px; text-align: center; font-weight: 700; background: rgba(0,0,0,.25); font-size: clamp(12px, 1.5vw, 20px); }
 
     .col__current { flex: 1 1 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px; text-align: center; overflow: hidden; }
-    .cfoto { max-width: 92%; max-height: 72%; aspect-ratio: 3/4; object-fit: cover; border-radius: 12px; background: #161b22; border: 6px solid #30363d; transition: border-color .15s, box-shadow .15s; }
+    /* Altura definida + aspect-ratio 3/4 => toda foto ocupa la MISMA caja, sin importar
+       sus píxeles originales; object-fit: cover recorta parejo. max-width protege columnas angostas. */
+    .cfoto { flex: 0 1 auto; height: 60%; width: auto; max-width: 92%; aspect-ratio: 3/4; object-fit: cover; border-radius: 12px; background: #161b22; border: 6px solid #30363d; transition: border-color .15s, box-shadow .15s; }
     .cfoto.ok { border-color: #2ea043; box-shadow: 0 0 22px rgba(46,160,67,.4); }
     .cfoto.no { border-color: #f85149; box-shadow: 0 0 22px rgba(248,81,73,.4); }
     .cfoto.warn { border-color: #d29922; box-shadow: 0 0 22px rgba(210,153,34,.5); }
-    .cfoto.sinfoto { display: flex; align-items: center; justify-content: center; font-size: 68px; color: #30363d; width: 46%; }
+    .cfoto.sinfoto { display: flex; align-items: center; justify-content: center; font-size: clamp(40px, 6vw, 68px); color: #30363d; }
     .cname { margin-top: 8px; font-weight: 700; font-size: clamp(15px, 1.7vw, 28px); line-height: 1.1; }
     .cmsg { margin-top: 5px; font-weight: 600; font-size: clamp(11px, 1.05vw, 16px); padding: 3px 10px; border-radius: 8px; max-width: 94%; }
     .cmsg.ok { background: rgba(46,160,67,.16); color: #56d364; border: 1px solid #2ea043; }
