@@ -46,9 +46,10 @@
     .hthumb { width: 68px; height: 88px; object-fit: cover; border-radius: 6px; flex: 0 0 auto; background: #21262d; border: 1px solid #30363d; }
     .hbody { min-width: 0; flex: 1; }
     .hname { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hsub { font-size: 11px; opacity: .6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .hmsg { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .85; }
     .hmsg.ok { color: #56d364; } .hmsg.no { color: #ff7b72; } .hmsg.warn { color: #e3b341; }
-    .htime { font-size: 11px; opacity: .5; flex: 0 0 auto; }
+    .htime { font-size: 11px; opacity: .5; flex: 0 0 auto; text-align: right; line-height: 1.3; }
     .hempty { opacity: .35; font-size: 13px; padding: 8px; text-align: center; }
     .hnav { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 4px 7px; border-left: 1px solid #21262d; }
     .hbtn { width: 40px; height: 38px; font-size: 16px; background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 8px; cursor: pointer; }
@@ -103,13 +104,29 @@
     .contrato { display: inline-block; background: #21262d; border: 1px solid #30363d; border-radius: 999px; padding: 4px 12px; margin: 4px 6px 0 0; font-size: 13px; }
     .contrato.cs { border-color: #2ea043; }
     .modal__vacio { opacity: .5; font-size: 13px; }
+
+    /* Buscador de accesos del día */
+    .buscar__title { font-size: 18px; font-weight: 700; margin: 0 0 12px; }
+    .buscar__res { max-height: 62vh; overflow-y: auto; margin-top: 6px; }
+    .brow { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px solid #21262d; }
+    .bthumb { width: 46px; height: 60px; object-fit: cover; border-radius: 6px; flex: 0 0 auto; background: #21262d; border: 1px solid #30363d; }
+    .bbody { min-width: 0; flex: 1; }
+    .bname { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bsub { font-size: 12px; opacity: .7; }
+    .bmol { font-size: 12px; opacity: .85; }
+    .bmol .licon-wrap { display: inline-flex; vertical-align: middle; }
+    .bmeta { flex: 0 0 auto; text-align: right; font-size: 12px; opacity: .8; }
+    .bbadge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-weight: 700; font-size: 11px; margin-bottom: 4px; }
+    .bbadge.ok { background: rgba(46,160,67,.16); color: #56d364; border: 1px solid #2ea043; }
+    .bbadge.no { background: rgba(248,81,73,.16); color: #ff7b72; border: 1px solid #f85149; }
   </style>
 </head>
 <body>
   <div class="topbar">
     <button class="burger" id="burger" title="Configurar pantalla">&#9776;</button>
     <span class="titulo" id="titulo">Monitor</span>
-    <span class="reloj" id="reloj">--:--:--</span>
+    <button class="burger" id="buscar" title="Buscar accesos del día" style="margin-left:auto">&#128269;</button>
+    <span class="reloj" id="reloj" style="margin-left:14px">--:--:--</span>
   </div>
 
   <div class="columns" id="columns">
@@ -137,6 +154,8 @@
           <div class="modal__nombre" id="m-nombre"></div>
           <div class="modal__msg" id="m-msg"></div>
           <dl class="modal__dl">
+            <dt>N° socio</dt><dd id="m-nro">—</dd>
+            <dt>DNI</dt><dd id="m-dni">—</dd>
             <dt>Lugar de acceso</dt><dd id="m-lugar">—</dd>
             <dt>Lectura</dt><dd id="m-lectura" style="display:flex;align-items:center;gap:6px">—</dd>
             <dt>Categoría</dt><dd id="m-cat">—</dd>
@@ -149,6 +168,15 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="modal" id="buscar-modal">
+    <div class="modal__box">
+      <button class="modal__close" id="buscar-close" title="Cerrar">&times;</button>
+      <div class="buscar__title">Buscar accesos de hoy</div>
+      <input class="drawer__input" id="buscar-input" placeholder="Apellido, N° de socio o DNI" autocomplete="off" />
+      <div id="buscar-res" class="buscar__res"><div class="hempty">Escribí al menos 2 caracteres.</div></div>
     </div>
   </div>
 
@@ -233,19 +261,20 @@
     function currentHTML(ev) {
       if (!ev) return '<div class="idle">Sin ingresos</div>';
       var clase = claseEstado(ev);
-      var extra = "";
-      if (ev.categoria || ev.ult_cuota_paga) {
-        var partes = [];
-        if (ev.categoria) partes.push('<span class="cat">' + esc(ev.categoria) + '</span>');
-        if (ev.ult_cuota_paga) partes.push('<span class="cuota">Últ. cuota: ' + esc(fechaCorta(ev.ult_cuota_paga)) + '</span>');
-        extra = '<div class="cextra">' + partes.join(" · ") + '</div>';
-      }
+      // Categoría · N° de socio
+      var partes = [];
+      if (ev.categoria) partes.push('<span class="cat">' + esc(ev.categoria) + '</span>');
+      partes.push('<span class="cnro">N° socio: ' + esc(ev.id_cliente || "—") + '</span>');
+      var extra = '<div class="cextra">' + partes.join(" · ") + '</div>';
+      // Lectura · Última cuota paga
+      var lecturaTxt = (ev.lectura === "facial" ? "Facial" : "Credencial");
+      var cuotaTxt = ev.ult_cuota_paga ? ' · Últ. cuota: ' + esc(fechaCorta(ev.ult_cuota_paga)) : "";
       return fotoBig(ev) +
         '<div class="cname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
         '<div class="cmsg ' + clase + '">' + esc(ev.mensaje || (ev.permitido ? "Permitido" : "Denegado")) + '</div>' +
         extra +
-        '<div class="clectura">' + lecturaIcono(ev) + (ev.lectura === "facial" ? "Facial" : "Credencial") + '</div>' +
-        '<div class="ctime">' + esc(hora(ev.fecha)) + '</div>';
+        '<div class="clectura">' + lecturaIcono(ev) + lecturaTxt + cuotaTxt + '</div>' +
+        '<div class="ctime">' + esc(fechaCorta(ev.fecha)) + ' · ' + esc(hora(ev.fecha)) + '</div>';
     }
     function historialHTML(lista) {
       if (!lista || !lista.length) return '<div class="hempty">Sin historial</div>';
@@ -254,10 +283,12 @@
           ? '<img class="hthumb" src="' + esc(ev.foto_thumb_url) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
           : '<div class="hthumb"></div>';
         var clase = claseEstado(ev);
+        var sub = 'N° ' + esc(ev.id_cliente || "—") + (ev.doc_nro ? ' · DNI ' + esc(ev.doc_nro) : "");
         return '<div class="hrow" data-ides="' + esc(ev.id_es) + '">' + thumb + lecturaIcono(ev) +
           '<div class="hbody"><div class="hname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
+          '<div class="hsub">' + sub + '</div>' +
           '<div class="hmsg ' + clase + '">' + esc(ev.mensaje || "") + '</div></div>' +
-          '<div class="htime">' + esc(hora(ev.fecha)) + '</div></div>';
+          '<div class="htime">' + esc(fechaCorta(ev.fecha)) + '<br>' + esc(hora(ev.fecha)) + '</div></div>';
       }).join("");
     }
 
@@ -340,6 +371,8 @@
       foto.className = "modal__foto " + cls;
       document.getElementById("m-nombre").textContent = ev.nombre || ("Cliente " + (ev.id_cliente || ""));
       var msg = document.getElementById("m-msg"); msg.textContent = ev.mensaje || ""; msg.className = "modal__msg " + cls;
+      document.getElementById("m-nro").textContent = ev.id_cliente || "—";
+      document.getElementById("m-dni").textContent = ev.doc_nro || "—";
       document.getElementById("m-lugar").textContent = (currentPuertaDesc ? currentPuertaDesc + " · " : "") + (molinete || "");
       document.getElementById("m-lectura").innerHTML = lecturaIcono(ev) + " " + (ev.lectura === "facial" ? "Facial" : "Credencial");
       document.getElementById("m-cat").textContent = ev.categoria || "—";
@@ -351,6 +384,7 @@
       fetch(API + "/socios/" + ev.id_cliente + "/detalle/", { headers: hdr() })
         .then(function (r) { return r.json(); })
         .then(function (d) {
+          if (d.doc_nro) document.getElementById("m-dni").textContent = d.doc_nro;
           if (d.categoria) document.getElementById("m-cat").textContent = d.categoria;
           if (d.ult_cuota_paga) document.getElementById("m-cuota").textContent = fechaCorta(d.ult_cuota_paga);
           var lista = d.contratos || [];
@@ -365,6 +399,59 @@
     }
     document.getElementById("modal-close").addEventListener("click", function () { document.getElementById("modal").classList.remove("open"); });
     document.getElementById("modal").addEventListener("click", function (e) { if (e.target === this) this.classList.remove("open"); });
+
+    // ---- Buscador de accesos del día ----
+    var buscarModal = document.getElementById("buscar-modal");
+    var buscarInput = document.getElementById("buscar-input");
+    var buscarRes = document.getElementById("buscar-res");
+    var buscarTimer = null;
+    var MSG_MIN = '<div class="hempty">Escribí al menos 2 caracteres.</div>';
+
+    document.getElementById("buscar").addEventListener("click", function () {
+      buscarInput.value = "";
+      buscarRes.innerHTML = MSG_MIN;
+      buscarModal.classList.add("open");
+      setTimeout(function () { buscarInput.focus(); }, 60);
+    });
+    document.getElementById("buscar-close").addEventListener("click", function () { buscarModal.classList.remove("open"); });
+    buscarModal.addEventListener("click", function (e) { if (e.target === this) this.classList.remove("open"); });
+    buscarInput.addEventListener("input", function () {
+      var q = buscarInput.value.trim();
+      if (buscarTimer) clearTimeout(buscarTimer);
+      if (q.length < 2) { buscarRes.innerHTML = MSG_MIN; return; }
+      buscarTimer = setTimeout(function () { doBuscar(q); }, 300);
+    });
+
+    function doBuscar(q) {
+      buscarRes.innerHTML = '<div class="hempty">Buscando…</div>';
+      fetch(API + "/accesos/buscar/?q=" + encodeURIComponent(q), { headers: hdr() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          // Descarta respuestas viejas si el texto ya cambió.
+          if (buscarInput.value.trim() !== q) return;
+          var lista = d.resultados || [];
+          if (!lista.length) {
+            buscarRes.innerHTML = '<div class="hempty">Sin accesos hoy para “' + esc(q) + '”.</div>';
+            return;
+          }
+          buscarRes.innerHTML = lista.map(function (ev) {
+            var cls = ev.permitido ? "ok" : "no";
+            var thumb = ev.foto_thumb_url
+              ? '<img class="bthumb" src="' + esc(ev.foto_thumb_url) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+              : '<div class="bthumb"></div>';
+            return '<div class="brow">' + thumb +
+              '<div class="bbody">' +
+                '<div class="bname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
+                '<div class="bsub">N° ' + esc(ev.id_cliente || "—") + (ev.doc_nro ? ' · DNI ' + esc(ev.doc_nro) : "") + '</div>' +
+                '<div class="bmol">Molinete: ' + esc(ev.molinete || "—") + '</div>' +
+              '</div>' +
+              '<div class="bmeta"><div class="bbadge ' + cls + '">' + (ev.permitido ? "OK" : "NO") + '</div>' +
+                '<div>' + esc(fechaCorta(ev.fecha)) + ' ' + esc(hora(ev.fecha)) + '</div></div>' +
+            '</div>';
+          }).join("");
+        })
+        .catch(function () { buscarRes.innerHTML = '<div class="hempty">No se pudo buscar. Reintentá.</div>'; });
+    }
 
     function updateColumna(c) {
       colData[c.key] = c;

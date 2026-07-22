@@ -210,5 +210,60 @@ class PuertaMonitorTests(TestCase):
         self.assertIn("ED NATACION", descs)
         self.assertIn("CUOTA SOCIAL", descs)
 
+    def _ev_ayer(self, id_es, id_controlador):
+        from datetime import timedelta
+        return ExternalAccessLogEntry.objects.create(
+            external_id=id_es, tipo="E", id_cliente=944426,
+            fecha=timezone.now() - timedelta(days=1), resultado="S",
+            id_acceso=14, id_controlador=id_controlador, id_cd_motivo=305, observacion="ayer",
+        )
+
+    def test_estado_historial_solo_hoy(self):
+        """El monitor muestra solo los accesos del día; los de ayer no aparecen."""
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        self._ev(8000, 59)        # hoy
+        self._ev_ayer(7000, 59)   # ayer -> excluido
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        col = next(c for c in d["columnas"] if 59 in c["controladores"])
+        ids = [col["ultimo"]["id_es"]] + [e["id_es"] for e in col["historial"]]
+        self.assertIn(8000, ids)
+        self.assertNotIn(7000, ids)
+
+    def test_estado_payload_incluye_doc_nro(self):
+        XsysSocio.objects.filter(pk=944426).update(doc_nro=12345678)
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        self._ev(8000, 59)
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        col = next(c for c in d["columnas"] if 59 in c["controladores"])
+        self.assertEqual(col["ultimo"]["doc_nro"], 12345678)
+        self.assertEqual(col["ultimo"]["id_cliente"], 944426)
+
+    def test_buscar_accesos_del_dia(self):
+        """Buscador: por apellido / N° socio / DNI, solo accesos de hoy, con molinete."""
+        XsysSocio.objects.filter(pk=944426).update(doc_nro=12345678)
+        DoorTurnstileGroup.objects.create(door=self.door, nombre="Molinete 1", id_controladores=[59, 90], orden=0)
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        self._ev(8000, 59)        # hoy
+        self._ev_ayer(7000, 59)   # ayer -> no debe aparecer
+
+        # por apellido
+        d = _get(self.client, "/api/xsys/accesos/buscar/?q=SIMOUR").json()
+        self.assertEqual(len(d["resultados"]), 1)
+        r0 = d["resultados"][0]
+        self.assertEqual(r0["id_es"], 8000)
+        self.assertEqual(r0["molinete"], "Molinete 1")
+        self.assertEqual(r0["doc_nro"], 12345678)
+        self.assertEqual(r0["id_cliente"], 944426)
+        self.assertTrue(r0["permitido"])
+        # por DNI y por N° de socio
+        self.assertEqual(len(_get(self.client, "/api/xsys/accesos/buscar/?q=12345678").json()["resultados"]), 1)
+        self.assertEqual(len(_get(self.client, "/api/xsys/accesos/buscar/?q=944426").json()["resultados"]), 1)
+        # sin coincidencias / texto corto
+        self.assertEqual(_get(self.client, "/api/xsys/accesos/buscar/?q=ZZZ").json()["resultados"], [])
+        self.assertEqual(_get(self.client, "/api/xsys/accesos/buscar/?q=Z").json()["resultados"], [])
+
+    def test_buscar_sin_token_400(self):
+        self.assertEqual(self.client.get("/api/xsys/accesos/buscar/?q=SIMOUR").status_code, 400)
+
     def test_monitor_page_publico(self):
         self.assertEqual(self.client.get("/xsys/puerta/").status_code, 200)

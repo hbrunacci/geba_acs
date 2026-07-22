@@ -260,6 +260,7 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         "mensaje": mensaje,
         "mensaje_original": mensaje_original,
         "id_cliente": ev.id_cliente,
+        "doc_nro": (socio.doc_nro if socio else None),
         "nombre": (
             (f"{socio.apellido}, {socio.nombre}".strip(", ") or socio.razon_social)
             if socio else ""
@@ -368,13 +369,16 @@ class PuertaEstadoAPI(APIView):
 
         cols_def = _columnas_de_puerta(door)
 
+        # El monitor muestra solo los accesos del día en curso (hora local).
+        hoy = timezone.localdate()
+
         # Eventos por columna (por conjunto de controladores del molinete).
         eventos_por_col = []
         for cd in cols_def:
             ctrls = cd["controladores"]
             evs = list(
                 ExternalAccessLogEntry.objects
-                .filter(id_controlador__in=ctrls, tipo="E")
+                .filter(id_controlador__in=ctrls, tipo="E", fecha__date=hoy)
                 .order_by("-external_id")[: HISTORIAL_LEN + 1]
             ) if ctrls else []
             eventos_por_col.append(evs)
@@ -408,6 +412,79 @@ class PuertaEstadoAPI(APIView):
             "puerta": {"id": door.id, "nombre": door.name, "xsys_id_acceso": door.xsys_id_acceso},
             "columnas": columnas,
         })
+
+
+class AccesosBuscarAPI(APIView):
+    """GET /api/xsys/accesos/buscar/?q= → accesos de HOY en esta puerta que matchean.
+
+    Busca por apellido, N° de socio (Id_Cliente) o DNI (Doc_Nro). Devuelve todas
+    las ocurrencias del día indicando por qué molinete pasó cada una. Usa el
+    espejo local; identificada por X-Pantalla-Token (misma puerta del monitor).
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        from django.db.models import Q
+
+        pantalla = _registrar_pantalla(request)
+        if pantalla is None or pantalla.door is None:
+            return Response({"detail": "La pantalla no tiene una puerta asignada."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        q = (request.query_params.get("q") or "").strip()
+        if len(q) < 2:
+            return Response({"q": q, "resultados": []})
+
+        door = pantalla.door
+        cols_def = _columnas_de_puerta(door)
+        # Mapa controlador -> nombre del molinete (columna) para etiquetar cada acceso.
+        ctrl_a_molinete: dict[int, str] = {}
+        for cd in cols_def:
+            for c in cd["controladores"]:
+                ctrl_a_molinete[c] = cd["nombre"]
+        if not ctrl_a_molinete:
+            return Response({"q": q, "resultados": []})
+
+        # Socios que matchean el texto: apellido/nombre siempre; si es numérico,
+        # también por N° de socio (Id_Cliente) o DNI (Doc_Nro).
+        criterio = Q(apellido__icontains=q) | Q(nombre__icontains=q)
+        if q.isdigit():
+            criterio |= Q(id_cliente=int(q)) | Q(doc_nro=int(q))
+        socios = {s.id_cliente: s for s in XsysSocio.objects.filter(criterio)[:300]}
+        if not socios:
+            return Response({"q": q, "resultados": []})
+
+        hoy = timezone.localdate()
+        evs = list(
+            ExternalAccessLogEntry.objects
+            .filter(id_controlador__in=ctrl_a_molinete.keys(), tipo="E",
+                    fecha__date=hoy, id_cliente__in=socios.keys())
+            .order_by("-external_id")[:300]
+        )
+        cids = {e.id_cliente for e in evs if e.id_cliente}
+        con_foto = set(
+            XsysSocioFoto.objects.filter(id_cliente__in=cids).values_list("id_cliente", flat=True)
+        )
+
+        resultados = []
+        for ev in evs:
+            s = socios.get(ev.id_cliente)
+            foto_url = f"/api/xsys/socios/{ev.id_cliente}/foto/" if ev.id_cliente in con_foto else None
+            resultados.append({
+                "id_es": ev.external_id,
+                "fecha": ev.fecha.isoformat() if ev.fecha else None,
+                "molinete": ctrl_a_molinete.get(ev.id_controlador, ""),
+                "id_cliente": ev.id_cliente,
+                "doc_nro": (s.doc_nro if s else None),
+                "nombre": (
+                    (f"{s.apellido}, {s.nombre}".strip(", ") or s.razon_social) if s else ""
+                ),
+                "resultado": ev.resultado,
+                "permitido": ev.resultado == "S",
+                "foto_thumb_url": (foto_url + "?thumb=1") if foto_url else None,
+            })
+        return Response({"q": q, "puerta": door.name, "resultados": resultados})
 
 
 # ----------------------------------------------------------------------------
@@ -690,6 +767,7 @@ class SocioDetalleAPI(APIView):
         ]
         return Response({
             "id_cliente": id_cliente,
+            "doc_nro": (socio.doc_nro if socio else None),
             "nombre": (
                 (f"{socio.apellido}, {socio.nombre}".strip(", ") or socio.razon_social)
                 if socio else ""

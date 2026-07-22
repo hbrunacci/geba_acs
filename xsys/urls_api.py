@@ -2,6 +2,7 @@ from django.urls import path
 
 from xsys.api_views import (
     AccesoResolverAPI,
+    AccesosBuscarAPI,
     ControladoresXsysAPI,
     MolineteConfigDetailAPI,
     MolinetesAutoAPI,
@@ -23,6 +24,7 @@ urlpatterns = [
     path("xsys/acceso/", AccesoResolverAPI.as_view(), name="xsys_acceso_api"),
     path("xsys/puertas/", PuertasListAPI.as_view(), name="xsys_puertas_api"),
     path("xsys/puerta/estado/", PuertaEstadoAPI.as_view(), name="xsys_puerta_estado_api"),
+    path("xsys/accesos/buscar/", AccesosBuscarAPI.as_view(), name="xsys_accesos_buscar_api"),
     path("xsys/puerta/seleccionar/", PuertaSeleccionarAPI.as_view(), name="xsys_puerta_seleccionar_api"),
     # Armado de puertas (requiere login): puerta -> controladores -> molinetes.
     path("xsys/config/puertas/", PuertasConfigAPI.as_view(), name="xsys_config_puertas_api"),
