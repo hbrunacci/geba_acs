@@ -152,7 +152,11 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+        # Sin precompresión: el código va montado como volumen (.:/app) y
+        # STATIC_ROOT cae en el bind mount de Docker Desktop (Windows), cuyo
+        # filesystem no permite os.utime -> CompressedStaticFilesStorage falla
+        # al comprimir. WhiteNoise igual sirve los estáticos (sin gzip previo).
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
     },
 }
 
