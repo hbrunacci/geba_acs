@@ -255,3 +255,62 @@ class BioStar2Client:
             "order_by": order_by,
         }
         return self.request("POST", "/api/v2/users/search", json=payload).json()
+
+    # ------------------------------------------------------------------ #
+    # Administración de equipos (hardware / operaciones)                  #
+    # ------------------------------------------------------------------ #
+
+    def get_device(self, device_id: int) -> dict:
+        """Ficha completa de un dispositivo (red, firmware, tipo, grupo, capacidades)."""
+        return self.request("GET", f"/api/devices/{device_id}").json()
+
+    def rename_device(self, device_id: int, name: str) -> dict:
+        """Renombra un dispositivo. PUT parcial del objeto Device (mismo patrón que move_device_group)."""
+        payload = {"Device": {"id": str(device_id), "name": name}}
+        return self.request("PUT", f"/api/devices/{device_id}", json=payload).json()
+
+    def reboot_device(self, device_id: int) -> dict:
+        """Reinicia el dispositivo.
+
+        endpoint a confirmar en prueba en vivo: POST /api/devices/reboot con DeviceCollection.
+        Si esta instancia no lo soporta, ajustar path/body en un solo lugar.
+        """
+        payload = {"DeviceCollection": {"rows": [{"id": str(device_id)}]}}
+        return self.request("POST", "/api/devices/reboot", json=payload).json()
+
+    def lock_device(self, device_id: int) -> dict:
+        """Bloquea el dispositivo (deshabilita la autenticación).
+
+        endpoint a confirmar en prueba en vivo: POST /api/devices/lock con DeviceCollection.
+        """
+        payload = {"DeviceCollection": {"rows": [{"id": str(device_id)}]}}
+        return self.request("POST", "/api/devices/lock", json=payload).json()
+
+    def unlock_device(self, device_id: int) -> dict:
+        """Desbloquea el dispositivo (rehabilita la autenticación).
+
+        endpoint a confirmar en prueba en vivo: POST /api/devices/unlock con DeviceCollection.
+        """
+        payload = {"DeviceCollection": {"rows": [{"id": str(device_id)}]}}
+        return self.request("POST", "/api/devices/unlock", json=payload).json()
+
+    def list_doors(self) -> dict:
+        """Lista todas las puertas configuradas en BioStar 2."""
+        return self.request("GET", "/api/doors").json()
+
+    def door_status(self) -> dict:
+        """Estado en tiempo real de todas las puertas (opened/unlocked/alarm por door_id)."""
+        return self.request("POST", "/api/doors/status", json={}).json()
+
+    DOOR_ACTIONS = ("open", "lock", "unlock", "release")
+
+    def door_action(self, door_id: int, action: str) -> dict:
+        """Ejecuta una acción manual sobre una puerta.
+
+        action ∈ {open, lock, unlock, release}. endpoint a confirmar en prueba en vivo:
+        POST /api/doors/{action} con DoorCollection.
+        """
+        if action not in self.DOOR_ACTIONS:
+            raise ValueError(f"Acción de puerta inválida: {action!r}")
+        payload = {"DoorCollection": {"rows": [{"id": str(door_id)}]}}
+        return self.request("POST", f"/api/doors/{action}", json=payload).json()

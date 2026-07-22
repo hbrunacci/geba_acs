@@ -30,6 +30,24 @@
     color: #1e293b;
   }
 
+  .btn-danger {
+    background: #dc2626;
+    border-color: #dc2626;
+    color: #fff;
+  }
+
+  .btn-warning {
+    background: #f59e0b;
+    border-color: #f59e0b;
+    color: #1e293b;
+  }
+
+  .btn-success {
+    background: #16a34a;
+    border-color: #16a34a;
+    color: #fff;
+  }
+
   .btn:disabled {
     opacity: 0.55;
     cursor: not-allowed;
@@ -106,11 +124,15 @@
   }
 
   .modal-dialog {
-    width: min(860px, 100%);
+    width: min(960px, 100%);
     max-height: calc(100vh - 2rem);
     overflow: auto;
     position: relative;
     z-index: 1;
+  }
+
+  .modal-dialog--sm {
+    width: min(460px, 100%);
   }
 
   .modal-content {
@@ -132,6 +154,14 @@
     display: block;
   }
 
+  #confirm-modal {
+    z-index: 2200;
+  }
+
+  #confirm-backdrop {
+    z-index: 2100;
+  }
+
   .modal-header,
   .modal-body,
   .modal-footer {
@@ -148,6 +178,7 @@
     border-bottom: 0;
     display: flex;
     justify-content: flex-end;
+    gap: 0.5rem;
   }
 
   .btn-close {
@@ -167,6 +198,92 @@
 
   .card-title {
     margin-top: 0;
+  }
+
+  /* Tabs del administrador */
+  .device-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+    margin-bottom: 1rem;
+  }
+
+  .device-tab {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.5rem 0.8rem;
+  }
+
+  .device-tab.active {
+    color: #4f46e5;
+    border-bottom-color: #4f46e5;
+  }
+
+  .device-pane[hidden] {
+    display: none;
+  }
+
+  .kv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.5rem 1.25rem;
+  }
+
+  .kv-grid dt {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #94a3b8;
+  }
+
+  .kv-grid dd {
+    margin: 0 0 0.5rem;
+    font-size: 0.9rem;
+    color: #1e293b;
+  }
+
+  .action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: end;
+  }
+
+  .action-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .action-field label {
+    font-size: 0.75rem;
+    color: #64748b;
+  }
+
+  .action-field input,
+  .action-field select {
+    border: 1px solid rgba(15, 23, 42, 0.15);
+    border-radius: 0.5rem;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.9rem;
+    min-width: 200px;
+  }
+
+  .device-warn {
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    color: #92400e;
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    margin-bottom: 0.75rem;
   }
 </style>
 {% endblock extra_css %}
@@ -227,6 +344,7 @@
                 Sync <span class="text-muted">↕</span>
               </button>
             </th>
+            <th class="text-end">Administrar</th>
           </tr>
         </thead>
         <tbody id="devices-body"></tbody>
@@ -247,65 +365,162 @@
     <div class="modal-content">
       <div class="modal-header">
         <div>
-          <h5 class="modal-title" id="device-modal-label">Detalle del dispositivo</h5>
+          <h5 class="modal-title" id="device-modal-label">Administrar dispositivo</h5>
           <div class="text-muted small" id="device-modal-subtitle"></div>
         </div>
         <button type="button" class="btn-close" data-device-modal-close aria-label="Cerrar"></button>
       </div>
       <div class="modal-body">
         <div id="device-modal-alert" class="alert d-none" role="alert"></div>
-        <div class="row g-3">
-          <div class="col-md-4">
-            <div class="card border-0 bg-light h-100">
-              <div class="card-body">
-                <h6 class="card-title">Resumen</h6>
-                <dl class="mb-0 small">
-                  <dt>ID BioStar</dt>
-                  <dd id="device-modal-id" class="mb-2"></dd>
-                  <dt>IP</dt>
-                  <dd id="device-modal-ip" class="mb-2"></dd>
-                  <dt>Tipo</dt>
-                  <dd id="device-modal-type" class="mb-2"></dd>
-                  <dt>Estado</dt>
-                  <dd id="device-modal-status" class="mb-0"></dd>
-                </dl>
-              </div>
-            </div>
+
+        <div class="device-tabs" role="tablist">
+          <button type="button" class="device-tab active" data-tab="ficha">Ficha</button>
+          <button type="button" class="device-tab" data-tab="stats">Estadísticas</button>
+          <button type="button" class="device-tab" data-tab="config">Configuración</button>
+          <button type="button" class="device-tab" data-tab="doors">Puertas</button>
+          <button type="button" class="device-tab" data-tab="actions">Acciones</button>
+          <button type="button" class="device-tab" data-tab="users">Usuarios</button>
+        </div>
+
+        <!-- Ficha -->
+        <div class="device-pane" data-pane="ficha">
+          <div id="ficha-loading" class="text-muted small">Cargando ficha...</div>
+          <div id="ficha-content" class="d-none">
+            <h6 class="mb-2">Identificación</h6>
+            <dl class="kv-grid">
+              <div><dt>ID BioStar</dt><dd id="fx-id"></dd></div>
+              <div><dt>Nombre</dt><dd id="fx-name"></dd></div>
+              <div><dt>Tipo</dt><dd id="fx-type"></dd></div>
+              <div><dt>Producto</dt><dd id="fx-product"></dd></div>
+              <div><dt>Grupo</dt><dd id="fx-group"></dd></div>
+              <div><dt>Estado</dt><dd id="fx-status"></dd></div>
+            </dl>
+            <h6 class="mb-2 mt-2">Red</h6>
+            <dl class="kv-grid">
+              <div><dt>IP</dt><dd id="fx-ip"></dd></div>
+              <div><dt>Gateway</dt><dd id="fx-gateway"></dd></div>
+              <div><dt>Máscara</dt><dd id="fx-subnet"></dd></div>
+              <div><dt>DNS</dt><dd id="fx-dns"></dd></div>
+              <div><dt>Servidor BioStar</dt><dd id="fx-server"></dd></div>
+              <div><dt>DHCP</dt><dd id="fx-dhcp"></dd></div>
+            </dl>
+            <h6 class="mb-2 mt-2">Firmware</h6>
+            <dl class="kv-grid">
+              <div><dt>Firmware</dt><dd id="fx-fw"></dd></div>
+              <div><dt>Hardware</dt><dd id="fx-hw"></dd></div>
+              <div><dt>Kernel</dt><dd id="fx-kernel"></dd></div>
+            </dl>
+            <h6 class="mb-2 mt-2">Capacidades</h6>
+            <dd id="fx-caps"></dd>
           </div>
-          <div class="col-md-8">
-            <h6 class="mb-2">Usuarios registrados (BioStar)</h6>
-            <div id="device-modal-loading" class="text-muted small">Cargando información...</div>
-            <div id="device-modal-stats" class="table-responsive d-none">
-              <table class="table table-sm">
-                <tbody>
-                  <tr>
-                    <th scope="row">Usuarios</th>
-                    <td id="device-modal-users"></td>
-                    <th scope="row">Tarjetas</th>
-                    <td id="device-modal-cards"></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Huellas</th>
-                    <td id="device-modal-fingerprints"></td>
-                    <th scope="row">Rostros</th>
-                    <td id="device-modal-faces"></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Nombres</th>
-                    <td id="device-modal-names"></td>
-                    <th scope="row">Imágenes</th>
-                    <td id="device-modal-images"></td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Frases</th>
-                    <td id="device-modal-phrases"></td>
-                    <td></td>
-                    <td></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+        </div>
+
+        <!-- Estadísticas -->
+        <div class="device-pane" data-pane="stats" hidden>
+          <h6 class="mb-2">Usuarios registrados (BioStar)</h6>
+          <div id="device-modal-loading" class="text-muted small">Cargando información...</div>
+          <div id="device-modal-stats" class="table-responsive d-none">
+            <table class="table table-sm">
+              <tbody>
+                <tr>
+                  <th scope="row">Usuarios</th>
+                  <td id="device-modal-users"></td>
+                  <th scope="row">Tarjetas</th>
+                  <td id="device-modal-cards"></td>
+                </tr>
+                <tr>
+                  <th scope="row">Huellas</th>
+                  <td id="device-modal-fingerprints"></td>
+                  <th scope="row">Rostros</th>
+                  <td id="device-modal-faces"></td>
+                </tr>
+                <tr>
+                  <th scope="row">Nombres</th>
+                  <td id="device-modal-names"></td>
+                  <th scope="row">Imágenes</th>
+                  <td id="device-modal-images"></td>
+                </tr>
+                <tr>
+                  <th scope="row">Frases</th>
+                  <td id="device-modal-phrases"></td>
+                  <td></td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+        </div>
+
+        <!-- Configuración -->
+        <div class="device-pane" data-pane="config" hidden>
+          <h6 class="mb-2">Renombrar</h6>
+          <div class="action-row mb-3">
+            <div class="action-field">
+              <label for="cfg-name">Nombre del equipo</label>
+              <input id="cfg-name" type="text" />
+            </div>
+            <button type="button" id="cfg-rename-btn" class="btn btn-primary btn-sm">Guardar nombre</button>
+          </div>
+          <h6 class="mb-2">Mover a grupo</h6>
+          <div class="action-row">
+            <div class="action-field">
+              <label for="cfg-group">Grupo de dispositivos</label>
+              <select id="cfg-group"></select>
+            </div>
+            <button type="button" id="cfg-move-btn" class="btn btn-primary btn-sm">Mover</button>
+          </div>
+        </div>
+
+        <!-- Puertas -->
+        <div class="device-pane" data-pane="doors" hidden>
+          <div class="device-warn">Estas acciones afectan el acceso físico en vivo.</div>
+          <div id="doors-loading" class="text-muted small">Cargando puertas...</div>
+          <div id="doors-empty" class="text-muted small d-none">Este equipo no tiene puertas asociadas.</div>
+          <div id="doors-content" class="table-responsive d-none">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Puerta</th>
+                  <th>ID</th>
+                  <th>Estado</th>
+                  <th class="text-end">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="doors-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Acciones del equipo -->
+        <div class="device-pane" data-pane="actions" hidden>
+          <div class="device-warn">Estas acciones afectan el equipo en vivo. Requieren confirmación.</div>
+          <div class="action-row">
+            <button type="button" id="act-reboot" class="btn btn-warning btn-sm">Reiniciar equipo</button>
+            <button type="button" id="act-lock" class="btn btn-danger btn-sm">Bloquear autenticación</button>
+            <button type="button" id="act-unlock" class="btn btn-success btn-sm">Desbloquear autenticación</button>
+          </div>
+          <p class="text-muted small mt-3 mb-0">
+            <strong>Bloquear</strong> deshabilita la autenticación en el lector (nadie puede validar).
+            <strong>Reiniciar</strong> corta el servicio del equipo unos segundos.
+          </p>
+        </div>
+
+        <!-- Usuarios en el equipo -->
+        <div class="device-pane" data-pane="users" hidden>
+          <h6 class="mb-2">Agregar / quitar un socio</h6>
+          <div class="action-row mb-2">
+            <div class="action-field">
+              <label for="usr-doc">DNI o credencial del socio</label>
+              <input id="usr-doc" type="text" placeholder="Ej: 30111222" />
+            </div>
+            <button type="button" id="usr-add" class="btn btn-success btn-sm">Agregar al equipo</button>
+            <button type="button" id="usr-remove" class="btn btn-outline-secondary btn-sm">Quitar del equipo</button>
+          </div>
+          <div id="usr-result" class="small text-muted mb-3"></div>
+          <hr />
+          <h6 class="mb-2">Mantenimiento</h6>
+          <div class="device-warn">Vaciar borra <strong>todos</strong> los usuarios de la caché local del equipo.</div>
+          <button type="button" id="usr-clear" class="btn btn-danger btn-sm">Vaciar usuarios del equipo</button>
         </div>
       </div>
       <div class="modal-footer">
@@ -316,9 +531,31 @@
 </div>
 <div id="device-modal-backdrop" class="modal-backdrop"></div>
 
+<!-- Modal de confirmación reutilizable -->
+<div class="modal" id="confirm-modal" tabindex="-1" aria-hidden="true" hidden>
+  <div class="modal-dialog modal-dialog--sm" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Confirmar acción</h5>
+        <button type="button" class="btn-close" id="confirm-cancel" aria-label="Cancelar"></button>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-text" class="mb-0"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="confirm-cancel-2">Cancelar</button>
+        <button type="button" class="btn btn-danger" id="confirm-ok">Confirmar</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="confirm-backdrop" class="modal-backdrop"></div>
+
 <script>
 (function() {
   let devicesPage = [];
+  let currentDevice = null;
+  let deviceGroupsCache = null;
   const paginationMeta = document.getElementById("devices-pagination-meta");
   const prevButton = document.getElementById("devices-prev");
   const nextButton = document.getElementById("devices-next");
@@ -345,9 +582,10 @@
   }
 
   function statusBadge(status) {
-    if (status === 1) return '<span class="badge bg-success">Conectado</span>';
-    if (status === 0) return '<span class="badge bg-danger">Desconectado</span>';
-    if (status === 2) return '<span class="badge bg-warning text-dark">Sync err</span>';
+    const s = Number(status);
+    if (s === 1) return '<span class="badge bg-success">Conectado</span>';
+    if (s === 0) return '<span class="badge bg-danger">Desconectado</span>';
+    if (s === 2) return '<span class="badge bg-warning text-dark">Sync err</span>';
     return '<span class="badge bg-secondary">N/A</span>';
   }
 
@@ -362,7 +600,11 @@
     });
     const contentType = resp.headers.get("content-type") || "";
     const text = await resp.text();
-    if (!resp.ok) throw new Error("HTTP " + resp.status + ": " + text.slice(0, 200));
+    if (!resp.ok) {
+      let detail = text.slice(0, 300);
+      try { const j = JSON.parse(text); if (j.detail) detail = j.detail; } catch (e) {}
+      throw new Error(detail);
+    }
     if (!contentType.includes("application/json")) {
       throw new Error("Respuesta inesperada (no es JSON). ¿Sesión expirada?");
     }
@@ -408,6 +650,9 @@
         <td>${d.device_type || ""}</td>
         <td>${statusBadge(d.status)}</td>
         <td>${(d.last_synced_at || "").replace("T", " ").slice(0,19)}</td>
+        <td class="text-end">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-manage="${d.device_id || ""}">Administrar</button>
+        </td>
       </tr>
     `).join("");
   }
@@ -425,46 +670,211 @@
 
   function setText(id, value) {
     const el = document.getElementById(id);
-    el.textContent = value ?? "";
+    if (el) el.textContent = (value === null || value === undefined || value === "") ? "-" : value;
   }
 
-  function openDeviceModal(device) {
-    if (!device) return;
-    setText("device-modal-label", device.name || "Detalle del dispositivo");
-    setText("device-modal-subtitle", device.device_id ? `ID ${device.device_id}` : "");
-    setText("device-modal-id", device.device_id || "-");
-    setText("device-modal-ip", device.ip_addr || "-");
-    setText("device-modal-type", device.device_type || "-");
-    document.getElementById("device-modal-status").innerHTML = statusBadge(device.status);
-    setModalAlert("", "");
+  // ------- Tabs -------
+  function activateTab(tabName) {
+    document.querySelectorAll(".device-tab").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.tab === tabName);
+    });
+    document.querySelectorAll(".device-pane").forEach(pane => {
+      pane.hidden = pane.dataset.pane !== tabName;
+    });
+  }
 
+  document.querySelectorAll(".device-tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.tab;
+      activateTab(tab);
+      if (!currentDevice) return;
+      if (tab === "stats") loadStats(currentDevice.device_id);
+      if (tab === "doors") loadDoors(currentDevice.device_id);
+      if (tab === "config") loadGroups();
+    });
+  });
+
+  // ------- Cargar secciones -------
+  function loadFicha(deviceId) {
+    const loading = document.getElementById("ficha-loading");
+    const content = document.getElementById("ficha-content");
+    loading.classList.remove("d-none");
+    content.classList.add("d-none");
+    fetchJSON(`/api/biostar/devices/${deviceId}/detail/`)
+      .then(payload => {
+        const s = payload.summary || {};
+        setText("fx-id", s.id);
+        setText("fx-name", s.name);
+        setText("fx-type", s.device_type);
+        setText("fx-product", s.product_name);
+        setText("fx-group", s.device_group);
+        document.getElementById("fx-status").innerHTML = statusBadge(s.status);
+        setText("fx-ip", s.ip);
+        setText("fx-gateway", s.gateway);
+        setText("fx-subnet", s.subnet_mask);
+        setText("fx-dns", s.dns_addr);
+        setText("fx-server", s.server_ip);
+        setText("fx-dhcp", s.enable_dhcp === "true" ? "Sí" : "No");
+        setText("fx-fw", s.firmware);
+        setText("fx-hw", s.hardware);
+        setText("fx-kernel", s.kernel);
+        const caps = [];
+        if (s.supports_face) caps.push("Rostro");
+        if (s.supports_fingerprint) caps.push("Huella");
+        if (s.supports_card) caps.push("Tarjeta");
+        setText("fx-caps", caps.length ? caps.join(" · ") : "-");
+        // Prellenar config
+        document.getElementById("cfg-name").value = s.name || "";
+        loading.classList.add("d-none");
+        content.classList.remove("d-none");
+      })
+      .catch(e => {
+        loading.classList.add("d-none");
+        setModalAlert("No se pudo obtener la ficha: " + e.message, "danger");
+      });
+  }
+
+  function loadStats(deviceId) {
     const loading = document.getElementById("device-modal-loading");
     const stats = document.getElementById("device-modal-stats");
     loading.classList.remove("d-none");
     stats.classList.add("d-none");
+    fetchJSON(`/api/biostar/devices/${deviceId}/discover_userdata/`)
+      .then(payload => {
+        const p = payload?.UserStatistics || payload?.user_statistics || {};
+        setText("device-modal-users", p.numUsers);
+        setText("device-modal-cards", p.numCards);
+        setText("device-modal-fingerprints", p.numFingerprints);
+        setText("device-modal-faces", p.numFaces);
+        setText("device-modal-names", p.numNames);
+        setText("device-modal-images", p.numImages);
+        setText("device-modal-phrases", p.numPhrases);
+        loading.classList.add("d-none");
+        stats.classList.remove("d-none");
+      })
+      .catch(e => {
+        loading.classList.add("d-none");
+        setModalAlert("No se pudo obtener estadísticas: " + e.message, "danger");
+      });
+  }
+
+  function loadGroups() {
+    const select = document.getElementById("cfg-group");
+    const fill = (groups) => {
+      select.innerHTML = groups.map(g => `<option value="${g.id}">${g.name} (${g.id})</option>`).join("");
+    };
+    if (deviceGroupsCache) { fill(deviceGroupsCache); return; }
+    fetchJSON("/api/biostar/device-groups/")
+      .then(payload => {
+        deviceGroupsCache = payload.groups || [];
+        fill(deviceGroupsCache);
+      })
+      .catch(e => setModalAlert("No se pudieron cargar los grupos: " + e.message, "danger"));
+  }
+
+  function doorStateBadge(door) {
+    const parts = [];
+    if (String(door.opened) === "true") parts.push('<span class="badge bg-info text-dark">Abierta</span>');
+    else parts.push('<span class="badge bg-secondary">Cerrada</span>');
+    if (String(door.unlocked) === "1" || String(door.unlocked) === "true") parts.push('<span class="badge bg-warning text-dark">Desbloqueada</span>');
+    if (String(door.alarm) !== "0" && door.alarm) parts.push('<span class="badge bg-danger">Alarma</span>');
+    return parts.join(" ");
+  }
+
+  function loadDoors(deviceId) {
+    const loading = document.getElementById("doors-loading");
+    const empty = document.getElementById("doors-empty");
+    const content = document.getElementById("doors-content");
+    loading.classList.remove("d-none");
+    empty.classList.add("d-none");
+    content.classList.add("d-none");
+    fetchJSON(`/api/biostar/devices/${deviceId}/doors/`)
+      .then(payload => {
+        const doors = payload.doors || [];
+        loading.classList.add("d-none");
+        if (!doors.length) { empty.classList.remove("d-none"); return; }
+        document.getElementById("doors-body").innerHTML = doors.map(d => `
+          <tr>
+            <td>${d.name || ""}</td>
+            <td>${d.id}</td>
+            <td>${doorStateBadge(d)}</td>
+            <td class="text-end">
+              <button class="btn btn-success btn-sm" data-door="${d.id}" data-door-action="open">Abrir</button>
+              <button class="btn btn-danger btn-sm" data-door="${d.id}" data-door-action="lock">Bloquear</button>
+              <button class="btn btn-warning btn-sm" data-door="${d.id}" data-door-action="unlock">Desbloquear</button>
+              <button class="btn btn-outline-secondary btn-sm" data-door="${d.id}" data-door-action="release">Liberar</button>
+            </td>
+          </tr>
+        `).join("");
+        content.classList.remove("d-none");
+      })
+      .catch(e => {
+        loading.classList.add("d-none");
+        setModalAlert("No se pudieron cargar las puertas: " + e.message, "danger");
+      });
+  }
+
+  // ------- Modal confirmación -------
+  const confirmModal = document.getElementById("confirm-modal");
+  const confirmBackdrop = document.getElementById("confirm-backdrop");
+  let confirmResolver = null;
+
+  function confirmAction(message) {
+    document.getElementById("confirm-text").textContent = message;
+    confirmModal.hidden = false;
+    confirmModal.classList.add("show");
+    confirmBackdrop.classList.add("show");
+    return new Promise(resolve => { confirmResolver = resolve; });
+  }
+
+  function closeConfirm(result) {
+    confirmModal.classList.remove("show");
+    confirmModal.hidden = true;
+    confirmBackdrop.classList.remove("show");
+    if (confirmResolver) { confirmResolver(result); confirmResolver = null; }
+  }
+
+  document.getElementById("confirm-ok").addEventListener("click", () => closeConfirm(true));
+  document.getElementById("confirm-cancel").addEventListener("click", () => closeConfirm(false));
+  document.getElementById("confirm-cancel-2").addEventListener("click", () => closeConfirm(false));
+  confirmBackdrop.addEventListener("click", () => closeConfirm(false));
+
+  // ------- Ejecutar acción POST con confirmación opcional -------
+  async function runAction(url, { confirm, body, okMsg } = {}) {
+    if (confirm) {
+      const ok = await confirmAction(confirm);
+      if (!ok) return null;
+    }
+    try {
+      const payload = await fetchJSON(url, {
+        method: "POST",
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      setModalAlert(okMsg || "Acción realizada ✅", "success");
+      return payload;
+    } catch (e) {
+      setModalAlert("Error: " + e.message, "danger");
+      return null;
+    }
+  }
+
+  // ------- Abrir modal -------
+  function openDeviceModal(device) {
+    if (!device) return;
+    currentDevice = device;
+    setText("device-modal-label", device.name || "Administrar dispositivo");
+    setText("device-modal-subtitle", device.device_id ? `ID ${device.device_id} · ${device.ip_addr || ""}` : "");
+    setModalAlert("", "");
+    document.getElementById("usr-result").textContent = "";
+    document.getElementById("usr-doc").value = "";
+    activateTab("ficha");
 
     modalEl.hidden = false;
     modalEl.classList.add("show");
     modalEl.setAttribute("aria-hidden", "false");
     modalBackdrop.classList.add("show");
 
-    fetchJSON(`/api/biostar/devices/${device.device_id}/discover_userdata/`)
-      .then(payload => {
-        const statsPayload = payload?.UserStatistics || payload?.user_statistics || {};
-        setText("device-modal-users", statsPayload.numUsers ?? "-");
-        setText("device-modal-cards", statsPayload.numCards ?? "-");
-        setText("device-modal-fingerprints", statsPayload.numFingerprints ?? "-");
-        setText("device-modal-faces", statsPayload.numFaces ?? "-");
-        setText("device-modal-names", statsPayload.numNames ?? "-");
-        setText("device-modal-images", statsPayload.numImages ?? "-");
-        setText("device-modal-phrases", statsPayload.numPhrases ?? "-");
-        loading.classList.add("d-none");
-        stats.classList.remove("d-none");
-      })
-      .catch(e => {
-        loading.classList.add("d-none");
-        setModalAlert("No se pudo obtener la información del dispositivo: " + e.message, "danger");
-      });
+    loadFicha(device.device_id);
   }
 
   function closeDeviceModal() {
@@ -472,8 +882,108 @@
     modalEl.setAttribute("aria-hidden", "true");
     modalEl.hidden = true;
     modalBackdrop.classList.remove("show");
+    currentDevice = null;
   }
 
+  // ------- Handlers de configuración -------
+  document.getElementById("cfg-rename-btn").addEventListener("click", async () => {
+    if (!currentDevice) return;
+    const name = document.getElementById("cfg-name").value.trim();
+    if (!name) { setModalAlert("El nombre no puede estar vacío.", "warning"); return; }
+    const r = await runAction(`/api/biostar/devices/${currentDevice.device_id}/rename/`, {
+      body: { name }, okMsg: "Nombre actualizado ✅",
+    });
+    if (r) { currentDevice.name = name; loadDevices(); }
+  });
+
+  document.getElementById("cfg-move-btn").addEventListener("click", async () => {
+    if (!currentDevice) return;
+    const groupId = document.getElementById("cfg-group").value;
+    const groupName = document.getElementById("cfg-group").selectedOptions[0]?.textContent || groupId;
+    const r = await runAction(`/api/biostar/devices/${currentDevice.device_id}/move-group/`, {
+      confirm: `¿Mover el equipo "${currentDevice.name}" al grupo ${groupName}?`,
+      body: { group_id: groupId }, okMsg: "Equipo movido de grupo ✅",
+    });
+    if (r) { loadFicha(currentDevice.device_id); loadDevices(); }
+  });
+
+  // ------- Handlers de acciones del equipo -------
+  document.getElementById("act-reboot").addEventListener("click", async () => {
+    if (!currentDevice) return;
+    await runAction(`/api/biostar/devices/${currentDevice.device_id}/reboot/`, {
+      confirm: `¿Reiniciar el equipo "${currentDevice.name}"? Se cortará el servicio unos segundos.`,
+      okMsg: "Reinicio enviado ✅",
+    });
+  });
+
+  document.getElementById("act-lock").addEventListener("click", async () => {
+    if (!currentDevice) return;
+    await runAction(`/api/biostar/devices/${currentDevice.device_id}/lock/`, {
+      confirm: `¿Bloquear la autenticación de "${currentDevice.name}"? Nadie podrá validar en este lector.`,
+      okMsg: "Equipo bloqueado ✅",
+    });
+  });
+
+  document.getElementById("act-unlock").addEventListener("click", async () => {
+    if (!currentDevice) return;
+    await runAction(`/api/biostar/devices/${currentDevice.device_id}/unlock/`, {
+      confirm: `¿Desbloquear la autenticación de "${currentDevice.name}"?`,
+      okMsg: "Equipo desbloqueado ✅",
+    });
+  });
+
+  // ------- Handler de puertas (delegado) -------
+  document.getElementById("doors-body").addEventListener("click", async (event) => {
+    const btn = event.target.closest("[data-door-action]");
+    if (!btn) return;
+    const doorId = btn.dataset.door;
+    const action = btn.dataset.doorAction;
+    const labels = { open: "Abrir", lock: "Bloquear", unlock: "Desbloquear", release: "Liberar" };
+    const r = await runAction(`/api/biostar/doors/${doorId}/${action}/`, {
+      confirm: `¿${labels[action]} la puerta #${doorId}? Afecta el acceso físico en vivo.`,
+      okMsg: `Puerta ${labels[action].toLowerCase()} ✅`,
+    });
+    if (r && currentDevice) loadDoors(currentDevice.device_id);
+  });
+
+  // ------- Handlers de usuarios -------
+  function userIdentifierBody() {
+    const raw = document.getElementById("usr-doc").value.trim();
+    if (!raw) return null;
+    // Sólo dígitos => tratamos como DNI (doc_nro); el backend resuelve el Id_Cliente.
+    return { doc_nro: raw };
+  }
+
+  document.getElementById("usr-add").addEventListener("click", async () => {
+    if (!currentDevice) return;
+    const body = userIdentifierBody();
+    if (!body) { setModalAlert("Ingresá un DNI o credencial.", "warning"); return; }
+    const r = await runAction(`/api/biostar/devices/${currentDevice.device_id}/users/add/`, {
+      body, okMsg: "Usuario agregado al equipo ✅",
+    });
+    if (r) document.getElementById("usr-result").textContent = `Id_Cliente ${r.id_cliente} agregado al equipo.`;
+  });
+
+  document.getElementById("usr-remove").addEventListener("click", async () => {
+    if (!currentDevice) return;
+    const body = userIdentifierBody();
+    if (!body) { setModalAlert("Ingresá un DNI o credencial.", "warning"); return; }
+    const r = await runAction(`/api/biostar/devices/${currentDevice.device_id}/users/remove/`, {
+      confirm: "¿Quitar este socio del equipo?",
+      body, okMsg: "Usuario quitado del equipo ✅",
+    });
+    if (r) document.getElementById("usr-result").textContent = `Id_Cliente ${r.id_cliente} quitado del equipo.`;
+  });
+
+  document.getElementById("usr-clear").addEventListener("click", async () => {
+    if (!currentDevice) return;
+    await runAction(`/api/biostar/devices/${currentDevice.device_id}/users/clear/`, {
+      confirm: `¿Vaciar TODOS los usuarios de "${currentDevice.name}"? Esta acción no se puede deshacer.`,
+      okMsg: "Equipo vaciado ✅",
+    });
+  });
+
+  // ------- Filtros / paginación / listado -------
   function filterDevices() {
     const nameTerm = document.getElementById("devices-search-name").value.trim().toLowerCase();
     const idTerm = document.getElementById("devices-search-id").value.trim().toLowerCase();
@@ -577,12 +1087,22 @@
     });
   });
 
-  document.getElementById("devices-body").addEventListener("dblclick", (event) => {
-    const row = event.target.closest("tr[data-device-id]");
-    if (!row) return;
+  function deviceFromEl(el) {
+    const row = el.closest("tr[data-device-id]");
+    if (!row) return null;
     const deviceId = row.dataset.deviceId;
-    const device = devicesPage.find(item => String(item.device_id || "") === String(deviceId));
-    openDeviceModal(device);
+    return devicesPage.find(item => String(item.device_id || "") === String(deviceId));
+  }
+
+  document.getElementById("devices-body").addEventListener("click", (event) => {
+    const manageBtn = event.target.closest("[data-manage]");
+    if (manageBtn) {
+      openDeviceModal(deviceFromEl(manageBtn));
+    }
+  });
+
+  document.getElementById("devices-body").addEventListener("dblclick", (event) => {
+    openDeviceModal(deviceFromEl(event.target));
   });
 
   document.querySelectorAll("[data-device-modal-close]").forEach(button => {
@@ -592,9 +1112,9 @@
   modalBackdrop.addEventListener("click", closeDeviceModal);
 
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape" && modalEl.classList.contains("show")) {
-      closeDeviceModal();
-    }
+    if (event.key !== "Escape") return;
+    if (confirmModal.classList.contains("show")) { closeConfirm(false); return; }
+    if (modalEl.classList.contains("show")) closeDeviceModal();
   });
 
   loadDevices().catch(e => showMsg("Error cargando datos: " + e.message, "danger"));

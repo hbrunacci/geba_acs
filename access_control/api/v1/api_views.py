@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import threading
 import uuid
@@ -497,6 +498,369 @@ class BioStarUserSearchAPI(views.APIView):
             order_by=order_by,
         )
         return Response(payload, status=status.HTTP_200_OK)
+
+
+biostar_logger = logging.getLogger("access_control.biostar")
+
+
+def _biostar_client_or_error():
+    """Instancia el cliente BioStar; devuelve (client, error_response)."""
+    try:
+        return BioStar2Client.from_db_and_env(), None
+    except Exception as exc:  # config faltante / env incompleto
+        return None, Response(
+            {"detail": "No se pudo inicializar el cliente BioStar: " + str(exc)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+def _resolve_id_cliente_from_request(request):
+    """Resuelve un Id_Cliente de BioStar a partir de doc_nro / id_cliente / credencial.
+
+    Reusa la lógica de BioStarUserLookupAPI. Devuelve (id_cliente, error_response).
+    """
+    identifiers = ("doc_nro", "id_cliente", "credencial")
+    present = [name for name in identifiers if request.data.get(name)]
+    if len(present) != 1:
+        return None, Response(
+            {"detail": "Debe indicar exactamente uno de: " + ", ".join(identifiers)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    identifier_type = present[0]
+    identifier_value = str(request.data.get(identifier_type)).strip()
+
+    if identifier_type == "id_cliente":
+        try:
+            return int(identifier_value), None
+        except (TypeError, ValueError):
+            return None, Response(
+                {"detail": "id_cliente debe ser numérico."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+    try:
+        id_cliente = MSSQLAccessCheckService().resolve_id_cliente(
+            identifier_type=identifier_type, identifier_value=identifier_value
+        )
+    except AccessCheckError as exc:
+        return None, Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    if not id_cliente:
+        return None, Response(
+            {"detail": "No se encontró un socio con ese dato en xSys."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return int(id_cliente), None
+
+
+class BioStarDeviceDetailAPI(views.APIView):
+    """Ficha completa (en vivo) de un dispositivo: red, firmware, tipo, grupo, capacidades."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, device_id: int):
+        client, err = _biostar_client_or_error()
+        if err:
+            return err
+        try:
+            payload = client.get_device(device_id)
+        except requests.RequestException as exc:
+            return Response(
+                {"detail": "No se pudo consultar BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        device = payload.get("Device", payload) or {}
+        version = device.get("version") or {}
+        lan = device.get("lan") or {}
+        summary = {
+            "id": device.get("id"),
+            "name": device.get("name"),
+            "status": device.get("status"),
+            "device_type": (device.get("device_type_id") or {}).get("name"),
+            "device_group": (device.get("device_group_id") or {}).get("name"),
+            "device_group_id": (device.get("device_group_id") or {}).get("id"),
+            "product_name": version.get("product_name"),
+            "firmware": version.get("firmware"),
+            "hardware": version.get("hardware"),
+            "kernel": version.get("kernel"),
+            "ip": lan.get("ip"),
+            "gateway": lan.get("gateway"),
+            "subnet_mask": lan.get("subnet_mask"),
+            "dns_addr": lan.get("dns_addr"),
+            "server_ip": lan.get("server_ip"),
+            "device_port": lan.get("device_port"),
+            "enable_dhcp": lan.get("enable_dhcp"),
+            "supports_face": bool(device.get("face")),
+            "supports_fingerprint": bool(device.get("fingerprint")),
+            "supports_card": bool(device.get("card")),
+        }
+        return Response({"summary": summary, "raw": device}, status=status.HTTP_200_OK)
+
+
+class BioStarDeviceGroupListAPI(views.APIView):
+    """Lista de grupos de dispositivos (para el selector de 'mover a grupo')."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        client, err = _biostar_client_or_error()
+        if err:
+            return err
+        try:
+            payload = client.list_device_groups()
+        except requests.RequestException as exc:
+            return Response(
+                {"detail": "No se pudo consultar BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        rows = (payload.get("DeviceGroupCollection") or {}).get("rows") or []
+        groups = [{"id": r.get("id"), "name": r.get("name")} for r in rows]
+        return Response({"groups": groups}, status=status.HTTP_200_OK)
+
+
+class BioStarDeviceRenameAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, device_id: int):
+        name = (request.data.get("name") or "").strip()
+        if not name:
+            return Response(
+                {"detail": "El parámetro 'name' es obligatorio."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        client, err = _biostar_client_or_error()
+        if err:
+            return err
+        try:
+            payload = client.rename_device(device_id, name)
+        except requests.RequestException as exc:
+            return Response(
+                {"detail": "No se pudo renombrar en BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        biostar_logger.info("rename device=%s name=%r by=%s", device_id, name, request.user)
+        return Response({"ok": True, "biostar": payload}, status=status.HTTP_200_OK)
+
+
+class BioStarDeviceMoveGroupAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, device_id: int):
+        group_id = request.data.get("group_id")
+        try:
+            group_id = int(group_id)
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "El parámetro 'group_id' debe ser numérico."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        client, err = _biostar_client_or_error()
+        if err:
+            return err
+        try:
+            payload = client.move_device_group(device_id, group_id)
+        except requests.RequestException as exc:
+            return Response(
+                {"detail": "No se pudo mover de grupo en BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        biostar_logger.info(
+            "move_group device=%s group=%s by=%s", device_id, group_id, request.user
+        )
+        return Response({"ok": True, "biostar": payload}, status=status.HTTP_200_OK)
+
+
+class BioStarDeviceRebootAPI(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, device_id: int):
+        client, err = _biostar_client_or_error()
+        if err:
+            return err
+        try:
+            payload = client.reboot_device(device_id)
+        except requests.RequestException as exc:
+            return Response(
+                {"detail": "No se pudo reiniciar el equipo en BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        biostar_logger.warning("REBOOT device=%s by=%s", device_id, request.user)
+        return Response({"ok": True, "biostar": payload}, status=status.HTTP_200_OK)
+
+
+class BioStarDeviceLockAPI(views.APIView):
+    """Bloquea o desbloquea la autenticación del equipo. ?action=lock|unlock (o path)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, device_id: int, action: str):
+        if action not in ("lock", "unlock"):
+            return Response(
+                {"detail": "action debe ser 'lock' o 'unlock'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        client, err = _biostar_client_or_error()
+        if err:
+            return err
+        method = client.lock_device if action == "lock" else client.unlock_device
+        try:
+            payload = method(device_id)
+        except requests.RequestException as exc:
+            return Response(
+                {"detail": f"No se pudo {action} el equipo en BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        biostar_logger.warning("%s device=%s by=%s", action.upper(), device_id, request.user)
+        return Response({"ok": True, "biostar": payload}, status=status.HTTP_200_OK)
+
+
+class BioStarDeviceDoorsAPI(views.APIView):
+    """Puertas asociadas a un equipo (por entry_device_id) con su estado en vivo."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, device_id: int):
+        client, err = _biostar_client_or_error()
+        if err:
+            return err
+        try:
+            doors_payload = client.list_doors()
+            status_payload = client.door_status()
+        except requests.RequestException as exc:
+            return Response(
+                {"detail": "No se pudo consultar BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        rows = (doors_payload.get("DoorCollection") or {}).get("rows") or []
+        status_rows = (status_payload.get("DoorStatusCollection") or {}).get("rows") or []
+
+        def _door_status_id(row):
+            did = row.get("door_id")
+            if isinstance(did, dict):
+                return str(did.get("id"))
+            return str(did)
+
+        status_by_id = {_door_status_id(r): r for r in status_rows}
+
+        doors = []
+        for row in rows:
+            entry = row.get("entry_device_id") or {}
+            if str(entry.get("id")) != str(device_id):
+                continue
+            door_id = str(row.get("id"))
+            st = status_by_id.get(door_id, {})
+            doors.append(
+                {
+                    "id": row.get("id"),
+                    "name": row.get("name"),
+                    "open_duration": row.get("open_duration"),
+                    "unconditional_lock": row.get("unconditional_lock"),
+                    "opened": st.get("opened"),
+                    "unlocked": st.get("unlocked"),
+                    "alarm": st.get("alarm"),
+                }
+            )
+        return Response({"device_id": device_id, "doors": doors}, status=status.HTTP_200_OK)
+
+
+class BioStarDoorActionAPI(views.APIView):
+    """Acción manual sobre una puerta: open / lock / unlock / release."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, door_id: int, action: str):
+        if action not in BioStar2Client.DOOR_ACTIONS:
+            return Response(
+                {"detail": "action debe ser uno de: " + ", ".join(BioStar2Client.DOOR_ACTIONS)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        client, err = _biostar_client_or_error()
+        if err:
+            return err
+        try:
+            payload = client.door_action(door_id, action)
+        except requests.RequestException as exc:
+            return Response(
+                {"detail": f"No se pudo {action} la puerta en BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        biostar_logger.warning("DOOR %s door=%s by=%s", action.upper(), door_id, request.user)
+        return Response({"ok": True, "biostar": payload}, status=status.HTTP_200_OK)
+
+
+class BioStarDeviceUserAddAPI(views.APIView):
+    """Agrega un socio (por DNI/credencial/id_cliente) a un equipo puntual."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, device_id: int):
+        id_cliente, err = _resolve_id_cliente_from_request(request)
+        if err:
+            return err
+        client, cerr = _biostar_client_or_error()
+        if cerr:
+            return cerr
+        try:
+            payload = client.add_user_to_device(id_cliente, device_id)
+        except requests.RequestException as exc:
+            return Response(
+                {"detail": "No se pudo agregar el usuario en BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        biostar_logger.info(
+            "user_add device=%s user=%s by=%s", device_id, id_cliente, request.user
+        )
+        return Response(
+            {"ok": True, "id_cliente": id_cliente, "biostar": payload},
+            status=status.HTTP_200_OK,
+        )
+
+
+class BioStarDeviceUserRemoveAPI(views.APIView):
+    """Quita un socio de un equipo puntual."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, device_id: int):
+        id_cliente, err = _resolve_id_cliente_from_request(request)
+        if err:
+            return err
+        client, cerr = _biostar_client_or_error()
+        if cerr:
+            return cerr
+        try:
+            payload = client.remove_user_from_device(device_id, id_cliente)
+        except requests.RequestException as exc:
+            return Response(
+                {"detail": "No se pudo quitar el usuario en BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        biostar_logger.info(
+            "user_remove device=%s user=%s by=%s", device_id, id_cliente, request.user
+        )
+        return Response(
+            {"ok": True, "id_cliente": id_cliente, "biostar": payload},
+            status=status.HTTP_200_OK,
+        )
+
+
+class BioStarDeviceUsersClearAPI(views.APIView):
+    """Vacía TODOS los usuarios de la caché local de un equipo (DELETE id=*)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, device_id: int):
+        client, err = _biostar_client_or_error()
+        if err:
+            return err
+        try:
+            payload = client.remove_user_from_device(device_id, "*")
+        except requests.RequestException as exc:
+            return Response(
+                {"detail": "No se pudo vaciar el equipo en BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        biostar_logger.warning("users_clear device=%s by=%s", device_id, request.user)
+        return Response({"ok": True, "biostar": payload}, status=status.HTTP_200_OK)
 
 
 class ExternalAccessLogSyncAPI(views.APIView):
