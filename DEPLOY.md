@@ -277,6 +277,33 @@ docker compose exec db pg_dump -U geba_acs geba_acs > backup_geba_acs.sql
 | El login del admin falla con error CSRF por IP | Setear `DJANGO_CSRF_TRUSTED_ORIGINS=http://<IP>:8000` en `.env`. |
 | Puerto 8000 ocupado | Cambiar el mapeo del servicio `web` en `docker-compose.yml` (`"8080:8000"`) y usar ese puerto en las pantallas. |
 | No aparecen ingresos en la pantalla | Ver `docker compose logs -f poller`; confirmar que trae eventos y que la pantalla tiene la puerta correcta seleccionada. |
+| Postgres: `FATAL: password authentication failed for user "geba_acs"` (o `role ... does not exist`) | El volumen `postgres_data` ya se había inicializado con **otras** credenciales. Ver nota abajo. |
+
+### ⚠️ El volumen de PostgreSQL solo se inicializa una vez
+
+PostgreSQL crea el usuario/base de `POSTGRES_USER` / `POSTGRES_DB` / `POSTGRES_PASSWORD`
+**únicamente la primera vez** que el volumen `postgres_data` está vacío. Si después
+cambiás esas variables en el `.env`, el contenedor **no** las re-aplica: sigue con
+las credenciales viejas y verás `password authentication failed` o `role ... does
+not exist`.
+
+- **Si la base está vacía o es descartable** (típico en la primera puesta a punto):
+  recreá el volumen limpio.
+  ```powershell
+  docker compose down -v      # ⚠️ BORRA los datos de Postgres
+  docker compose up -d
+  ```
+  Después hay que volver a correr `xsys_init` (paso 6), porque la base arranca vacía.
+
+- **Si la base ya tiene datos de producción que no querés perder**, NO uses `down -v`.
+  En su lugar, cambiá la contraseña del rol dentro del contenedor para que coincida
+  con el `.env`:
+  ```powershell
+  docker compose exec db psql -U <usuario-viejo> -d postgres -c "ALTER USER geba_acs WITH PASSWORD 'la-del-.env';"
+  ```
+
+> Moraleja: definí `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB` en el `.env`
+> **antes** del primer `docker compose up`, y no los cambies después a la ligera.
 
 ---
 
