@@ -492,7 +492,7 @@ class ControladoresXsysAPI(APIView):
         ctrls = [
             {"id_controlador": c.id_controlador, "id_acceso": c.id_acceso,
              "descripcion": c.descripcion or f"Ctrl {c.id_controlador}",
-             "tipo_cont": c.tipo_cont, "activo": c.activo}
+             "tipo_cont": c.tipo_cont, "activo": c.activo, "ip": c.ip}
             for c in qs.order_by("id_acceso", "descripcion")
         ]
         accesos = [
@@ -526,6 +526,7 @@ class PuertaControladoresAPI(APIView):
                 "descripcion": (x.descripcion if x and x.descripcion else f"Ctrl {a.id_controlador}"),
                 "tipo_cont": (x.tipo_cont if x else ""),
                 "activo": (x.activo if x else None),
+                "ip": (x.ip if x else ""),
             })
         return Response({"puerta_id": door.id, "controladores": out})
 

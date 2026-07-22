@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
+from datetime import timedelta
 from typing import Any, Iterable, Iterator, Sequence
 
 from django.db import transaction
@@ -108,6 +110,8 @@ class XsysSyncService:
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = get_config(config)
         self.batch_size = int(self.config.get("BATCH_SIZE", 1000))
+        # Ventana de retención de CD_ES en días (0 = sin límite).
+        self.retention_days = int(self.config.get("CD_ES_RETENTION_DAYS", 7) or 0)
 
     # ---------------------------------------------------------------- lecturas
     def _row_to_socio_kwargs(self, row: Sequence[Any]) -> dict[str, Any]:
@@ -142,9 +146,15 @@ class XsysSyncService:
         return len(objs)
 
     def _upsert_foto(self, id_cliente: int, nro: int, fecha, blob) -> bool:
-        """Upsert de una foto. Devuelve True si escribió (cambió), False si no."""
+        """Upsert de una foto. Devuelve True si escribió (cambió), False si no.
+
+        Solo se persisten fotos de socios que efectivamente poseen imagen: si el
+        blob viene vacío/NULL no se crea ninguna fila (evita fotos vacías).
+        """
         data = bytes(blob) if blob is not None else None
-        sha = hashlib.sha256(data).hexdigest() if data else ""
+        if not data:
+            return False
+        sha = hashlib.sha256(data).hexdigest()
         existing = XsysSocioFoto.objects.filter(id_cliente=id_cliente, nro=nro).only("sha256").first()
         if existing and existing.sha256 == sha:
             return False
@@ -153,7 +163,7 @@ class XsysSyncService:
             nro=nro,
             defaults={
                 "imagen": data,
-                "thumbnail": make_thumbnail(data) if data else None,
+                "thumbnail": make_thumbnail(data),
                 "sha256": sha,
                 "fecha": _aware(fecha),
                 "synced_at": timezone.now(),
@@ -163,7 +173,8 @@ class XsysSyncService:
 
     # -------------------------------------------------------------- streams
     def sync_socios_all(self, cursor) -> int:
-        cursor.execute(f"SELECT {_SOCIO_SELECT} FROM {_SOCIO_FROM}")
+        # Solo socios activos (Activo=1); filtro server-side.
+        cursor.execute(f"SELECT {_SOCIO_SELECT} FROM {_SOCIO_FROM} WHERE C.Activo = 1")
         total = 0
         while True:
             rows = cursor.fetchmany(self.batch_size)
@@ -178,7 +189,8 @@ class XsysSyncService:
         for chunk in _chunked(list(ids)):
             placeholders = ",".join("?" for _ in chunk)
             cursor.execute(
-                f"SELECT {_SOCIO_SELECT} FROM {_SOCIO_FROM} WHERE C.Id_Cliente IN ({placeholders})",
+                f"SELECT {_SOCIO_SELECT} FROM {_SOCIO_FROM} "
+                f"WHERE C.Activo = 1 AND C.Id_Cliente IN ({placeholders})",
                 list(chunk),
             )
             rows = cursor.fetchall()
@@ -244,9 +256,14 @@ class XsysSyncService:
         return len(objs)
 
     def sync_controladores(self, cursor) -> int:
-        """Espejo de CD_Controladores (molinetes/lectores). Tabla chica: upsert."""
+        """Espejo de CD_Controladores (molinetes/lectores). Tabla chica: upsert.
+
+        ``ip`` = Intelek_IP (IP configurada del controlador) o, si está vacía,
+        Ult_IP (última IP vista). Vacío si xSys no tiene ninguna.
+        """
         cursor.execute(
-            "SELECT Id_Controlador, Id_Acceso, Descripcion, Tipo, Tipo_Cont, Activo FROM CD_Controladores"
+            "SELECT Id_Controlador, Id_Acceso, Descripcion, Tipo, Tipo_Cont, Activo, "
+            "Intelek_IP, Ult_IP FROM CD_Controladores"
         )
         rows = cursor.fetchall()
         now = timezone.now()
@@ -258,6 +275,7 @@ class XsysSyncService:
                 tipo=(r[3] or "").strip(),
                 tipo_cont=(r[4] or "").strip(),
                 activo=r[5],
+                ip=((r[6] or "").strip() or (r[7] or "").strip())[:40],
                 synced_at=now,
             )
             for r in rows
@@ -267,7 +285,7 @@ class XsysSyncService:
                 objs,
                 update_conflicts=True,
                 unique_fields=["id_controlador"],
-                update_fields=["id_acceso", "descripcion", "tipo", "tipo_cont", "activo", "synced_at"],
+                update_fields=["id_acceso", "descripcion", "tipo", "tipo_cont", "activo", "ip", "synced_at"],
             )
         return len(objs)
 
@@ -414,18 +432,39 @@ class XsysSyncService:
                 )
         return len(objs)
 
-    def recompute_whitelist(self, ids: Sequence[int], service=None) -> int:
-        """Recalcula la habilitación de cada socio con la lógica de acceso."""
+    def recompute_whitelist(self, ids: Sequence[int], service=None, cursor=None) -> int:
+        """Recalcula la habilitación de cada socio con la lógica de acceso.
+
+        Reutiliza UNA sola conexión/cursor MSSQL para TODOS los socios: antes
+        ``check_access`` abría (y cerraba) una conexión por socio, generando
+        miles de handshakes TLS contra el SQL Server que saturaban la base y la
+        red. Si el llamador ya tiene un cursor abierto lo pasa; si no, se abre
+        una única conexión para toda la corrida.
+        """
+        ids = list(ids)
+        if not ids:
+            return 0
         service = service or XsysAccessCheckService()
+        if cursor is not None:
+            return self._recompute_whitelist(ids, service, cursor)
+        with xsys_cursor(self.config) as own_cursor:
+            return self._recompute_whitelist(ids, service, own_cursor)
+
+    def _recompute_whitelist(self, ids: Sequence[int], service, cursor) -> int:
+        # Lotes con pausa breve para no saturar la conexión MSSQL.
+        batch = int(self.config.get("WHITELIST_BATCH_SIZE", 250) or 0)
+        pause = float(self.config.get("WHITELIST_BATCH_PAUSE", 0.15) or 0)
         count = 0
-        for id_cliente in ids:
+        for i, id_cliente in enumerate(ids):
             try:
-                res = compute_habilitacion(id_cliente, service=service)
+                res = compute_habilitacion(id_cliente, service=service, cursor=cursor)
             except Exception as exc:  # pragma: no cover - depende de datos/red
                 logger.warning("whitelist recompute fallo cliente %s: %s", id_cliente, exc)
                 continue
             persist_whitelist(id_cliente, res)
             count += 1
+            if batch and pause and (i + 1) % batch == 0:
+                time.sleep(pause)
         return count
 
     # --------------------------------------------------------------- comandos
@@ -486,12 +525,35 @@ class XsysSyncService:
         kwargs["synced_at"] = timezone.now()
         return kwargs
 
+    def purge_old_movements(self) -> int:
+        """Elimina del espejo local los movimientos fuera de la ventana de retención.
+
+        Mantiene ``ExternalAccessLogEntry`` acotado a los últimos
+        ``retention_days`` días (default 7). Devuelve la cantidad borrada.
+        """
+        if not self.retention_days:
+            return 0
+        cutoff = timezone.now() - timedelta(days=self.retention_days)
+        deleted, _ = ExternalAccessLogEntry.objects.filter(fecha__lt=cutoff).delete()
+        return deleted
+
     def sync_movements(self, cursor, *, limit: int | None = None) -> int:
-        """Lee CD_ES por high-water Id_ES y persiste en ExternalAccessLogEntry."""
+        """Lee CD_ES por high-water Id_ES y persiste en ExternalAccessLogEntry.
+
+        Solo se espejan los movimientos dentro de la ventana de retención
+        (``retention_days`` días): la cláusula ``Fecha >=`` evita traer el
+        histórico completo en el backfill inicial (Id_ES > 0) y en cada poll.
+        """
         last = SyncState.get("cd_es").last_id or 0
         top = f"TOP {int(limit)} " if limit else ""
+        fecha_filter = (
+            f" AND Fecha >= DATEADD(DAY, -{int(self.retention_days)}, GETDATE())"
+            if self.retention_days
+            else ""
+        )
         cursor.execute(
-            f"SELECT {top}{_CDES_SELECT} FROM CD_ES WHERE Id_ES > ? ORDER BY Id_ES",
+            f"SELECT {top}{_CDES_SELECT} FROM CD_ES "
+            f"WHERE Id_ES > ?{fecha_filter} ORDER BY Id_ES",
             (last,),
         )
         total = 0
@@ -551,4 +613,5 @@ class XsysSyncService:
             SyncState.advance("novedades", last_id=new_last, rows=stats["novedades"])
 
             stats["movimientos"] = self.sync_movements(cursor)
+            stats["movimientos_purgados"] = self.purge_old_movements()
         return stats

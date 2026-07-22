@@ -21,6 +21,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get purge -y --auto-remove curl gnupg apt-transport-https \
     && rm -rf /var/lib/apt/lists/*
 
+# --- OpenSSL: permitir el TLS legacy del SQL Server 2014 de xSys ---
+# El ODBC Driver 18 sobre OpenSSL 3 (Debian 12) rechaza por SECLEVEL=2 las firmas
+# SHA1 del certificado del MSSQL viejo (error "legacy sigalg disallowed"). El login
+# de SQL siempre viaja cifrado, así que aun con Encrypt=no hay que bajar el nivel.
+RUN sed -i '/^\[openssl_init\]/a ssl_conf = ssl_sect' /etc/ssl/openssl.cnf \
+    && printf '\n[ssl_sect]\nsystem_default = system_default_sect\n\n[system_default_sect]\nCipherString = DEFAULT:@SECLEVEL=0\nMinProtocol = TLSv1\n' >> /etc/ssl/openssl.cnf
+
 WORKDIR /app
 
 # --- Dependencias Python (capa cacheable) ---

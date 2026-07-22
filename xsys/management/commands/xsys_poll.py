@@ -42,11 +42,19 @@ class Command(BaseCommand):
                     continue
 
                 cursor = conn.cursor()
+                last_purge = time.monotonic()
                 try:
                     while True:
                         n = service.sync_movements(cursor)
                         if n:
                             self.stdout.write(f"+{n} movimientos")
+                        # Purga horaria de la ventana de retención (CD_ES última
+                        # semana), self-healing aunque el sync de 6h no corra.
+                        if time.monotonic() - last_purge >= 3600:
+                            purged = service.purge_old_movements()
+                            if purged:
+                                self.stdout.write(f"-{purged} movimientos fuera de ventana")
+                            last_purge = time.monotonic()
                         time.sleep(interval)
                 except Exception as exc:  # pragma: no cover - caída de conexión
                     self.stderr.write(f"Error en el poll ({exc}); reconectando en {reconnect_delay}s")

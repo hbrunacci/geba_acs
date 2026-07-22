@@ -15,6 +15,16 @@ def _get_int_env(name: str, default: int | None = None) -> int | None:
         return default
 
 
+def _get_float_env(name: str, default: float | None = None) -> float | None:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-change-me")
 
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
@@ -204,6 +214,13 @@ MSSQL_XSYS = {
     # (default: Cuota Social = acceso 22).
     "WHITELIST_ACCESO": _get_int_env("MSSQL_XSYS_WHITELIST_ACCESO", 22),
     "WHITELIST_CONTROLADOR": _get_int_env("MSSQL_XSYS_WHITELIST_CONTROLADOR", 0) or None,
+    # Ventana de retención local de CD_ES: solo se espejan (y se conservan) los
+    # movimientos de los últimos N días. Default 7 (última semana). 0 = sin límite.
+    "CD_ES_RETENTION_DAYS": _get_int_env("MSSQL_XSYS_CD_ES_RETENTION_DAYS", 7),
+    # Recálculo de whitelist: reusa UNA conexión MSSQL para todos los socios y
+    # procesa en lotes con una pausa breve entre lotes para no saturar la base.
+    "WHITELIST_BATCH_SIZE": _get_int_env("MSSQL_XSYS_WHITELIST_BATCH_SIZE", 250),
+    "WHITELIST_BATCH_PAUSE": _get_float_env("MSSQL_XSYS_WHITELIST_BATCH_PAUSE", 0.15),
 }
 
 # Días de vencimiento de la cuota (gracia). El estatuto bloquea al acumular 2
