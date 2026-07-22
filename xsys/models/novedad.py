@@ -11,7 +11,7 @@ class XsysNovedad(models.Model):
     """
 
     id_novedad = models.IntegerField(primary_key=True)
-    id_cliente = models.IntegerField(db_index=True)
+    id_cliente = models.IntegerField(db_index=True, null=True, blank=True)
     fecha = models.DateTimeField(null=True, blank=True)
     estado_origen = models.CharField(max_length=1, blank=True, default="")
     tipo = models.CharField(max_length=1, blank=True, default="")
