@@ -1,4 +1,5 @@
 from .biostar_config import BioStar2Config
+from .biostar_event import BiostarAccessEvent
 from .biostart_user import BioStarUser
 from .biostar_device_group import BioStarDeviceGroup
 from .device import BioStarDevice
@@ -12,6 +13,7 @@ from .models import (
 
 __all__ = [
     "BioStar2Config",
+    "BiostarAccessEvent",
     "BioStarDevice",
     "BioStarUser",
     "ExternalAccessLogEntry",

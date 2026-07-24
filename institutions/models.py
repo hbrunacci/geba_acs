@@ -135,7 +135,12 @@ class DoorTurnstileGroup(models.Model):
         "institutions.AccessDoor", on_delete=models.CASCADE, related_name="turnstile_groups"
     )
     nombre = models.CharField(max_length=60)
+    # Controladores xSys (molinetes Intelektron) que alimentan esta columna.
     id_controladores = models.JSONField(default=list, blank=True)
+    # Faciales BioStar puntuales (device_id) que alimentan esta columna. Es la
+    # única forma de mostrar UN facial específico, porque en CD_ES todos los
+    # faciales colapsan en un solo controlador. Ver access_control.BiostarAccessEvent.
+    biostar_device_ids = models.JSONField(default=list, blank=True)
     orden = models.IntegerField(default=0)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)

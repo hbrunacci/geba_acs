@@ -109,5 +109,28 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Poller del log de eventos de BioStar (accesos faciales por-equipo): única
+  # fuente con identidad de facial, ya que en CD_ES colapsan en un controlador.
+  biostar-poller:
+    build: .
+    image: geba_acs-web:latest
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acs}
+      POSTGRES_USER: ${POSTGRES_USER:-acs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acs}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      DJANGO_DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
+    command: ["python", "manage.py", "biostar_poll", "--interval", "3"]
+    # Código en vivo: `docker compose restart biostar-poller` aplica cambios sin rebuild.
+    volumes:
+      - .:/app
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:

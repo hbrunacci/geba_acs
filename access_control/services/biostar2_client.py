@@ -294,6 +294,30 @@ class BioStar2Client:
         payload = {"DeviceCollection": {"rows": [{"id": str(device_id)}]}}
         return self.request("POST", "/api/devices/unlock", json=payload).json()
 
+    def event_types(self) -> dict[str, str]:
+        """Catálogo de tipos de evento de BioStar: {code(str): name}."""
+        d = self.request("GET", "/api/event_types").json()
+        rows = (d.get("EventTypeCollection") or d).get("rows") or []
+        return {str(r.get("code")): (r.get("name") or "") for r in rows}
+
+    def events_search(self, *, device_id=None, limit: int = 200, descending: bool = True) -> list[dict]:
+        """Busca eventos en el log de BioStar (New Local API).
+
+        Si se pasa ``device_id`` filtra por ese equipo (operator 0 = igual, la
+        única forma que funciona; el 'in' por tipo de evento no está soportado).
+        El llamador clasifica por tipo de evento (ver services.biostar_events).
+        """
+        query: dict[str, Any] = {
+            "limit": int(limit),
+            "orders": [{"column": "datetime", "descending": bool(descending)}],
+        }
+        if device_id is not None:
+            query["conditions"] = [
+                {"column": "device_id.id", "operator": 0, "values": [str(device_id)]}
+            ]
+        d = self.request("POST", "/api/events/search", json={"Query": query}).json()
+        return (d.get("EventCollection") or d).get("rows") or []
+
     def list_doors(self) -> dict:
         """Lista todas las puertas configuradas en BioStar 2."""
         return self.request("GET", "/api/doors").json()
