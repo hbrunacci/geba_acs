@@ -123,7 +123,7 @@ services:
       POSTGRES_PORT: "5432"
       DJANGO_DEBUG: "0"
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
-    command: ["python", "manage.py", "biostar_poll", "--interval", "3"]
+    command: ["python", "manage.py", "biostar_poll", "--interval", "1"]
     # Código en vivo: `docker compose restart biostar-poller` aplica cambios sin rebuild.
     volumes:
       - .:/app

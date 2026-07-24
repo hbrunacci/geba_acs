@@ -62,40 +62,79 @@ def _int_or_none(value):
         return None
 
 
-def ingest_device_events(client, event_types: dict, device_id, device_name: str = "", *, limit: int = 200) -> int:
-    """Trae los eventos de un facial y persiste solo los de ACCESO. Devuelve nuevos guardados."""
+def _store_event(event_types: dict, e: dict) -> bool:
+    """Persiste UN evento si es de acceso. Devuelve True si creó una fila."""
     from access_control.models import BiostarAccessEvent  # import diferido
 
-    rows = client.events_search(device_id=device_id, limit=limit)
+    code = (e.get("event_type_id") or {}).get("code")
+    name = event_types.get(str(code), "")
+    es_acceso, permitido = clasificar_evento(name)
+    if not es_acceso:
+        return False
+    bid = str(e.get("id") or "")
+    if not bid:
+        return False
+    fecha = parse_server_datetime(e.get("server_datetime")) or parse_server_datetime(e.get("datetime"))
+    if fecha is None:
+        return False
+    dev = e.get("device_id") or {}
+    _, created = BiostarAccessEvent.objects.get_or_create(
+        biostar_id=bid,
+        defaults={
+            "device_id": _int_or_none(dev.get("id")) or 0,
+            "device_name": dev.get("name") or "",
+            "id_cliente": _int_or_none((e.get("user_id") or {}).get("user_id")),
+            "fecha": fecha,
+            "event_code": _int_or_none(code),
+            "event_name": name,
+            "permitido": permitido,
+        },
+    )
+    return created
+
+
+def ingest_new_events(client, event_types: dict, last_id: int, *, limit: int = 200, max_pages: int = 50) -> tuple[int, int]:
+    """Ingesta INCREMENTAL: trae solo eventos con ``id`` > ``last_id`` (todos los
+    equipos), en orden de ``id`` ascendente, y persiste los de acceso.
+
+    Devuelve ``(nuevos, nuevo_last_id)``. ``nuevo_last_id`` avanza con el id de
+    TODOS los eventos vistos (incluido el ruido de sync), para no re-escanearlos.
+    Pagina por el propio high-water (id > last) hasta agotar o ``max_pages``.
+    """
     nuevos = 0
+    cur = int(last_id or 0)
+    for _ in range(max_pages):
+        rows = client.events_search(after_id=cur, limit=limit, order_column="id", descending=False)
+        if not rows:
+            break
+        # Garantizar orden por id ascendente (no depender solo del server).
+        rows.sort(key=lambda r: _int_or_none(r.get("id")) or 0)
+        for e in rows:
+            eid = _int_or_none(e.get("id"))
+            if eid is None or eid <= cur:
+                continue
+            if _store_event(event_types, e):
+                nuevos += 1
+            cur = eid
+        if len(rows) < limit:
+            break
+    return nuevos, cur
+
+
+def ingest_backfill(client, event_types: dict, *, limit: int = 1000) -> tuple[int, int]:
+    """Arranque en frío: trae los ``limit`` eventos más nuevos (por id desc) y
+    persiste los de acceso. Evita traer TODO el histórico la primera vez.
+    Devuelve ``(nuevos, max_id)`` para sembrar el high-water."""
+    rows = client.events_search(limit=limit, order_column="id", descending=True)
+    nuevos = 0
+    mx = 0
     for e in rows:
-        code = (e.get("event_type_id") or {}).get("code")
-        name = event_types.get(str(code), "")
-        es_acceso, permitido = clasificar_evento(name)
-        if not es_acceso:
-            continue
-        bid = str(e.get("id") or "")
-        if not bid:
-            continue
-        fecha = parse_server_datetime(e.get("server_datetime")) or parse_server_datetime(e.get("datetime"))
-        if fecha is None:
-            continue
-        dev = e.get("device_id") or {}
-        _, created = BiostarAccessEvent.objects.get_or_create(
-            biostar_id=bid,
-            defaults={
-                "device_id": _int_or_none(dev.get("id")) or _int_or_none(device_id) or 0,
-                "device_name": dev.get("name") or device_name or "",
-                "id_cliente": _int_or_none((e.get("user_id") or {}).get("user_id")),
-                "fecha": fecha,
-                "event_code": _int_or_none(code),
-                "event_name": name,
-                "permitido": permitido,
-            },
-        )
-        if created:
+        eid = _int_or_none(e.get("id")) or 0
+        if eid > mx:
+            mx = eid
+        if _store_event(event_types, e):
             nuevos += 1
-    return nuevos
+    return nuevos, mx
 
 
 def purge_old(days: int) -> int:

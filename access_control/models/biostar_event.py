@@ -43,3 +43,26 @@ class BiostarAccessEvent(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover - representación auxiliar
         return f"{self.device_name} · cli {self.id_cliente} @ {self.fecha:%Y-%m-%d %H:%M:%S}"
+
+
+class BiostarPollState(models.Model):
+    """High-water del poller de eventos BioStar: último ``id`` de evento procesado.
+
+    Fila única (singleton). Permite traer en cada ciclo solo lo nuevo
+    (``id`` > last_event_id) en vez de re-escanear los últimos N. Se avanza con
+    el id de TODOS los eventos vistos (incluido el ruido), no solo los de acceso.
+    """
+
+    last_event_id = models.BigIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "biostar_poll_state"
+
+    @classmethod
+    def get_solo(cls) -> "BiostarPollState":
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self) -> str:  # pragma: no cover - representación auxiliar
+        return f"BiostarPollState(last_event_id={self.last_event_id})"

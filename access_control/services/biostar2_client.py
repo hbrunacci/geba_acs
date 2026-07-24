@@ -300,21 +300,36 @@ class BioStar2Client:
         rows = (d.get("EventTypeCollection") or d).get("rows") or []
         return {str(r.get("code")): (r.get("name") or "") for r in rows}
 
-    def events_search(self, *, device_id=None, limit: int = 200, descending: bool = True) -> list[dict]:
+    def events_search(
+        self,
+        *,
+        device_id=None,
+        after_id=None,
+        limit: int = 200,
+        order_column: str = "id",
+        descending: bool = False,
+    ) -> list[dict]:
         """Busca eventos en el log de BioStar (New Local API).
 
-        Si se pasa ``device_id`` filtra por ese equipo (operator 0 = igual, la
-        única forma que funciona; el 'in' por tipo de evento no está soportado).
-        El llamador clasifica por tipo de evento (ver services.biostar_events).
+        - ``device_id``: filtra por ese equipo (operator 0 = igual).
+        - ``after_id``: solo eventos con id ESTRICTAMENTE mayor (operator 5).
+          Es la clave del poll incremental: traer solo lo nuevo.
+
+        Se ordena por ``id`` (secuencia real de inserción), NO por ``datetime``:
+        el datetime del evento viene desfasado por la zona del equipo y ordenar
+        por él se saltea eventos. El llamador clasifica por tipo de evento.
         """
+        conditions = []
+        if device_id is not None:
+            conditions.append({"column": "device_id.id", "operator": 0, "values": [str(device_id)]})
+        if after_id is not None:
+            conditions.append({"column": "id", "operator": 5, "values": [str(after_id)]})
         query: dict[str, Any] = {
             "limit": int(limit),
-            "orders": [{"column": "datetime", "descending": bool(descending)}],
+            "orders": [{"column": order_column, "descending": bool(descending)}],
         }
-        if device_id is not None:
-            query["conditions"] = [
-                {"column": "device_id.id", "operator": 0, "values": [str(device_id)]}
-            ]
+        if conditions:
+            query["conditions"] = conditions
         d = self.request("POST", "/api/events/search", json={"Query": query}).json()
         return (d.get("EventCollection") or d).get("rows") or []
 

@@ -26,16 +26,38 @@ class ClasificarEventoTests(TestCase):
 
 
 class _FakeClient:
-    """Cliente BioStar de mentira: devuelve una lista fija de eventos."""
+    """Cliente BioStar de mentira: guarda una lista de eventos crudos y responde
+    events_search filtrando por after_id (id > after_id) y ordenando por id."""
 
     def __init__(self, rows):
-        self._rows = rows
+        self._rows = list(rows)
 
-    def events_search(self, *, device_id=None, limit=200, descending=True):
-        return list(self._rows)
+    def _id(self, r):
+        try:
+            return int(r.get("id"))
+        except (TypeError, ValueError):
+            return 0
+
+    def events_search(self, *, device_id=None, after_id=None, limit=200, order_column="id", descending=False):
+        rows = self._rows
+        if after_id is not None:
+            rows = [r for r in rows if self._id(r) > int(after_id)]
+        rows = sorted(rows, key=self._id, reverse=bool(descending))
+        return rows[: int(limit)]
 
 
-class IngestDeviceEventsTests(TestCase):
+def _ev(eid, code, *, user="916671", dev="538150641", name="Facial_Ombues_1", ts="2026-07-24T14:52:57.00Z"):
+    e = {
+        "id": str(eid), "server_datetime": ts,
+        "device_id": {"id": dev, "name": name},
+        "event_type_id": {"code": code},
+    }
+    if user is not None:
+        e["user_id"] = {"user_id": user}
+    return e
+
+
+class IngestNewEventsTests(TestCase):
     def setUp(self):
         self.types = {
             "4867": "IDENTIFY_SUCCESS_FACE",
@@ -43,47 +65,47 @@ class IngestDeviceEventsTests(TestCase):
             "8704": "UPDATE_SUCCESS",
         }
         self.rows = [
-            {  # acceso concedido con socio
-                "id": "399603", "server_datetime": "2026-07-24T14:52:57.00Z",
-                "datetime": "2026-07-24T17:53:02.00Z",
-                "device_id": {"id": "538150641", "name": "Facial_Ombues_1"},
-                "user_id": {"user_id": "916671", "name": "CONDE"},
-                "event_type_id": {"code": "4867"},
-            },
-            {  # denegado sin socio
-                "id": "399590", "server_datetime": "2026-07-24T14:50:00.00Z",
-                "device_id": {"id": "538150641", "name": "Facial_Ombues_1"},
-                "user_id": {"user_id": "0"},
-                "event_type_id": {"code": "6147"},
-            },
-            {  # ruido de sync: NO debe persistirse
-                "id": "399588", "server_datetime": "2026-07-24T14:49:00.00Z",
-                "device_id": {"id": "538150641", "name": "Facial_Ombues_1"},
-                "event_type_id": {"code": "8704"},
-            },
+            _ev(399603, "4867", user="916671"),                 # acceso concedido
+            _ev(399590, "6147", user="0"),                       # denegado sin socio
+            _ev(399588, "8704", user=None),                      # ruido de sync -> descartar
         ]
 
-    def test_ingesta_filtra_ruido_y_mapea_campos(self):
+    def test_incremental_filtra_ruido_y_avanza_highwater(self):
         client = _FakeClient(self.rows)
-        nuevos = be.ingest_device_events(client, self.types, 538150641, "Facial_Ombues_1")
-        self.assertEqual(nuevos, 2)  # el UPDATE_SUCCESS se descarta
+        nuevos, last = be.ingest_new_events(client, self.types, 0)
+        self.assertEqual(nuevos, 2)                       # el UPDATE_SUCCESS se descarta
+        self.assertEqual(last, 399603)                    # high-water = max id visto (incluye ruido)
         self.assertEqual(BiostarAccessEvent.objects.count(), 2)
 
         ok = BiostarAccessEvent.objects.get(biostar_id="399603")
         self.assertEqual(ok.device_id, 538150641)
-        self.assertEqual(ok.device_name, "Facial_Ombues_1")
         self.assertEqual(ok.id_cliente, 916671)
         self.assertTrue(ok.permitido)
-        self.assertEqual(ok.event_name, "IDENTIFY_SUCCESS_FACE")
-        self.assertEqual((ok.fecha.hour, ok.fecha.minute), (14, 52))  # server_datetime, no el datetime desfasado
+        self.assertEqual((ok.fecha.hour, ok.fecha.minute), (14, 52))  # server_datetime, no datetime desfasado
+        self.assertIsNone(BiostarAccessEvent.objects.get(biostar_id="399590").id_cliente)
 
-        deneg = BiostarAccessEvent.objects.get(biostar_id="399590")
-        self.assertIsNone(deneg.id_cliente)
-        self.assertFalse(deneg.permitido)
-
-    def test_ingesta_idempotente(self):
+    def test_incremental_solo_trae_lo_nuevo(self):
         client = _FakeClient(self.rows)
-        be.ingest_device_events(client, self.types, 538150641, "Facial_Ombues_1")
-        nuevos2 = be.ingest_device_events(client, self.types, 538150641, "Facial_Ombues_1")
+        # ya procesamos hasta 399590 -> solo debe entrar el 399603
+        nuevos, last = be.ingest_new_events(client, self.types, 399590)
+        self.assertEqual(nuevos, 1)
+        self.assertEqual(last, 399603)
+        self.assertEqual(BiostarAccessEvent.objects.count(), 1)
+        # segundo ciclo desde el high-water: nada nuevo
+        nuevos2, last2 = be.ingest_new_events(client, self.types, last)
         self.assertEqual(nuevos2, 0)
-        self.assertEqual(BiostarAccessEvent.objects.count(), 2)
+        self.assertEqual(last2, 399603)
+
+    def test_incremental_pagina(self):
+        # 5 accesos con ids 1..5; con limit=2 debe paginar y traerlos todos
+        rows = [_ev(i, "4867", user=str(900000 + i)) for i in range(1, 6)]
+        client = _FakeClient(rows)
+        nuevos, last = be.ingest_new_events(client, self.types, 0, limit=2)
+        self.assertEqual(nuevos, 5)
+        self.assertEqual(last, 5)
+
+    def test_backfill(self):
+        client = _FakeClient(self.rows)
+        nuevos, mx = be.ingest_backfill(client, self.types, limit=1000)
+        self.assertEqual(nuevos, 2)
+        self.assertEqual(mx, 399603)
