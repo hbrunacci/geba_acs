@@ -158,6 +158,7 @@
             <dt>DNI</dt><dd id="m-dni">—</dd>
             <dt>Lugar de acceso</dt><dd id="m-lugar">—</dd>
             <dt>Lectura</dt><dd id="m-lectura" style="display:flex;align-items:center;gap:6px">—</dd>
+            <dt id="m-facial-dt">Equipo facial</dt><dd id="m-facial">—</dd>
             <dt>Categoría</dt><dd id="m-cat">—</dd>
             <dt>Última cuota paga</dt><dd id="m-cuota">—</dd>
             <dt>Fecha / hora</dt><dd id="m-fecha">—</dd>
@@ -375,6 +376,10 @@
       document.getElementById("m-dni").textContent = ev.doc_nro || "—";
       document.getElementById("m-lugar").textContent = (currentPuertaDesc ? currentPuertaDesc + " · " : "") + (molinete || "");
       document.getElementById("m-lectura").innerHTML = lecturaIcono(ev) + " " + (ev.lectura === "facial" ? "Facial" : "Credencial");
+      var fac = ev.facial_equipo || "";
+      document.getElementById("m-facial-dt").style.display = fac ? "" : "none";
+      document.getElementById("m-facial").style.display = fac ? "" : "none";
+      document.getElementById("m-facial").textContent = fac || "—";
       document.getElementById("m-cat").textContent = ev.categoria || "—";
       document.getElementById("m-cuota").textContent = ev.ult_cuota_paga ? fechaCorta(ev.ult_cuota_paga) : "—";
       document.getElementById("m-fecha").textContent = fechaHora(ev.fecha);

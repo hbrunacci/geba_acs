@@ -8,6 +8,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from access_control.models import BiostarAccessEvent
 from access_control.models.models import ExternalAccessLogEntry
 from common.roles import PuedeConfigPuertas
 from institutions.models import AccessDoor, DoorController, DoorTurnstileGroup
@@ -272,6 +273,48 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
     }
 
 
+def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set) -> dict:
+    """Payload de un acceso facial BioStar, con la MISMA forma que _evento_payload
+    para poder fusionarlo en la misma columna del visor. La identidad del equipo
+    (``facial_equipo``) es el dato que xSys no tiene: viene del log de BioStar."""
+    socio = socios.get(ev.id_cliente)
+    tiene_foto = ev.id_cliente in fotos
+    permitido = bool(ev.permitido)
+    al_dia = cuota_al_dia(socio.ult_cuota_paga) if socio else False
+    if permitido and not al_dia:
+        estado, mensaje = "anomalia", "Acceso Concedido · Cuota Vencida"
+    elif not permitido:
+        estado, mensaje = "no", "Acceso Denegado"
+    elif not al_dia:
+        estado, mensaje = "no", "Cuota Vencida"
+    else:
+        estado, mensaje = "ok", "Acceso Concedido"
+    foto_url = f"/api/xsys/socios/{ev.id_cliente}/foto/" if tiene_foto else None
+    return {
+        # id_es negativo: no colisiona con los external_id (positivos) de xSys.
+        "id_es": -ev.id,
+        "fecha": ev.fecha.isoformat() if ev.fecha else None,
+        "resultado": "S" if permitido else "N",
+        "permitido": permitido,
+        "cuota_al_dia": al_dia,
+        "estado": estado,
+        "lectura": "facial",
+        "mensaje": mensaje,
+        "mensaje_original": ev.event_name,
+        "id_cliente": ev.id_cliente,
+        "doc_nro": (socio.doc_nro if socio else None),
+        "nombre": (
+            (f"{socio.apellido}, {socio.nombre}".strip(", ") or socio.razon_social)
+            if socio else ""
+        ),
+        "categoria": (socio.categoria if socio else ""),
+        "ult_cuota_paga": (socio.ult_cuota_paga.isoformat() if socio and socio.ult_cuota_paga else None),
+        "foto_url": foto_url,
+        "foto_thumb_url": (foto_url + "?thumb=1") if foto_url else None,
+        "facial_equipo": ev.device_name,
+    }
+
+
 def _puertas_disponibles() -> list[dict]:
     """Puertas locales activas (para la hamburguesa del monitor)."""
     return [
@@ -329,7 +372,9 @@ def _columnas_de_puerta(door: AccessDoor) -> list[dict]:
     grupos = list(door.turnstile_groups.order_by("orden", "id"))
     if grupos:
         return [
-            {"key": f"g{g.id}", "nombre": g.nombre, "controladores": [int(c) for c in (g.id_controladores or [])]}
+            {"key": f"g{g.id}", "nombre": g.nombre,
+             "controladores": [int(c) for c in (g.id_controladores or [])],
+             "biostar_devices": [int(d) for d in (g.biostar_device_ids or [])]}
             for g in grupos
         ]
     asignados = list(door.controllers.order_by("orden", "id"))
@@ -341,7 +386,8 @@ def _columnas_de_puerta(door: AccessDoor) -> list[dict]:
     for a in asignados:
         x = descs.get(a.id_controlador)
         nombre = x.descripcion if (x and x.descripcion) else f"Ctrl {a.id_controlador}"
-        cols.append({"key": f"c{a.id_controlador}", "nombre": nombre, "controladores": [a.id_controlador]})
+        cols.append({"key": f"c{a.id_controlador}", "nombre": nombre,
+                     "controladores": [a.id_controlador], "biostar_devices": []})
     return cols
 
 
@@ -372,22 +418,33 @@ class PuertaEstadoAPI(APIView):
         # El monitor muestra solo los accesos del día en curso (hora local).
         hoy = timezone.localdate()
 
-        # Eventos por columna (por conjunto de controladores del molinete).
-        eventos_por_col = []
+        # Por columna: eventos xSys (por controlador) + accesos faciales BioStar
+        # (por device). Los faciales son la única fuente con identidad por-equipo.
+        xsys_por_col = []
+        facial_por_col = []
         for cd in cols_def:
             ctrls = cd["controladores"]
-            evs = list(
+            xs = list(
                 ExternalAccessLogEntry.objects
                 .filter(id_controlador__in=ctrls, tipo="E", fecha__date=hoy)
                 .order_by("-external_id")[: HISTORIAL_LEN + 1]
             ) if ctrls else []
-            eventos_por_col.append(evs)
+            devs = cd.get("biostar_devices") or []
+            fx = list(
+                BiostarAccessEvent.objects
+                .filter(device_id__in=devs, id_cliente__isnull=False, fecha__date=hoy)
+                .order_by("-fecha")[: HISTORIAL_LEN + 1]
+            ) if devs else []
+            xsys_por_col.append(xs)
+            facial_por_col.append(fx)
 
-        # Resolución en lote de socios / fotos / motivos (evita N+1).
-        todos = [e for evs in eventos_por_col for e in evs]
-        cids = {e.id_cliente for e in todos if e.id_cliente}
-        mids = {e.id_cd_motivo for e in todos if e.id_cd_motivo}
-        ctrl_ids = {e.id_controlador for e in todos if e.id_controlador}
+        # Resolución en lote de socios / fotos / motivos (ambas fuentes; evita N+1).
+        todos_x = [e for evs in xsys_por_col for e in evs]
+        todos_f = [e for evs in facial_por_col for e in evs]
+        cids = {e.id_cliente for e in todos_x if e.id_cliente}
+        cids |= {e.id_cliente for e in todos_f if e.id_cliente}
+        mids = {e.id_cd_motivo for e in todos_x if e.id_cd_motivo}
+        ctrl_ids = {e.id_controlador for e in todos_x if e.id_controlador}
         socios = {s.id_cliente: s for s in XsysSocio.objects.filter(pk__in=cids)}
         fotos = set(XsysSocioFoto.objects.filter(id_cliente__in=cids).values_list("id_cliente", flat=True))
         # Fallback async: los socios sin foto local se buscan en xSys en segundo
@@ -397,13 +454,19 @@ class PuertaEstadoAPI(APIView):
         ctrls = {c.id_controlador: c for c in XsysControlador.objects.filter(pk__in=ctrl_ids)}
 
         columnas = []
-        for cd, evs in zip(cols_def, eventos_por_col):
+        for cd, xs, fx in zip(cols_def, xsys_por_col, facial_por_col):
+            # (fecha, payload) para poder ordenar la mezcla por tiempo (desc).
+            items = [(e.fecha, _evento_payload(e, socios, fotos, motivos, ctrls)) for e in xs]
+            items += [(e.fecha, _facial_evento_payload(e, socios, fotos)) for e in fx]
+            items.sort(key=lambda t: t[0], reverse=True)
+            payloads = [p for _, p in items[: HISTORIAL_LEN + 1]]
             columnas.append({
                 "key": cd["key"],
                 "nombre": cd["nombre"],
                 "controladores": cd["controladores"],
-                "ultimo": _evento_payload(evs[0], socios, fotos, motivos, ctrls) if evs else None,
-                "historial": [_evento_payload(e, socios, fotos, motivos, ctrls) for e in evs[1:]],
+                "biostar_devices": cd.get("biostar_devices") or [],
+                "ultimo": payloads[0] if payloads else None,
+                "historial": payloads[1:],
             })
         return Response({
             "configurada": True,

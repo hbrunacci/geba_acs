@@ -265,6 +265,54 @@ class PuertaMonitorTests(TestCase):
     def test_buscar_sin_token_400(self):
         self.assertEqual(self.client.get("/api/xsys/accesos/buscar/?q=SIMOUR").status_code, 400)
 
+    def test_estado_merge_xsys_y_facial(self):
+        """La columna fusiona accesos xSys (por controlador) + faciales (por device)."""
+        from datetime import timezone as _utc
+        from access_control.models import BiostarAccessEvent
+
+        DoorTurnstileGroup.objects.create(
+            door=self.door, nombre="Ombues Mol1",
+            id_controladores=[59], biostar_device_ids=[538150641], orden=0,
+        )
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        self._ev(8000, 59)  # acceso xSys por credencial
+        BiostarAccessEvent.objects.create(
+            biostar_id="b1", device_id=538150641, device_name="Facial_Ombues_1",
+            id_cliente=944426, fecha=timezone.now().astimezone(_utc.utc),
+            permitido=True, event_name="IDENTIFY_SUCCESS_FACE",
+        )
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        col = next(c for c in d["columnas"] if c["nombre"] == "Ombues Mol1")
+        todos = ([col["ultimo"]] if col["ultimo"] else []) + col["historial"]
+        ides = [e["id_es"] for e in todos]
+        self.assertIn(8000, ides)                      # xSys presente
+        self.assertTrue(any(i < 0 for i in ides))      # facial presente (id_es negativo)
+        facial = next(e for e in todos if e["id_es"] < 0)
+        self.assertEqual(facial["lectura"], "facial")
+        self.assertEqual(facial["facial_equipo"], "Facial_Ombues_1")
+        self.assertEqual(facial["id_cliente"], 944426)
+        self.assertEqual(facial["nombre"], "SIMOUR, GERMAN")
+
+    def test_estado_facial_sin_socio_se_omite(self):
+        """Accesos faciales sin socio identificado (timeouts) no se muestran."""
+        from datetime import timezone as _utc
+        from access_control.models import BiostarAccessEvent
+
+        DoorTurnstileGroup.objects.create(
+            door=self.door, nombre="Ombues Mol1",
+            id_controladores=[], biostar_device_ids=[538150641], orden=0,
+        )
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        BiostarAccessEvent.objects.create(
+            biostar_id="b2", device_id=538150641, device_name="Facial_Ombues_1",
+            id_cliente=None, fecha=timezone.now().astimezone(_utc.utc),
+            permitido=False, event_name="AUTH_FAILED_TIMEOUT",
+        )
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        col = next(c for c in d["columnas"] if c["nombre"] == "Ombues Mol1")
+        self.assertIsNone(col["ultimo"])
+        self.assertEqual(col["historial"], [])
+
     def test_grupo_molinetes_con_faciales(self):
         """Un grupo puede mezclar controladores xSys + faciales BioStar puntuales."""
         admin = User.objects.create_superuser("admin2", password="pw")
