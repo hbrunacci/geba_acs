@@ -265,5 +265,44 @@ class PuertaMonitorTests(TestCase):
     def test_buscar_sin_token_400(self):
         self.assertEqual(self.client.get("/api/xsys/accesos/buscar/?q=SIMOUR").status_code, 400)
 
+    def test_grupo_molinetes_con_faciales(self):
+        """Un grupo puede mezclar controladores xSys + faciales BioStar puntuales."""
+        admin = User.objects.create_superuser("admin2", password="pw")
+        self.client.force_login(admin)
+        # crear grupo con un controlador del pool (59) y dos faciales BioStar
+        r = self.client.post(
+            "/api/xsys/config/molinetes/",
+            {"puerta_id": self.door.id, "nombre": "Ombues Mol1",
+             "id_controladores": [59], "biostar_device_ids": [538150641, "538205516", "x"]},
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 201)
+        data = r.json()
+        self.assertEqual(data["id_controladores"], [59])
+        self.assertEqual(data["biostar_device_ids"], [538150641, 538205516])  # 'x' descartado
+        # editar: reemplazar los faciales
+        mid = data["id"]
+        r = self.client.put(
+            "/api/xsys/config/molinetes/%d/" % mid,
+            {"biostar_device_ids": [538150641]}, content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["biostar_device_ids"], [538150641])
+
+    def test_catalogo_biostar_fallback_espejo(self):
+        """Sin BioStar en vivo, el catálogo cae al espejo local de eventos."""
+        from datetime import timezone as _utc
+        from access_control.models import BiostarAccessEvent
+        BiostarAccessEvent.objects.create(
+            biostar_id="e1", device_id=538150641, device_name="Facial_Ombues_1",
+            id_cliente=944426, fecha=timezone.now().astimezone(_utc.utc), permitido=True,
+        )
+        admin = User.objects.create_superuser("admin3", password="pw")
+        self.client.force_login(admin)
+        r = self.client.get("/api/xsys/config/biostar-devices/")
+        self.assertEqual(r.status_code, 200)
+        devs = r.json()["devices"]
+        self.assertTrue(any(d["device_id"] == 538150641 and d["name"] == "Facial_Ombues_1" for d in devs))
+
     def test_monitor_page_publico(self):
         self.assertEqual(self.client.get("/xsys/puerta/").status_code, 200)

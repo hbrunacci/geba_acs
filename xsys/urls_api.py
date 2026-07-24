@@ -3,6 +3,7 @@ from django.urls import path
 from xsys.api_views import (
     AccesoResolverAPI,
     AccesosBuscarAPI,
+    BiostarDevicesCatalogAPI,
     ControladoresXsysAPI,
     MolineteConfigDetailAPI,
     MolinetesAutoAPI,
@@ -31,6 +32,7 @@ urlpatterns = [
     path("xsys/config/puertas/<int:pid>/", PuertaConfigDetailAPI.as_view(), name="xsys_config_puerta_detail_api"),
     path("xsys/config/puertas/<int:pid>/controladores/", PuertaControladoresAPI.as_view(), name="xsys_config_puerta_controladores_api"),
     path("xsys/config/controladores-xsys/", ControladoresXsysAPI.as_view(), name="xsys_config_controladores_xsys_api"),
+    path("xsys/config/biostar-devices/", BiostarDevicesCatalogAPI.as_view(), name="xsys_config_biostar_devices_api"),
     path("xsys/config/molinetes/", MolinetesConfigAPI.as_view(), name="xsys_config_molinetes_api"),
     path("xsys/config/molinetes/auto/", MolinetesAutoAPI.as_view(), name="xsys_config_molinetes_auto_api"),
     path("xsys/config/molinetes/<int:mid>/", MolineteConfigDetailAPI.as_view(), name="xsys_config_molinete_detail_api"),

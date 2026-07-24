@@ -58,7 +58,10 @@
       <div class="card__header"><h5 class="card__title">3 · Nuevo grupo de molinetes (columna)</h5></div>
       <div class="card__body">
         <input id="nuevo-nombre" class="form-control form-control-sm mb-2" placeholder="Nombre de la columna (ej: Molinete 1)" />
+        <div class="small fw-semibold mb-1">Controladores xSys</div>
         <div id="nuevo-ctrls" class="mb-2 small text-muted">Asigná controladores en el paso 2.</div>
+        <div class="small fw-semibold mb-1">Faciales BioStar <span class="text-muted fw-normal">(opcional)</span></div>
+        <div id="nuevo-faciales" class="mb-2 small text-muted">—</div>
         <div class="d-flex gap-2">
           <button id="crear" class="btn btn-primary btn-sm">Crear columna</button>
           <button id="auto" class="btn btn-outline-secondary btn-sm">Auto: 1 columna por controlador</button>
@@ -88,6 +91,8 @@
   var catalogo = [];             // controladores xSys (catálogo del filtro actual)
   var pool = new Set();          // controladores asignados a la puerta (persiste entre filtros)
   var ctrlNames = {};            // id_controlador -> descripcion (para render de columnas)
+  var biostarDevices = [];       // catálogo de faciales BioStar
+  var biostarNames = {};         // device_id -> nombre (para render de columnas)
 
   // -- Paso 1: puertas ------------------------------------------------------
   function cargarAccesosEnSelect(sel, incluyeVacio) {
@@ -203,6 +208,15 @@
     }).join("");
   }
 
+  function renderNuevoFaciales() {
+    var cont = document.getElementById("nuevo-faciales");
+    if (!biostarDevices.length) { cont.innerHTML = '<div class="text-muted small">Sin faciales BioStar disponibles.</div>'; return; }
+    cont.innerHTML = biostarDevices.map(function (dv) {
+      var ipTxt = dv.ip ? ' <span class="text-muted">· ' + esc(dv.ip) + '</span>' : "";
+      return '<label class="d-inline-block small me-3"><input type="checkbox" class="new-facial" value="' + dv.device_id + '"> ' + esc(dv.name || ("#" + dv.device_id)) + ipTxt + '</label>';
+    }).join("");
+  }
+
   function cargarMolinetes() {
     jget(API + "/config/molinetes/?puerta_id=" + currentPuerta).then(function (d) {
       var cont = document.getElementById("molinetes");
@@ -210,8 +224,10 @@
       if (!ms.length) { cont.innerHTML = '<div class="text-muted small">No hay columnas. Usá "Auto" o creá una.</div>'; return; }
       cont.innerHTML = ms.map(function (m) {
         var ctrls = (m.id_controladores || []).map(function (id) { return esc(ctrlNames[id] || ("#" + id)); }).join(", ") || "—";
+        var faciales = (m.biostar_device_ids || []).map(function (id) { return esc(biostarNames[id] || ("#" + id)); });
+        var facTxt = faciales.length ? '<br><small class="text-primary">📷 ' + faciales.join(", ") + '</small>' : "";
         return '<div class="d-flex align-items-center justify-content-between border-bottom py-2">' +
-          '<div><strong>' + esc(m.nombre) + '</strong><br><small class="text-muted">' + ctrls + '</small></div>' +
+          '<div><strong>' + esc(m.nombre) + '</strong><br><small class="text-muted">' + ctrls + '</small>' + facTxt + '</div>' +
           '<button class="btn btn-outline-danger btn-sm" data-del="' + m.id + '">Eliminar</button></div>';
       }).join("");
       cont.querySelectorAll("[data-del]").forEach(function (b) {
@@ -225,10 +241,12 @@
   document.getElementById("crear").addEventListener("click", function () {
     var nombre = document.getElementById("nuevo-nombre").value.trim();
     var ids = Array.prototype.slice.call(document.querySelectorAll("#nuevo-ctrls input:checked")).map(function (el) { return parseInt(el.value, 10); });
+    var faciales = Array.prototype.slice.call(document.querySelectorAll("#nuevo-faciales input:checked")).map(function (el) { return parseInt(el.value, 10); });
     if (!nombre) { alert("Poné un nombre."); return; }
-    jsend(API + "/config/molinetes/", "POST", { puerta_id: currentPuerta, nombre: nombre, id_controladores: ids }).then(function () {
+    if (!ids.length && !faciales.length) { alert("Elegí al menos un controlador o un facial."); return; }
+    jsend(API + "/config/molinetes/", "POST", { puerta_id: currentPuerta, nombre: nombre, id_controladores: ids, biostar_device_ids: faciales }).then(function () {
       document.getElementById("nuevo-nombre").value = "";
-      renderNuevoCtrls();
+      renderNuevoCtrls(); renderNuevoFaciales();
       cargarMolinetes(); cargarPuertas();
     });
   });
@@ -244,6 +262,12 @@
     cargarAccesosEnSelect(document.getElementById("ctrl-acceso"), true);
     cargarPuertas();
   });
+  // Catálogo de faciales BioStar (para el selector del paso 3).
+  jget(API + "/config/biostar-devices/").then(function (d) {
+    biostarDevices = d.devices || [];
+    biostarDevices.forEach(function (dv) { biostarNames[dv.device_id] = dv.name; });
+    renderNuevoFaciales();
+  }).catch(function () { /* BioStar no disponible: el selector queda vacío */ });
 })();
 </script>
 {% endblock extra_js %}

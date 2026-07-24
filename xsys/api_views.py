@@ -589,6 +589,42 @@ class ControladoresXsysAPI(_ConfigPuertasAPIView):
         return Response({"controladores": ctrls, "accesos": accesos})
 
 
+class BiostarDevicesCatalogAPI(_ConfigPuertasAPIView):
+    """GET /api/xsys/config/biostar-devices/ → catálogo de faciales BioStar para
+    asignar a un grupo de molinetes. Trae en vivo de BioStar; si no responde,
+    cae al espejo local de eventos (equipos ya vistos)."""
+
+    def get(self, request):
+        try:
+            from access_control.services.biostar2_client import BioStar2Client
+
+            client = BioStar2Client.from_db_and_env()
+            d = client.list_devices()
+            rows = (d.get("DeviceCollection") or d).get("rows") or []
+            devices = []
+            for r in rows:
+                try:
+                    dev_id = int(r.get("id"))
+                except (TypeError, ValueError):
+                    continue
+                ip = r.get("ip_address") or (r.get("lan") or {}).get("ip") or ""
+                devices.append({"device_id": dev_id, "name": r.get("name") or "", "ip": ip})
+            devices.sort(key=lambda x: x["name"])
+            return Response({"devices": devices})
+        except Exception as exc:  # BioStar no disponible: fallback al espejo local
+            from access_control.models import BiostarAccessEvent
+
+            vistos = (
+                BiostarAccessEvent.objects.values("device_id", "device_name")
+                .distinct().order_by("device_name")
+            )
+            devices = [
+                {"device_id": v["device_id"], "name": v["device_name"], "ip": ""}
+                for v in vistos
+            ]
+            return Response({"devices": devices, "warning": f"BioStar no disponible: {exc}"})
+
+
 class PuertaControladoresAPI(_ConfigPuertasAPIView):
     """GET / PUT los controladores asignados a la puerta (el pool del paso 2).
 
@@ -641,7 +677,19 @@ class PuertaControladoresAPI(_ConfigPuertasAPIView):
 
 def _molinete_dict(m: DoorTurnstileGroup) -> dict:
     return {"id": m.id, "puerta_id": m.door_id, "nombre": m.nombre,
-            "id_controladores": m.id_controladores or [], "orden": m.orden}
+            "id_controladores": m.id_controladores or [],
+            "biostar_device_ids": m.biostar_device_ids or [], "orden": m.orden}
+
+
+def _parse_biostar_device_ids(value) -> list[int]:
+    """Normaliza una lista de device_id de BioStar a ints (dedup, sin vacíos)."""
+    out: list[int] = []
+    for v in (value or []):
+        try:
+            out.append(int(v))
+        except (TypeError, ValueError):
+            continue
+    return list(dict.fromkeys(out))
 
 
 class MolinetesConfigAPI(_ConfigPuertasAPIView):
@@ -677,8 +725,13 @@ class MolinetesConfigAPI(_ConfigPuertasAPIView):
         # Solo controladores que pertenezcan al pool de la puerta.
         pool = set(door.controllers.values_list("id_controlador", flat=True))
         ctrls = [c for c in ctrls if c in pool]
+        # Faciales BioStar: no tienen "pool", se guardan tal cual (device_id globales).
+        biostar = _parse_biostar_device_ids(d.get("biostar_device_ids"))
         orden = int(d.get("orden") or door.turnstile_groups.count())
-        m = DoorTurnstileGroup.objects.create(door=door, nombre=nombre, id_controladores=ctrls, orden=orden)
+        m = DoorTurnstileGroup.objects.create(
+            door=door, nombre=nombre, id_controladores=ctrls,
+            biostar_device_ids=biostar, orden=orden,
+        )
         return Response(_molinete_dict(m), status=status.HTTP_201_CREATED)
 
 
@@ -699,6 +752,8 @@ class MolineteConfigDetailAPI(_ConfigPuertasAPIView):
                 return Response({"detail": "id_controladores inválido."}, status=status.HTTP_400_BAD_REQUEST)
             pool = set(m.door.controllers.values_list("id_controlador", flat=True))
             m.id_controladores = [c for c in ctrls if c in pool]
+        if "biostar_device_ids" in d:
+            m.biostar_device_ids = _parse_biostar_device_ids(d.get("biostar_device_ids"))
         if "orden" in d:
             try:
                 m.orden = int(d.get("orden"))
