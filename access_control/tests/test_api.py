@@ -61,7 +61,8 @@ class PersonAPITestCase(BaseAPITestCase):
 
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
+        # Listados paginados (DEFAULT_PAGINATION_CLASS): los items van en "results".
+        self.assertEqual(len(response.data["results"]), 1)
 
         detail_url = reverse("person-detail", args=[person_id])
         response = self.client.patch(detail_url, {"phone": "+54 11 4444-0000"}, format="json")
@@ -108,7 +109,7 @@ class SiteAccessAPITestCase(BaseAPITestCase):
 
         list_response = self.client.get(device_url)
         self.assertEqual(list_response.status_code, 200)
-        self.assertEqual(len(list_response.data), 1)
+        self.assertEqual(len(list_response.data["results"]), 1)
 
 
 class EventAndWhitelistAPITestCase(BaseAPITestCase):
@@ -256,10 +257,13 @@ class ExternalAccessLogAPITestCase(BaseAPITestCase):
 
         response = self.client.get(self.url, {"limit": 1})
 
+        # La vista responde paginada (get_paginated_response): items en "results".
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["external_id"], self.entry_1.external_id)
-        self.assertEqual(response.data[0]["observacion"], "Ingreso habilitado")
+        results = response.data["results"]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(response.data["count"], 2)  # 1 en la página, 2 en total
+        self.assertEqual(results[0]["external_id"], self.entry_1.external_id)
+        self.assertEqual(results[0]["observacion"], "Ingreso habilitado")
 
     def test_invalid_limit(self):
         self.authenticate()
@@ -277,7 +281,7 @@ class ExternalAccessLogAPITestCase(BaseAPITestCase):
         response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 2)
+        self.assertEqual(len(response.data["results"]), 2)
 
 
 class Api3000TestAPITestCase(BaseAPITestCase):
@@ -745,6 +749,12 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         self.assertIn("<t>Si</t>", sheet_xml)
         self.assertIn("<t>constancia generada.</t>", sheet_xml)
 
+    # close_old_connections() es necesario en producción (cada worker corre en su
+    # propio hilo), pero dentro de un TestCase cierra la conexión del test: el
+    # bloque atómico tiene autocommit desactivado y Django lo lee como desajuste
+    # contra settings, así que cierra. Eso rompía la transacción y hacía fallar a
+    # los 8 tests que corren después en esta clase.
+    @patch("access_control.api.v1.api_views.close_old_connections")
     @patch("access_control.api.v1.api_views._save_anses_records")
     @patch("access_control.api.v1.api_views.AnsesVerificationService")
     @patch("access_control.api.v1.api_views._apply_candidate_filters")
@@ -755,6 +765,7 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         apply_filters_mock,
         service_cls,
         save_records_mock,
+        close_conns_mock,
     ):
         job_id = "job-secuencial"
         api_views.ANSES_BACKGROUND_JOBS[job_id] = {
@@ -791,6 +802,7 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         self.assertEqual(api_views.ANSES_BACKGROUND_JOBS[job_id]["status"], "completed")
         del api_views.ANSES_BACKGROUND_JOBS[job_id]
 
+    @patch("access_control.api.v1.api_views.close_old_connections")
     @patch("access_control.api.v1.api_views._save_anses_records")
     @patch("access_control.api.v1.api_views.AnsesVerificationService")
     @patch("access_control.api.v1.api_views._apply_candidate_filters")
@@ -801,6 +813,7 @@ class AnsesVerificationAPITestCase(BaseAPITestCase):
         apply_filters_mock,
         service_cls,
         save_records_mock,
+        close_conns_mock,
     ):
         job_id = "job-continua-con-error"
         api_views.ANSES_BACKGROUND_JOBS[job_id] = {

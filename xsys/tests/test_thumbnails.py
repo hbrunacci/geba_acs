@@ -23,7 +23,8 @@ class XsysThumbnailsCommandTests(TestCase):
 
         valida.refresh_from_db(); corrupta.refresh_from_db(); ya.refresh_from_db()
         self.assertTrue(valida.thumbnail)
-        self.assertEqual(valida.thumbnail[:2], b"\xff\xd8")  # JPEG
+        # bytes(): en Postgres un BinaryField vuelve como memoryview, no bytes.
+        self.assertEqual(bytes(valida.thumbnail)[:2], b"\xff\xd8")  # JPEG
         self.assertFalse(corrupta.thumbnail)                 # no se pudo generar
         self.assertEqual(bytes(ya.thumbnail), b"prev")       # no se tocó (ya tenía)
 
@@ -32,4 +33,4 @@ class XsysThumbnailsCommandTests(TestCase):
         call_command("xsys_thumbnails", "--all")
         ya.refresh_from_db()
         self.assertNotEqual(bytes(ya.thumbnail), b"prev")
-        self.assertEqual(ya.thumbnail[:2], b"\xff\xd8")
+        self.assertEqual(bytes(ya.thumbnail)[:2], b"\xff\xd8")

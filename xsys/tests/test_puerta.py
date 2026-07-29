@@ -1,8 +1,9 @@
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.test import TestCase
 from django.utils import timezone
 
 from access_control.models.models import ExternalAccessLogEntry
+from common.roles import GRUPO_PUERTAS
 from institutions.models import AccessDoor, DoorController, DoorTurnstileGroup
 from xsys.models import (
     PantallaPuerta,
@@ -149,8 +150,7 @@ class PuertaMonitorTests(TestCase):
 
     def test_armado_puerta_flujo_3_pasos(self):
         """Alta de puerta -> asignar controladores -> definir grupo, todo por API."""
-        user = User.objects.create_user("admin", password="pw")
-        self.client.force_login(user)
+        self.client.force_login(User.objects.create_superuser("admin", password="pw"))
         # 1) alta de la puerta
         r = self.client.post("/api/xsys/config/puertas/",
                              {"nombre": "Puerta Nueva", "xsys_id_acceso": 14},
@@ -175,7 +175,10 @@ class PuertaMonitorTests(TestCase):
         self.assertEqual(sorted(r.json()["id_controladores"]), [59, 90])
 
     def test_config_crud_molinetes(self):
-        user = User.objects.create_user("admin", password="pw")
+        # Sin ser admin: alcanza con el grupo "Configuración de Puertas", que es
+        # el rol real con el que se arman las puertas en producción.
+        user = User.objects.create_user("operador", password="pw")
+        user.groups.add(Group.objects.get_or_create(name=GRUPO_PUERTAS)[0])
         self.client.force_login(user)
         # crear
         r = self.client.post("/api/xsys/config/molinetes/",

@@ -1,10 +1,11 @@
 import io
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.test import TestCase
 from django.utils import timezone
 from PIL import Image
 
+from common.roles import GRUPO_ADMIN
 from xsys.models import SyncState, XsysSocio, XsysSocioFoto, XsysWhitelist
 from xsys.services.images import make_thumbnail
 
@@ -108,11 +109,20 @@ class XsysApiTests(TestCase):
         self.assertIn(self.client.get("/api/xsys/socios/lookup/", {"doc": 31850936}).status_code, (401, 403))
 
     def test_consola_render(self):
+        # La consola es @admin_requerido: el usuario base ("op") solo está
+        # autenticado y no alcanza.
+        self.client.force_login(User.objects.create_superuser("root", password="pw"))
         r = self.client.get("/xsys/socios/")
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, "Socios (espejo xSys)")
 
+    def test_consola_requiere_rol_admin(self):
+        """Autenticado pero sin rol de admin: 403 (el usuario base es "op")."""
+        self.assertEqual(self.client.get("/xsys/socios/").status_code, 403)
+
     def test_consola_muestra_estado_sync(self):
+        # Acá el rol llega por grupo, no por superuser: cubre la otra rama de es_admin().
+        self.user.groups.add(Group.objects.get_or_create(name=GRUPO_ADMIN)[0])
         SyncState.advance("novedades", last_id=1234, rows=7)
         r = self.client.get("/xsys/socios/")
         self.assertContains(r, "Estado del espejo")

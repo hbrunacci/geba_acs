@@ -37,7 +37,7 @@ class ExternalAccessLogServiceTestCase(SimpleTestCase):
         }
 
     def _install_pyodbc_stub(self, connect_mock: MagicMock) -> None:
-        from access_control import services
+        from access_control.services import services
 
         original = getattr(services, "pyodbc", None)
         services.pyodbc = SimpleNamespace(connect=connect_mock)
@@ -49,7 +49,7 @@ class ExternalAccessLogServiceTestCase(SimpleTestCase):
             ExternalAccessLogService(config)
 
     def test_requires_pyodbc(self):
-        from access_control import services
+        from access_control.services import services
 
         original = getattr(services, "pyodbc", None)
         services.pyodbc = None
@@ -61,7 +61,7 @@ class ExternalAccessLogServiceTestCase(SimpleTestCase):
     def test_missing_config_parameter(self):
         config = self.config.copy()
         del config["HOST"]
-        from access_control import services
+        from access_control.services import services
 
         original = getattr(services, "pyodbc", None)
         services.pyodbc = SimpleNamespace(connect=MagicMock())
@@ -133,7 +133,7 @@ class ExternalAccessLogServiceTestCase(SimpleTestCase):
         cursor_mock.execute.assert_called_once_with(expected_query)
 
     def test_fetch_latest_with_invalid_limit(self):
-        from access_control import services
+        from access_control.services import services
 
         original = getattr(services, "pyodbc", None)
         services.pyodbc = SimpleNamespace(connect=MagicMock())
