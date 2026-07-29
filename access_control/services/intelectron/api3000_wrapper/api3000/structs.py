@@ -8,6 +8,7 @@ from ctypes import (
     c_int16,
     c_int32,
     c_uint8,
+    c_uint32,
 )
 from dataclasses import dataclass
 from datetime import datetime
@@ -124,20 +125,28 @@ class ITKAuxInput(Structure):
 
 
 class ITKMarkInfo(Structure):
-    """Equivalente ctypes de `ITK_MARK_INFO`."""
+    """Equivalente ctypes de `ITK_MARK_INFO`.
+
+    Layout confirmado en vivo (API-3000 @ 10.0.0.115, itk_list_marks): el record
+    real mide 40 bytes. Con `type` como c_uint8 daban 35 y desalineaban todo
+    (date_time/access_id corridos -> fechas nulas e ids basura). Offsets validados
+    sobre ~40 marcas: mask_fields[0:4], type[4:8]=0, access_id[8:12],
+    date_time[12:19], event_code[19], source[20:22], direction[22], resto 0.
+    """
 
     _pack_ = 1
     _fields_ = [
-        ("mask_fields", c_int32),
-        ("type", c_uint8),
-        ("access_id", c_int32),
-        ("date_time", ITKDateTime),
-        ("event_code", c_uint8),
-        ("source", c_int16),
-        ("direction", c_uint8),
-        ("supervisor_id", c_int32),
-        ("task_item_id", c_uint8),
-        ("job_order", c_char * 10),
+        ("mask_fields", c_int32),      # [0:4]  bitmask de campos presentes (0x3f)
+        ("type", c_int32),             # [4:8]  observado 0
+        ("access_id", c_uint32),       # [8:12] id facial/credencial (sin signo)
+        ("date_time", ITKDateTime),    # [12:19]
+        ("event_code", c_uint8),       # [19]
+        ("source", c_int16),           # [20:22]
+        ("direction", c_uint8),        # [22]
+        ("supervisor_id", c_int32),    # [23:27]
+        ("task_item_id", c_uint8),     # [27]
+        ("job_order", c_char * 10),    # [28:38]
+        ("_reserved", c_char * 2),     # [38:40] padding a 40 bytes
     ]
 
     def get_job_order(self) -> str:
