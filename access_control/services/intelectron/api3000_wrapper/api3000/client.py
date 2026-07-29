@@ -351,3 +351,30 @@ class Api3000Client:
         ensure_ok(code, "itk_list_marks")
         count = int(listed.value)
         return list(items[:count]), count
+
+    def rele_control(self, *, dest_node: int, rele: int = 1, action: int = 1) -> None:
+        """Controla un relé del equipo (abrir puerta / activar salida).
+
+        Firma nativa: itk_rele_control(handle, node, long, long). Los dos long son
+        el número de relé y la acción/tiempo de pulso.
+        # valores de rele/action a confirmar en prueba en vivo
+        """
+        code = self._native.cdll.itk_rele_control(
+            self.handle, c_int16(dest_node), c_long(int(rele)), c_long(int(action))
+        )
+        ensure_ok(code, "itk_rele_control")
+
+    def get_info(self, *, dest_node: int, buffer_size: int = 256) -> dict[str, str]:
+        """Lee información/estado del equipo.
+
+        Firma nativa: itk_get_info(handle, node, char*, char*). Devuelve dos strings;
+        el significado exacto de cada buffer se confirma en prueba en vivo.
+        """
+        buff1 = create_string_buffer(buffer_size)
+        buff2 = create_string_buffer(buffer_size)
+        code = self._native.cdll.itk_get_info(self.handle, c_int16(dest_node), buff1, buff2)
+        ensure_ok(code, "itk_get_info")
+        return {
+            "info1": buff1.value.decode("latin-1", errors="ignore"),
+            "info2": buff2.value.decode("latin-1", errors="ignore"),
+        }

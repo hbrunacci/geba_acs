@@ -107,6 +107,16 @@ def api3000_test_console(request):
     )
 
 
+@admin_requerido
+def intelektron_admin(request):
+    """Administrador de equipos Intelektron (molinetes API-3000)."""
+    return render(
+        request,
+        "access_control/intelektron_admin.html",
+        {"command_catalog": COMMAND_CATALOG},
+    )
+
+
 def _validate_ipv4(value: str):
     if not value:
         raise ValueError("El campo 'ip' es obligatorio.")

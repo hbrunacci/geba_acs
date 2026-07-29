@@ -3,6 +3,7 @@ from .biostar_event import BiostarAccessEvent, BiostarPollState
 from .biostart_user import BioStarUser
 from .biostar_device_group import BioStarDeviceGroup
 from .device import BioStarDevice
+from .intelektron_event import IntelektronEvent
 from .models import (
     AccessEvent,
     AnsesVerificationRecord,
@@ -23,4 +24,5 @@ __all__ = [
     "BioStarDeviceGroup",
     "ParkingMovement",
     "AnsesVerificationRecord",
+    "IntelektronEvent",
 ]

@@ -95,6 +95,21 @@ COMMAND_CATALOG: dict[str, dict[str, Any]] = {
             {"name": "records_to_list", "type": "number", "required": True, "default": 10},
         ],
     },
+    "get_info": {
+        "label": "Estado/Info del equipo",
+        "description": "Lee información/estado del nodo destino.",
+        "requires_dest_node": True,
+        "params": [],
+    },
+    "open_door": {
+        "label": "Abrir puerta",
+        "description": "Activa el relé para abrir la puerta / molinete.",
+        "requires_dest_node": True,
+        "params": [
+            {"name": "rele", "type": "number", "required": False, "default": 1},
+            {"name": "action", "type": "number", "required": False, "default": 1},
+        ],
+    },
 }
 
 
@@ -276,5 +291,16 @@ def execute_command(*, command: str, base: dict[str, Any], params: dict[str, Any
                 records_to_list=params.get("records_to_list", 10),
             )
             return {"command": command, "count": count, "marks": [_serialize_mark(item) for item in marks]}
+
+        if command == "get_info":
+            return {"command": command, "info": client.get_info(dest_node=dest_node)}
+
+        if command == "open_door":
+            client.rele_control(
+                dest_node=dest_node,
+                rele=params.get("rele", 1),
+                action=params.get("action", 1),
+            )
+            return {"command": command, "ok": True}
 
     raise ValidationError({"command": "Comando no soportado."})

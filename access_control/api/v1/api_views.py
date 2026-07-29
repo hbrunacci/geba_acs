@@ -1513,3 +1513,76 @@ class Api3000ExecuteCommandAPI(views.APIView):
             return Response({"ok": False, "errors": detail}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:
             return Response({"ok": False, "detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class IntelektronDeviceListAPI(views.APIView):
+    """Lista de equipos Intelektron = controladores de xSys que tienen IP configurada.
+
+    La presencia de IP (Intelek_IP / Ult_IP en CD_Controladores) marca que el
+    controlador es hardware Intelektron API-3000. Puerto host TCP por defecto: 3001.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    DEFAULT_PORT = 3001
+
+    def get(self, request):
+        from xsys.models.controlador import XsysControlador
+
+        qs = (
+            XsysControlador.objects.exclude(ip="")
+            .exclude(ip__isnull=True)
+            .order_by("id_acceso", "descripcion")
+        )
+        devices = [
+            {
+                "id_controlador": c.id_controlador,
+                "descripcion": c.descripcion,
+                "id_acceso": c.id_acceso,
+                "tipo_cont": c.tipo_cont,
+                "activo": c.activo,
+                "ip": c.ip,
+                "port": self.DEFAULT_PORT,
+            }
+            for c in qs
+        ]
+        return Response({"devices": devices}, status=status.HTTP_200_OK)
+
+
+class IntelektronEventsAPI(views.APIView):
+    """Últimos eventos (marcas) leídos por el listener de un molinete Intelektron.
+
+    Lee del espejo local `IntelektronEvent` (lo puebla el comando
+    `intelektron_listener`). No toca la placa.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from access_control.models import IntelektronEvent
+
+        ip = (request.query_params.get("ip") or "").strip()
+        try:
+            limit = int(request.query_params.get("limit") or 50)
+        except (TypeError, ValueError):
+            limit = 50
+        limit = max(1, min(limit, 200))
+
+        qs = IntelektronEvent.objects.all()
+        if ip:
+            qs = qs.filter(device_ip=ip)
+        events = [
+            {
+                "id": e.id,
+                "device_ip": e.device_ip,
+                "access_id": e.access_id,
+                "event_code": e.event_code,
+                "event_name": e.event_name,
+                "direction": e.direction,
+                "direction_name": e.direction_name,
+                "device_time": e.device_time.isoformat() if e.device_time else None,
+                "created_at": e.created_at.isoformat(),
+            }
+            for e in qs[:limit]
+        ]
+        return Response({"events": events}, status=status.HTTP_200_OK)

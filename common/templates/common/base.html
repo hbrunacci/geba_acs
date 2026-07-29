@@ -94,6 +94,9 @@
           <li class="nav__item{% if current_url == 'api3000_test_console' %} nav__item--active{% endif %}">
             <a href="{% url 'api3000_test_console' %}">Consola API3000</a>
           </li>
+          <li class="nav__item{% if current_url == 'intelektron_admin' %} nav__item--active{% endif %}">
+            <a href="{% url 'intelektron_admin' %}">Equipos Intelektron</a>
+          </li>
           {% endif %}
         </ul>
         {% endwith %}

@@ -1,0 +1,509 @@
+{% extends "common/base.html" %}
+{% block extra_css %}
+<style>
+  .btn {
+    appearance: none;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 0.45rem 0.7rem;
+    transition: all 0.2s ease;
+  }
+  .btn-sm { font-size: 0.8rem; padding: 0.35rem 0.65rem; }
+  .btn-primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+  .btn-outline-secondary { background: #fff; border-color: rgba(15,23,42,0.2); color: #1e293b; }
+  .btn-danger { background: #dc2626; border-color: #dc2626; color: #fff; }
+  .btn-warning { background: #f59e0b; border-color: #f59e0b; color: #1e293b; }
+  .btn-success { background: #16a34a; border-color: #16a34a; color: #fff; }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  .biostar__panel {
+    border: 1px solid rgba(15,23,42,0.08);
+    border-radius: 1rem; padding: 1.25rem; background: #fff;
+    box-shadow: 0 10px 30px rgba(15,23,42,0.06);
+  }
+  .biostar__filters {
+    display: grid; gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    margin-bottom: 1rem;
+  }
+  .biostar__filters label { font-size: 0.8rem; color: #64748b; margin-bottom: 0.25rem; }
+  .biostar__filters input {
+    width: 100%; border: 1px solid rgba(15,23,42,0.12);
+    border-radius: 0.5rem; padding: 0.45rem 0.6rem; font-size: 0.9rem;
+  }
+  .biostar__table thead th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .biostar__table tbody tr:hover { background: rgba(79,70,229,0.06); }
+
+  .modal[hidden] { display: none; }
+  .modal {
+    position: fixed; inset: 0; z-index: 2000;
+    align-items: center; justify-content: center; padding: 1rem;
+  }
+  .modal.show { display: flex; }
+  .modal-dialog { width: min(960px, 100%); max-height: calc(100vh - 2rem); overflow: auto; position: relative; z-index: 1; }
+  .modal-dialog--sm { width: min(460px, 100%); }
+  .modal-content { background: #fff; border-radius: 0.9rem; border: 1px solid rgba(15,23,42,0.08); box-shadow: 0 20px 45px rgba(15,23,42,0.18); }
+  .modal-backdrop { display: none; position: fixed; inset: 0; z-index: 1900; background: rgba(15,23,42,0.55); }
+  .modal-backdrop.show { display: block; }
+  #confirm-modal { z-index: 2200; }
+  #confirm-backdrop { z-index: 2100; }
+  .modal-header, .modal-body, .modal-footer { padding: 1rem 1.25rem; }
+  .modal-header, .modal-footer { border-bottom: 1px solid rgba(15,23,42,0.08); }
+  .modal-footer { border-top: 1px solid rgba(15,23,42,0.08); border-bottom: 0; display: flex; justify-content: flex-end; gap: 0.5rem; }
+  .btn-close { appearance: none; border: 0; background: transparent; color: #475569; cursor: pointer; font-size: 1.4rem; line-height: 1; padding: 0; }
+  .btn-close::before { content: "×"; }
+
+  .device-tabs { display: flex; flex-wrap: wrap; gap: 0.35rem; border-bottom: 1px solid rgba(15,23,42,0.1); margin-bottom: 1rem; }
+  .device-tab { appearance: none; background: transparent; border: 0; border-bottom: 2px solid transparent; color: #64748b; cursor: pointer; font-size: 0.85rem; font-weight: 600; padding: 0.5rem 0.8rem; }
+  .device-tab.active { color: #4f46e5; border-bottom-color: #4f46e5; }
+  .device-pane[hidden] { display: none; }
+
+  .conn-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; margin-bottom: 1rem; padding: 0.75rem; background: #f8fafc; border-radius: 0.6rem; }
+  .conn-field { display: flex; flex-direction: column; gap: 0.2rem; }
+  .conn-field label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: #94a3b8; }
+  .conn-field input { border: 1px solid rgba(15,23,42,0.15); border-radius: 0.5rem; padding: 0.35rem 0.5rem; font-size: 0.9rem; width: 120px; }
+  .conn-field input[readonly] { background: #eef2ff; }
+
+  .action-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: end; margin-bottom: 0.75rem; }
+  .action-field { display: flex; flex-direction: column; gap: 0.25rem; }
+  .action-field label { font-size: 0.75rem; color: #64748b; }
+  .action-field input { border: 1px solid rgba(15,23,42,0.15); border-radius: 0.5rem; padding: 0.4rem 0.55rem; font-size: 0.9rem; min-width: 160px; }
+
+  .device-warn { background: #fef3c7; border: 1px solid #fde68a; color: #92400e; border-radius: 0.5rem; padding: 0.5rem 0.75rem; font-size: 0.8rem; margin-bottom: 0.75rem; }
+  pre.io { background: #0f172a; color: #e2e8f0; border-radius: 0.6rem; padding: 0.75rem; font-size: 0.78rem; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+</style>
+{% endblock extra_css %}
+{% block content %}
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>Intelektron — Equipos (API-3000)</h3>
+    <button id="reload-devices" class="btn btn-outline-secondary btn-sm">Recargar</button>
+  </div>
+
+  <div id="msg" class="alert d-none" role="alert"></div>
+
+  <section class="biostar__panel">
+    <div class="biostar__filters">
+      <div>
+        <label for="dev-search-name">Buscar por descripción</label>
+        <input id="dev-search-name" type="search" placeholder="Ej: Alcorta molinete" />
+      </div>
+      <div>
+        <label for="dev-search-ip">IP</label>
+        <input id="dev-search-ip" type="search" placeholder="Ej: 10.0.0" />
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-sm table-striped biostar__table">
+        <thead>
+          <tr>
+            <th>Descripción</th>
+            <th>ID</th>
+            <th>Acceso</th>
+            <th>Tipo</th>
+            <th>IP</th>
+            <th>Activo</th>
+            <th class="text-end">Administrar</th>
+          </tr>
+        </thead>
+        <tbody id="devices-body"></tbody>
+      </table>
+    </div>
+    <small id="devices-meta" class="text-muted"></small>
+  </section>
+</div>
+
+<div class="modal" id="device-modal" tabindex="-1" aria-hidden="true" hidden>
+  <div class="modal-dialog" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title" id="dev-modal-label">Administrar molinete</h5>
+          <div class="text-muted small" id="dev-modal-subtitle"></div>
+        </div>
+        <button type="button" class="btn-close" data-modal-close aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="dev-modal-alert" class="alert d-none" role="alert"></div>
+
+        <div class="conn-row">
+          <div class="conn-field"><label>IP</label><input id="conn-ip" type="text" readonly /></div>
+          <div class="conn-field"><label>Puerto</label><input id="conn-port" type="number" /></div>
+          <div class="conn-field"><label>Nodo origen</label><input id="conn-source" type="number" value="255" /></div>
+          <div class="conn-field"><label>Nodo destino</label><input id="conn-dest" type="number" value="1" /></div>
+        </div>
+
+        <div class="device-tabs" role="tablist">
+          <button type="button" class="device-tab active" data-tab="estado">Estado</button>
+          <button type="button" class="device-tab" data-tab="puerta">Puerta</button>
+          <button type="button" class="device-tab" data-tab="usuarios">Usuarios</button>
+          <button type="button" class="device-tab" data-tab="marcas">Marcas</button>
+          <button type="button" class="device-tab" data-tab="eventos">Eventos en vivo</button>
+        </div>
+
+        <!-- Estado -->
+        <div class="device-pane" data-pane="estado">
+          <div class="action-row">
+            <button type="button" class="btn btn-primary btn-sm" data-cmd="lib_version">Ping (versión librería)</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-cmd="get_time">Hora del equipo</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-cmd="get_info">Estado / Info</button>
+          </div>
+        </div>
+
+        <!-- Puerta -->
+        <div class="device-pane" data-pane="puerta" hidden>
+          <div class="device-warn">Abrir la puerta activa el relé del molinete en vivo.</div>
+          <div class="action-row">
+            <div class="action-field"><label for="door-rele">Relé</label><input id="door-rele" type="number" value="1" /></div>
+            <div class="action-field"><label for="door-action">Acción/pulso</label><input id="door-action" type="number" value="1" /></div>
+            <button type="button" id="door-open" class="btn btn-success btn-sm">Abrir puerta</button>
+          </div>
+        </div>
+
+        <!-- Usuarios -->
+        <div class="device-pane" data-pane="usuarios" hidden>
+          <div class="action-row">
+            <div class="action-field"><label for="usr-start">Desde</label><input id="usr-start" type="number" value="0" style="min-width:90px" /></div>
+            <div class="action-field"><label for="usr-count">Cantidad</label><input id="usr-count" type="number" value="10" style="min-width:90px" /></div>
+            <button type="button" id="usr-list" class="btn btn-primary btn-sm">Listar usuarios</button>
+          </div>
+          <hr />
+          <h6 class="mb-2">Alta / edición / baja</h6>
+          <div class="action-row">
+            <div class="action-field"><label for="usr-record">Índice</label><input id="usr-record" type="number" value="0" style="min-width:90px" /></div>
+            <div class="action-field"><label for="usr-id">User ID</label><input id="usr-id" type="text" /></div>
+            <div class="action-field"><label for="usr-name">Nombre</label><input id="usr-name" type="text" /></div>
+            <div class="action-field"><label for="usr-access">Access ID</label><input id="usr-access" type="number" style="min-width:110px" /></div>
+          </div>
+          <div class="action-row">
+            <button type="button" id="usr-add" class="btn btn-success btn-sm">Alta</button>
+            <button type="button" id="usr-edit" class="btn btn-warning btn-sm">Editar</button>
+            <button type="button" id="usr-del" class="btn btn-danger btn-sm">Baja</button>
+          </div>
+        </div>
+
+        <!-- Marcas -->
+        <div class="device-pane" data-pane="marcas" hidden>
+          <div class="action-row">
+            <div class="action-field"><label for="mrk-start">Desde</label><input id="mrk-start" type="number" value="0" style="min-width:90px" /></div>
+            <div class="action-field"><label for="mrk-count">Cantidad</label><input id="mrk-count" type="number" value="10" style="min-width:90px" /></div>
+            <button type="button" id="mrk-list" class="btn btn-primary btn-sm">Listar marcas</button>
+          </div>
+        </div>
+
+        <!-- Eventos en vivo -->
+        <div class="device-pane" data-pane="eventos" hidden>
+          <div class="device-warn">
+            Muestra las marcas que el listener guardó de este equipo. Requiere el proceso de fondo:
+            <code>manage.py intelektron_listener --ip &lt;IP&gt; --dest-node &lt;N&gt;</code>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <small id="ev-meta" class="text-muted">—</small>
+            <label class="small text-muted"><input type="checkbox" id="ev-auto" checked /> Auto-actualizar</label>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm table-striped">
+              <thead>
+                <tr><th>Fecha equipo</th><th>Access ID</th><th>Evento</th><th>Dirección</th><th>Registrado</th></tr>
+              </thead>
+              <tbody id="ev-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <h6 class="mt-3 mb-1">Respuesta</h6>
+        <pre id="io-view" class="io">—</pre>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-modal-close>Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="device-modal-backdrop" class="modal-backdrop"></div>
+
+<!-- Confirmación -->
+<div class="modal" id="confirm-modal" tabindex="-1" aria-hidden="true" hidden>
+  <div class="modal-dialog modal-dialog--sm" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Confirmar acción</h5>
+        <button type="button" class="btn-close" id="confirm-cancel" aria-label="Cancelar"></button>
+      </div>
+      <div class="modal-body"><p id="confirm-text" class="mb-0"></p></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="confirm-cancel-2">Cancelar</button>
+        <button type="button" class="btn btn-danger" id="confirm-ok">Confirmar</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="confirm-backdrop" class="modal-backdrop"></div>
+
+<script>
+(function() {
+  let devices = [];
+  let currentDevice = null;
+  const modalEl = document.getElementById("device-modal");
+  const modalBackdrop = document.getElementById("device-modal-backdrop");
+
+  function showMsg(text, kind) {
+    const el = document.getElementById("msg");
+    el.className = "alert alert-" + (kind || "info");
+    el.textContent = text;
+    el.classList.remove("d-none");
+    setTimeout(() => el.classList.add("d-none"), 4000);
+  }
+
+  function getCookie(name) {
+    const v = document.cookie.split(";").map(s => s.trim()).find(s => s.startsWith(name + "="));
+    return v ? decodeURIComponent(v.split("=")[1]) : "";
+  }
+
+  async function fetchJSON(url, options) {
+    const resp = await fetch(url, {
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": getCookie("csrftoken") },
+      ...options
+    });
+    const text = await resp.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch (e) {}
+    if (!resp.ok) {
+      let detail = (data && (data.detail || (data.errors && JSON.stringify(data.errors)))) || text.slice(0, 300);
+      throw new Error(detail);
+    }
+    if (data === null) throw new Error("Respuesta no-JSON. ¿Sesión expirada?");
+    return data;
+  }
+
+  // ------- Tabla de equipos -------
+  function activoBadge(a) {
+    if (a === 1) return '<span class="badge bg-success">Sí</span>';
+    if (a === 0) return '<span class="badge bg-secondary">No</span>';
+    return '<span class="badge bg-light text-dark">-</span>';
+  }
+
+  function renderDevices() {
+    const nameTerm = document.getElementById("dev-search-name").value.trim().toLowerCase();
+    const ipTerm = document.getElementById("dev-search-ip").value.trim().toLowerCase();
+    const filtered = devices.filter(d =>
+      (d.descripcion || "").toLowerCase().includes(nameTerm) &&
+      String(d.ip || "").toLowerCase().includes(ipTerm)
+    );
+    document.getElementById("devices-body").innerHTML = filtered.map(d => `
+      <tr>
+        <td>${d.descripcion || ""}</td>
+        <td>${d.id_controlador}</td>
+        <td>${d.id_acceso ?? ""}</td>
+        <td>${d.tipo_cont || ""}</td>
+        <td>${d.ip || ""}</td>
+        <td>${activoBadge(d.activo)}</td>
+        <td class="text-end">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-manage="${d.id_controlador}">Administrar</button>
+        </td>
+      </tr>
+    `).join("");
+    document.getElementById("devices-meta").textContent = `${filtered.length} de ${devices.length} equipos`;
+  }
+
+  async function loadDevices() {
+    try {
+      const data = await fetchJSON("/api/intelektron/devices/");
+      devices = data.devices || [];
+      renderDevices();
+      if (!devices.length) showMsg("No hay controladores con IP. Corré el sync de xSys (Fase 0).", "warning");
+    } catch (e) {
+      showMsg("Error cargando equipos: " + e.message, "danger");
+    }
+  }
+
+  // ------- Modal confirmación -------
+  const confirmModal = document.getElementById("confirm-modal");
+  const confirmBackdrop = document.getElementById("confirm-backdrop");
+  let confirmResolver = null;
+  function confirmAction(message) {
+    document.getElementById("confirm-text").textContent = message;
+    confirmModal.hidden = false; confirmModal.classList.add("show"); confirmBackdrop.classList.add("show");
+    return new Promise(resolve => { confirmResolver = resolve; });
+  }
+  function closeConfirm(result) {
+    confirmModal.classList.remove("show"); confirmModal.hidden = true; confirmBackdrop.classList.remove("show");
+    if (confirmResolver) { confirmResolver(result); confirmResolver = null; }
+  }
+  document.getElementById("confirm-ok").addEventListener("click", () => closeConfirm(true));
+  document.getElementById("confirm-cancel").addEventListener("click", () => closeConfirm(false));
+  document.getElementById("confirm-cancel-2").addEventListener("click", () => closeConfirm(false));
+  confirmBackdrop.addEventListener("click", () => closeConfirm(false));
+
+  // ------- Modal equipo -------
+  function setAlert(text, kind) {
+    const a = document.getElementById("dev-modal-alert");
+    if (!text) { a.classList.add("d-none"); return; }
+    a.textContent = text; a.className = "alert alert-" + (kind || "info"); a.classList.remove("d-none");
+  }
+  function activateTab(tab) {
+    document.querySelectorAll(".device-tab").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+    document.querySelectorAll(".device-pane").forEach(p => { p.hidden = p.dataset.pane !== tab; });
+    if (tab === "eventos") startEvents(); else stopEvents();
+  }
+  document.querySelectorAll(".device-tab").forEach(b => b.addEventListener("click", () => activateTab(b.dataset.tab)));
+
+  // ------- Eventos en vivo (polling del espejo local) -------
+  let eventsTimer = null;
+  function escapeHtml(s) { return String(s ?? "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+  function fmtDT(iso) { return iso ? String(iso).replace("T", " ").slice(0, 19) : "-"; }
+
+  async function refreshEvents() {
+    if (!currentDevice) return;
+    try {
+      const data = await fetchJSON("/api/intelektron/events/?limit=50&ip=" + encodeURIComponent(currentDevice.ip));
+      const rows = data.events || [];
+      document.getElementById("ev-body").innerHTML = rows.map(e => `
+        <tr>
+          <td>${fmtDT(e.device_time)}</td>
+          <td>${e.access_id ?? "-"}</td>
+          <td>${escapeHtml(e.event_name || e.event_code || "-")}</td>
+          <td>${escapeHtml(e.direction_name || e.direction || "-")}</td>
+          <td>${fmtDT(e.created_at)}</td>
+        </tr>`).join("");
+      document.getElementById("ev-meta").textContent = rows.length
+        ? `${rows.length} evento(s)` : "Sin eventos (¿está corriendo el listener?)";
+    } catch (e) {
+      document.getElementById("ev-meta").textContent = "Error: " + e.message;
+    }
+  }
+  function startEvents() {
+    stopEvents();
+    refreshEvents();
+    if (document.getElementById("ev-auto").checked) {
+      eventsTimer = setInterval(() => {
+        if (document.getElementById("ev-auto").checked) refreshEvents();
+      }, 4000);
+    }
+  }
+  function stopEvents() {
+    if (eventsTimer) { clearInterval(eventsTimer); eventsTimer = null; }
+  }
+
+  function connParams() {
+    return {
+      ip: document.getElementById("conn-ip").value.trim(),
+      port: Number(document.getElementById("conn-port").value) || 3001,
+      source_node: Number(document.getElementById("conn-source").value),
+      dest_node: Number(document.getElementById("conn-dest").value),
+    };
+  }
+
+  // Ejecuta un comando por /api/api3000/execute/
+  async function exec(command, params, { confirm } = {}) {
+    if (confirm) {
+      const ok = await confirmAction(confirm);
+      if (!ok) return null;
+    }
+    const base = connParams();
+    const body = { ...base, command, params: params || {} };
+    document.getElementById("io-view").textContent = "Ejecutando " + command + "...\n" + JSON.stringify(body, null, 1);
+    try {
+      const data = await fetchJSON("/api/api3000/execute/", { method: "POST", body: JSON.stringify(body) });
+      document.getElementById("io-view").textContent = JSON.stringify(data.result ?? data, null, 2);
+      setAlert(command + " ✅", "success");
+      return data;
+    } catch (e) {
+      document.getElementById("io-view").textContent = "ERROR: " + e.message;
+      setAlert("Error en " + command + ": " + e.message, "danger");
+      return null;
+    }
+  }
+
+  function openModal(device) {
+    if (!device) return;
+    currentDevice = device;
+    document.getElementById("dev-modal-label").textContent = device.descripcion || "Administrar molinete";
+    document.getElementById("dev-modal-subtitle").textContent = `ID ${device.id_controlador} · ${device.ip}`;
+    document.getElementById("conn-ip").value = device.ip || "";
+    document.getElementById("conn-port").value = device.port || 3001;
+    document.getElementById("conn-source").value = 255;
+    document.getElementById("conn-dest").value = 1;
+    document.getElementById("io-view").textContent = "—";
+    setAlert("", "");
+    activateTab("estado");
+    modalEl.hidden = false; modalEl.classList.add("show"); modalBackdrop.classList.add("show");
+  }
+  function closeModal() {
+    stopEvents();
+    modalEl.classList.remove("show"); modalEl.hidden = true; modalBackdrop.classList.remove("show");
+    currentDevice = null;
+  }
+
+  // ------- Handlers -------
+  // Estado: botones con data-cmd
+  document.querySelectorAll("[data-cmd]").forEach(btn => {
+    btn.addEventListener("click", () => exec(btn.dataset.cmd, {}));
+  });
+
+  document.getElementById("door-open").addEventListener("click", () => {
+    exec("open_door", {
+      rele: Number(document.getElementById("door-rele").value) || 1,
+      action: Number(document.getElementById("door-action").value) || 1,
+    }, { confirm: `¿Abrir la puerta de "${currentDevice.descripcion}"? Activa el relé en vivo.` });
+  });
+
+  document.getElementById("usr-list").addEventListener("click", () => {
+    exec("list_users", {
+      start_position: Number(document.getElementById("usr-start").value) || 0,
+      records_to_list: Number(document.getElementById("usr-count").value) || 10,
+    });
+  });
+
+  function userForm() {
+    return {
+      record_index: Number(document.getElementById("usr-record").value) || 0,
+      user_id: document.getElementById("usr-id").value.trim(),
+      user_name: document.getElementById("usr-name").value.trim(),
+      access_id: Number(document.getElementById("usr-access").value) || 0,
+    };
+  }
+  document.getElementById("usr-add").addEventListener("click", () => exec("add_user", userForm()));
+  document.getElementById("usr-edit").addEventListener("click", () => exec("edit_user", userForm()));
+  document.getElementById("usr-del").addEventListener("click", () => {
+    const f = userForm();
+    exec("delete_user", { record_index: f.record_index, user_id: f.user_id, access_id: f.access_id },
+      { confirm: `¿Dar de baja al usuario ${f.user_id || f.access_id} en "${currentDevice.descripcion}"?` });
+  });
+
+  document.getElementById("mrk-list").addEventListener("click", () => {
+    exec("list_marks", {
+      start_position: Number(document.getElementById("mrk-start").value) || 0,
+      records_to_list: Number(document.getElementById("mrk-count").value) || 10,
+    });
+  });
+
+  // ------- Tabla listeners -------
+  document.getElementById("devices-body").addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-manage]");
+    if (!btn) return;
+    const device = devices.find(d => String(d.id_controlador) === String(btn.dataset.manage));
+    openModal(device);
+  });
+  document.getElementById("dev-search-name").addEventListener("input", renderDevices);
+  document.getElementById("dev-search-ip").addEventListener("input", renderDevices);
+  document.getElementById("reload-devices").addEventListener("click", loadDevices);
+  document.getElementById("ev-auto").addEventListener("change", startEvents);
+  document.querySelectorAll("[data-modal-close]").forEach(b => b.addEventListener("click", closeModal));
+  modalBackdrop.addEventListener("click", closeModal);
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (confirmModal.classList.contains("show")) { closeConfirm(false); return; }
+    if (modalEl.classList.contains("show")) closeModal();
+  });
+
+  loadDevices();
+})();
+</script>
+{% endblock %}

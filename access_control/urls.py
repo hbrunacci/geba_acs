@@ -4,6 +4,7 @@ from access_control.views import (
     access_reports_console,
     anses_verification_console,
     api3000_test_console,
+    intelektron_admin,
     biostar_devices_console,
     biostar_users_console,
     external_access_console,
@@ -14,6 +15,7 @@ from access_control.views import (
 urlpatterns = [
     path("ACS/test", api3000_test_console, name="api3000_test_console"),
     path("ACS/test/", api3000_test_console),
+    path("intelektron/devices/", intelektron_admin, name="intelektron_admin"),
     path(
         "parking-movements/",
         parking_movements_console,

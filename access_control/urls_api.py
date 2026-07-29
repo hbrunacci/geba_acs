@@ -31,6 +31,8 @@ from access_control.api.v1.api_views import (
     BioStarUserSearchAPI,
     BioStarUserSyncAPI,
     ExternalAccessLogSyncAPI,
+    IntelektronDeviceListAPI,
+    IntelektronEventsAPI,
     WhitelistBatchCreateAPI,
 )
 from access_control.api.v1.intelectron_api_views import Api3000CommandAPI, Api3000PingAPI
@@ -62,6 +64,8 @@ urlpatterns = router.urls + [
     path("api3000/catalog/", Api3000CommandCatalogAPI.as_view(), name="api3000_catalog_api"),
     path("api3000/ping/", Api3000PingAPI.as_view(), name="api3000_ping_api"),
     path("api3000/execute/", Api3000ExecuteCommandAPI.as_view(), name="api3000_execute_api"),
+    path("intelektron/devices/", IntelektronDeviceListAPI.as_view(), name="intelektron_devices_api"),
+    path("intelektron/events/", IntelektronEventsAPI.as_view(), name="intelektron_events_api"),
     path("parking/client-lookup/", ParkingClienteLookupView.as_view(), name="parking_client_lookup"),
     path("parking/movements/", ParkingMovementView.as_view(), name="parking_movements_api"),
     path("parking/movements/<int:movement_id>/mark-exit/", ParkingMovementMarkExitView.as_view(), name="parking_movement_mark_exit_api"),
