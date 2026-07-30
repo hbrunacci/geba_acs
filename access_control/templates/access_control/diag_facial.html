@@ -1,0 +1,264 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Diagnóstico de facial{% endblock page_title %}
+{% block header_title %}Diagnóstico de facial{% endblock header_title %}
+{% block header_subtitle %}
+  Ingresá el DNI o el número de socio de quien no pudo entrar y obtené en una pantalla
+  todo lo necesario para responder el reclamo: sus datos, la foto, si está en BioStar con
+  rostro y grupo, si está cargado en cada equipo, los errores registrados y sus últimos accesos.
+{% endblock header_subtitle %}
+
+{% block content %}
+
+<section class="card mb-3">
+  <div class="card__body">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-sm-5">
+        <label class="form-label" for="q">DNI o número de socio</label>
+        <input id="q" name="q" class="form-control form-control-sm" value="{{ consulta }}"
+               placeholder="Ej: 50258277 — se pueden varios separados por coma" autofocus />
+      </div>
+      <div class="col-sm-3">
+        <label class="form-label" for="modo">Buscar por</label>
+        <select id="modo" name="modo" class="form-select form-select-sm">
+          <option value="dni" {% if modo == "dni" %}selected{% endif %}>DNI</option>
+          <option value="socio" {% if modo == "socio" %}selected{% endif %}>Número de socio</option>
+        </select>
+      </div>
+      <div class="col-sm-2">
+        <label class="form-label" for="dias">Días de historial</label>
+        <input id="dias" name="dias" type="number" min="1" max="60"
+               class="form-control form-control-sm" value="{{ dias }}" />
+      </div>
+      <div class="col-sm-2">
+        <button type="submit" class="btn btn-primary btn-sm w-100">Diagnosticar</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+{% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+{% for aviso in avisos %}
+  <div class="alert alert-warning py-2">{{ aviso }}</div>
+{% endfor %}
+
+{% if consulta and not reportes and not error %}
+  <div class="alert alert-secondary">Sin resultados para “{{ consulta }}”.</div>
+{% endif %}
+
+{% for r in reportes %}
+{% with s=r.socio b=r.biostar %}
+<section class="card mb-4">
+  <div class="card__header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <h5 class="card__title mb-0">
+      {{ s.nombre_completo }}
+      <span class="text-muted fw-normal">· socio {{ s.id_cliente }} · DNI {{ s.dni }}</span>
+    </h5>
+    {% if r.alertas %}
+      <span class="badge bg-danger">{{ r.alertas|length }} problema{{ r.alertas|length|pluralize }}</span>
+    {% else %}
+      <span class="badge bg-success">sin problemas de datos</span>
+    {% endif %}
+  </div>
+
+  <div class="card__body">
+
+    {# ---- Diagnóstico primero: es lo que se necesita para contestar ---- #}
+    {% if r.alertas %}
+      <div class="alert alert-danger">
+        <strong>Diagnóstico</strong>
+        <ul class="mb-0 mt-1">
+          {% for a in r.alertas %}<li>{{ a }}</li>{% endfor %}
+        </ul>
+      </div>
+      {% if r.sugerencias %}
+      <div class="alert alert-info">
+        <strong>Qué hacer</strong>
+        <ul class="mb-0 mt-1">
+          {% for sug in r.sugerencias %}<li>{{ sug }}</li>{% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="alert alert-success">
+        No se detectaron problemas de datos ni de carga. Si igual no le toma, el problema es de
+        reconocimiento (foto contra cara real, luz, altura) o del equipo puntual.
+      </div>
+    {% endif %}
+
+    <div class="row g-3">
+      {# ---- Socio ---- #}
+      <div class="col-md-6">
+        <h6 class="text-uppercase text-muted small">Socio en xSys</h6>
+        <table class="table table-sm mb-0">
+          <tbody>
+            <tr><th class="w-50">Estado</th>
+                <td>{% if s.activo %}<span class="text-success">activo</span>
+                    {% else %}<span class="text-danger fw-bold">INACTIVO</span>{% endif %}</td></tr>
+            <tr><th>Categoría</th><td>{{ s.categoria_id }} ({{ s.categoria }})</td></tr>
+            <tr><th>Titular</th><td>{{ s.titular_ref|default:"— es titular —" }}</td></tr>
+            <tr><th>Credencial</th><td>{{ s.credencial|default:"(sin credencial)" }}</td></tr>
+            <tr><th>Última cuota paga</th>
+                <td>{{ s.ult_cuota_paga|default:"—" }}
+                  {% if s.cuota_al_dia is False %}<span class="badge bg-warning text-dark">atrasada</span>{% endif %}
+                </td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      {# ---- Foto ---- #}
+      <div class="col-md-6">
+        <h6 class="text-uppercase text-muted small">Foto en xSys</h6>
+        {% if r.foto %}
+        <table class="table table-sm mb-0">
+          <tbody>
+            <tr><th class="w-50">Fecha</th><td>{{ r.foto.fecha }}</td></tr>
+            <tr><th>Tamaño</th><td>{{ r.foto.bytes }} bytes</td></tr>
+            <tr><th>Antigüedad</th><td>{{ r.foto.anios }} años</td></tr>
+          </tbody>
+        </table>
+        {% if r.foto.problemas %}
+          <div class="alert alert-warning py-2 mt-2 mb-0">
+            Foto sospechosa ({{ r.foto.problemas|join:" y " }}). Es la causa típica de los
+            <code>ENROLL_FAIL</code> / <code>UPDATE_FAIL (VISUAL FACE)</code>: conviene renovarla.
+          </div>
+        {% endif %}
+        {% else %}
+          <div class="alert alert-danger py-2 mb-0">Sin foto: no hay nada que enrolar en el facial.</div>
+        {% endif %}
+      </div>
+
+      {# ---- BioStar ---- #}
+      <div class="col-md-6">
+        <h6 class="text-uppercase text-muted small">Usuario en el server BioStar</h6>
+        {% if b.existe %}
+        <table class="table table-sm mb-0">
+          <tbody>
+            <tr><th class="w-50">USRUID</th><td>{{ b.usruid }}</td></tr>
+            <tr><th>Rostros cargados</th>
+                <td>{% if b.rostros %}<span class="text-success">{{ b.rostros }}</span>
+                    {% else %}<span class="text-danger fw-bold">ninguno</span>{% endif %}</td></tr>
+            <tr><th>Grupos de acceso</th>
+                <td>{{ b.grupos|join:", "|default:"ninguno" }}
+                  {% if not b.en_grupo_socios %}<span class="badge bg-danger">fuera de Cuota Social</span>{% endif %}
+                </td></tr>
+            <tr><th>Lista blanca Suprema</th>
+                <td>{% if r.lista_blanca %}<span class="text-success">sí</span>
+                    {% else %}<span class="text-danger">no</span>{% endif %}</td></tr>
+          </tbody>
+        </table>
+        {% else %}
+          <div class="alert alert-danger py-2 mb-0">No existe en BioStar: nunca se enroló o fue borrado.</div>
+        {% endif %}
+      </div>
+
+      {# ---- Equipos ---- #}
+      <div class="col-md-6">
+        <h6 class="text-uppercase text-muted small">¿Está cargado en cada equipo?</h6>
+        {% if r.equipos %}
+        <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <tbody>
+            {% for eq in r.equipos %}
+            <tr>
+              <td>{{ eq.equipo }}</td>
+              <td class="text-nowrap">
+                {% if eq.cargado %}
+                  <span class="text-success">cargado</span>
+                {% else %}
+                  <span class="text-danger fw-bold">BORRADO</span>
+                  <small class="text-muted">hace {{ eq.dias_fuera }} día{{ eq.dias_fuera|pluralize }}</small>
+                {% endif %}
+              </td>
+              <td class="small text-muted text-nowrap">{{ eq.evento }} · {{ eq.fecha|date:"d/m H:i" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        {% else %}
+          <div class="alert alert-warning py-2 mb-0">
+            Sin eventos de carga ni borrado en los últimos {{ r.dias }} días: no hay constancia
+            de que esté cargado en los equipos.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ---- Eventos BioStar ---- #}
+    <h6 class="text-uppercase text-muted small mt-4">Eventos en BioStar · últimos {{ r.dias }} días</h6>
+    {% if r.eventos %}
+      <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
+        <table class="table table-sm table-striped mb-0">
+          <thead><tr><th>Fecha</th><th>Equipo</th><th>Evento</th></tr></thead>
+          <tbody>
+            {% for e in r.eventos %}
+            <tr {% if e.es_fallo %}class="table-danger"{% endif %}>
+              <td class="text-nowrap">{{ e.fecha|date:"d/m/Y H:i:s" }}</td>
+              <td>{{ e.equipo }}</td>
+              <td>{{ e.evento }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="small text-muted mt-2 mb-0">
+        Un rechazo de reconocimiento se registra como <code>AUTH_FAILED_TIMEOUT</code> <strong>sin
+        usuario</strong>, así que no se puede atribuir a un socio: que no aparezcan fallos propios
+        no significa que haya podido entrar.
+      </p>
+    {% else %}
+      <p class="text-muted mb-0">Sin eventos en el período.</p>
+    {% endif %}
+
+    {# ---- Accesos xSys ---- #}
+    <h6 class="text-uppercase text-muted small mt-4">Accesos en xSys · últimos {{ r.dias }} días</h6>
+    {% if r.accesos %}
+      <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
+        <table class="table table-sm table-striped mb-0">
+          <thead><tr><th>Fecha</th><th>Acceso</th><th>Motivo</th><th>Observación</th></tr></thead>
+          <tbody>
+            {% for a in r.accesos %}
+            <tr {% if a.es_rechazo %}class="table-danger"{% endif %}>
+              <td class="text-nowrap">{{ a.fecha|date:"d/m/Y H:i:s" }}</td>
+              <td>{{ a.id_acceso }} · {{ a.acceso }}</td>
+              <td>{{ a.motivo|default:"—" }}</td>
+              <td class="small">{{ a.observacion }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="text-muted mb-0">Ningún registro: no pasó por ningún lector, o no llegó a generar evento.</p>
+    {% endif %}
+
+    {# ---- Novedades ---- #}
+    {% if r.novedades %}
+    <h6 class="text-uppercase text-muted small mt-4">Novedades de sincronización</h6>
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Fecha</th><th>Estado</th><th>Tipo</th><th>Nota</th></tr></thead>
+        <tbody>
+          {% for n in r.novedades %}
+          <tr {% if n.es_error %}class="table-warning"{% endif %}>
+            <td class="text-nowrap">{{ n.fecha|date:"d/m/Y H:i:s" }}</td>
+            <td>{{ n.estado }}</td>
+            <td>{{ n.tipo|default:"—" }}</td>
+            <td class="small">{{ n.nota }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+  </div>
+</section>
+{% endwith %}
+{% endfor %}
+
+{% endblock content %}
