@@ -601,6 +601,18 @@ class XsysSyncService:
                     ).values_list("id_cliente", flat=True)
                 )
                 stats["fotos"] = self.sync_fotos_by_ids(cursor, habilitados)
+
+                # Push best-effort a los lectores BioStar (SOLO altas de habilitados
+                # enrolados). Nunca rompe el sync xSys->local; modo por env
+                # BIOSTAR_PUSH_MODE (off|dryrun|on, default dryrun).
+                try:
+                    from access_control.services.biostar_push import push_enabled_affected
+
+                    stats["biostar_push"] = push_enabled_affected(affected)
+                except Exception as exc:  # pragma: no cover - defensivo
+                    logger.warning("biostar_push falló (no afecta el sync): %s", exc)
+                    stats["biostar_push"] = {"error": str(exc)[:200]}
+
                 new_last = max(r[0] for r in rows)
             else:
                 new_last = last_id

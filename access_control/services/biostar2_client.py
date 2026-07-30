@@ -218,6 +218,33 @@ class BioStar2Client:
             json=payload,
         ).json()
 
+    def list_device_ids(self) -> list[int]:
+        """IDs de TODOS los dispositivos agregados en BioStar 2."""
+        data = self.list_devices()
+        rows = (data.get("DeviceCollection") or {}).get("rows") or []
+        return [int(r["id"]) for r in rows if r.get("id") is not None]
+
+    def add_user_to_all_devices(
+        self, user_ids: int | list[int], *, overwrite: bool = True
+    ) -> dict:
+        """Envía uno o más usuarios a TODOS los dispositivos de BioStar, en una sola llamada.
+
+        Igual que ``add_user_to_device_group`` pero resolviendo el universo completo
+        de devices vía ``list_devices``. Idempotente con ``overwrite=true``.
+        """
+        device_ids = self.list_device_ids()
+        if not device_ids:
+            raise RuntimeError("BioStar no devolvió ningún device para exportar usuarios")
+        ids = user_ids if isinstance(user_ids, list) else [user_ids]
+        id_param = "+".join(str(i) for i in ids)
+        payload = {"DeviceCollection": {"rows": [{"id": str(d)} for d in device_ids]}}
+        return self.request(
+            "POST",
+            "/api/users/export",
+            params={"overwrite": str(overwrite).lower(), "id": id_param},
+            json=payload,
+        ).json()
+
     def remove_user_from_device(self, device_id: int, user_id: int | str = "*") -> dict:
         """Borra un usuario puntual (o todos, con user_id='*') de la caché local de un dispositivo."""
         return self.request(
