@@ -29,6 +29,12 @@ class Command(BaseCommand):
         parser.add_argument("--backfill", type=int, default=1000, help="Eventos recientes a sembrar en el primer arranque.")
         parser.add_argument("--retention-days", type=int, default=7, help="Días de retención de eventos.")
         parser.add_argument("--reconnect-delay", type=float, default=10.0, help="Espera al reconectar tras un error.")
+        parser.add_argument(
+            "--resync-check",
+            type=float,
+            default=120.0,
+            help="Segundos entre chequeos de secuencia de ids reiniciada en BioStar (0 = off).",
+        )
         parser.add_argument("--once", action="store_true", help="Un solo ciclo y termina (para pruebas).")
 
     def _client(self):
@@ -44,6 +50,7 @@ class Command(BaseCommand):
         backfill = options["backfill"]
         retention = options["retention_days"]
         reconnect_delay = options["reconnect_delay"]
+        resync_check = options["resync_check"]
         once = options["once"]
 
         self.stdout.write(self.style.SUCCESS(
@@ -53,6 +60,7 @@ class Command(BaseCommand):
         event_types: dict = {}
         last_meta = 0.0
         last_purge = time.monotonic()
+        last_resync = 0.0
 
         try:
             while True:
@@ -83,6 +91,21 @@ class Command(BaseCommand):
                             state.save(update_fields=["last_event_id", "updated_at"])
                         if nuevos:
                             self.stdout.write(f"+{nuevos} accesos faciales (high-water={state.last_event_id})")
+
+                    # Auto-reseed: si BioStar reinició su secuencia de ids (limpieza o
+                    # restauración de su base), el high-water queda por encima del máximo
+                    # real y el poll incremental deja de matchear. Se detecta comparando
+                    # contra el id más nuevo y se re-siembra (backfill en el próximo ciclo).
+                    if resync_check and (time.monotonic() - last_resync) >= resync_check:
+                        last_resync = time.monotonic()
+                        mx = biostar_events.current_max_event_id(client)
+                        if mx is not None and state.last_event_id and mx < state.last_event_id:
+                            self.stdout.write(self.style.WARNING(
+                                f"high-water {state.last_event_id} > máx BioStar {mx}: "
+                                "secuencia reiniciada; re-sembrando (backfill)"
+                            ))
+                            state.last_event_id = 0
+                            state.save(update_fields=["last_event_id", "updated_at"])
 
                     if time.monotonic() - last_purge >= 3600:
                         purged = biostar_events.purge_old(retention)

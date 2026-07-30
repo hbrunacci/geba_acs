@@ -93,6 +93,19 @@ def _store_event(event_types: dict, e: dict) -> bool:
     return created
 
 
+def current_max_event_id(client) -> int | None:
+    """Id del evento más nuevo en BioStar (o None si no hay/error de forma).
+
+    Sirve para detectar que BioStar reinició su secuencia de ids (limpieza o
+    restauración de su base): si el high-water local quedó POR ENCIMA de este
+    máximo, el poll incremental (``id > high-water``) no matchea nada más.
+    """
+    rows = client.events_search(limit=1, order_column="id", descending=True)
+    if not rows:
+        return None
+    return _int_or_none(rows[0].get("id"))
+
+
 def ingest_new_events(client, event_types: dict, last_id: int, *, limit: int = 200, max_pages: int = 50) -> tuple[int, int]:
     """Ingesta INCREMENTAL: trae solo eventos con ``id`` > ``last_id`` (todos los
     equipos), en orden de ``id`` ascendente, y persiste los de acceso.
