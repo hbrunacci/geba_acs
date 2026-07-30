@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 
 from django.shortcuts import render
 from django.db.models import Count
 
-from common.roles import admin_requerido
+from common.roles import admin_requerido, puertas_requerido
 from django.db.utils import OperationalError
 from django.db.models.functions import ExtractHour, TruncDate
 
@@ -24,6 +25,7 @@ from rest_framework import status, viewsets
 from people.models import Cliente
 
 from access_control.services import ClientLookupError, MSSQLClientLookupService
+from access_control.services.diag_facial import DiagFacialError, diagnosticar
 from access_control.services.intelectron.api3000_console import COMMAND_CATALOG
 
 
@@ -51,6 +53,47 @@ def _parking_stay_duration_seconds(stay_duration):
     if stay_duration is None:
         return None
     return int(stay_duration.total_seconds())
+
+
+@puertas_requerido
+def diag_facial_console(request):
+    """Diagnóstico de un socio que no puede entrar por facial.
+
+    Busca por DNI o número de socio y muestra, en una sola pantalla, todo lo que
+    hace falta para responder un reclamo: datos del socio, foto, estado en
+    BioStar, si está cargado en cada equipo, eventos/errores y últimos accesos.
+    Comparte la lógica con el comando ``manage.py diag_facial``.
+    """
+
+    consulta = (request.GET.get("q") or "").strip()
+    modo = request.GET.get("modo") or "dni"
+    try:
+        dias = max(1, min(60, int(request.GET.get("dias") or 10)))
+    except ValueError:
+        dias = 10
+
+    contexto = {"consulta": consulta, "modo": modo, "dias": dias,
+                "reportes": [], "avisos": [], "error": None}
+
+    if consulta:
+        numeros = [t for t in re.split(r"[\s,;]+", consulta) if t]
+        invalidos = [t for t in numeros if not t.isdigit()]
+        if invalidos:
+            contexto["error"] = "Solo números (DNI o número de socio): " + ", ".join(invalidos[:5])
+        else:
+            valores = [int(t) for t in numeros]
+            try:
+                datos = diagnosticar(
+                    dnis=valores if modo == "dni" else [],
+                    ids_cliente=valores if modo == "socio" else [],
+                    dias=dias,
+                )
+                contexto["reportes"] = datos["reportes"]
+                contexto["avisos"] = datos["avisos"]
+            except DiagFacialError as exc:
+                contexto["error"] = str(exc)
+
+    return render(request, "access_control/diag_facial.html", contexto)
 
 
 @admin_requerido

@@ -7,6 +7,7 @@ from access_control.views import (
     intelektron_admin,
     biostar_devices_console,
     biostar_users_console,
+    diag_facial_console,
     external_access_console,
     parking_movements_console,
 )
@@ -45,5 +46,10 @@ urlpatterns = [
         "biostar/users/",
         biostar_users_console,
         name="biostar_users_console",
+    ),
+    path(
+        "diag-facial/",
+        diag_facial_console,
+        name="diag_facial_console",
     ),
 ]
