@@ -74,7 +74,13 @@ def _store_event(event_types: dict, e: dict) -> bool:
     bid = str(e.get("id") or "")
     if not bid:
         return False
-    fecha = parse_server_datetime(e.get("server_datetime")) or parse_server_datetime(e.get("datetime"))
+    # OJO: el server BioStar de esta instancia emite ``server_datetime`` en hora
+    # LOCAL rotulada como 'Z' (queda ~3h atrasada); el campo ``datetime`` del
+    # evento es la hora real (UTC). Por eso preferimos ``datetime`` para la
+    # etiqueta, con ``server_datetime`` de fallback. Para el orden en el visor NO
+    # se depende de esto: se ordena por hora de ingesta (``synced_at``), robusto
+    # ante relojes de equipo/servidor mal configurados.
+    fecha = parse_server_datetime(e.get("datetime")) or parse_server_datetime(e.get("server_datetime"))
     if fecha is None:
         return False
     dev = e.get("device_id") or {}

@@ -430,10 +430,14 @@ class PuertaEstadoAPI(APIView):
                 .order_by("-external_id")[: HISTORIAL_LEN + 1]
             ) if ctrls else []
             devs = cd.get("biostar_devices") or []
+            # Se filtra/ordena por hora de INGESTA (synced_at ≈ tiempo real del
+            # poll, ~1-2s), NO por la hora reportada por BioStar: su server_datetime
+            # viene ~3h atrasado y algunos equipos driftean el reloj, lo que hacía
+            # que los pasos faciales aparecieran tarde (o cayeran en otro día).
             fx = list(
                 BiostarAccessEvent.objects
-                .filter(device_id__in=devs, id_cliente__isnull=False, fecha__date=hoy)
-                .order_by("-fecha")[: HISTORIAL_LEN + 1]
+                .filter(device_id__in=devs, id_cliente__isnull=False, synced_at__date=hoy)
+                .order_by("-synced_at")[: HISTORIAL_LEN + 1]
             ) if devs else []
             xsys_por_col.append(xs)
             facial_por_col.append(fx)
@@ -457,7 +461,9 @@ class PuertaEstadoAPI(APIView):
         for cd, xs, fx in zip(cols_def, xsys_por_col, facial_por_col):
             # (fecha, payload) para poder ordenar la mezcla por tiempo (desc).
             items = [(e.fecha, _evento_payload(e, socios, fotos, motivos, ctrls)) for e in xs]
-            items += [(e.fecha, _facial_evento_payload(e, socios, fotos)) for e in fx]
+            # Los faciales se ubican en la línea de tiempo por su hora de ingesta
+            # (real), no por la hora de BioStar (atrasada). Los xSys sí por fecha.
+            items += [(e.synced_at, _facial_evento_payload(e, socios, fotos)) for e in fx]
             items.sort(key=lambda t: t[0], reverse=True)
             payloads = [p for _, p in items[: HISTORIAL_LEN + 1]]
             columnas.append({
