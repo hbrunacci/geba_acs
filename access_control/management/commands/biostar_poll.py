@@ -2,10 +2,14 @@
 
 BioStar es la ÚNICA fuente con identidad por-equipo de los accesos faciales
 (en xSys/CD_ES todos colapsan en un controlador). Este poller consulta
-``/api/events/search`` de forma INCREMENTAL (solo eventos con ``id`` mayor al
-último procesado — high-water en ``BiostarPollState``) y guarda solo los
-eventos de ACCESO (identify/verify success/fail/denied) en ``BiostarAccessEvent``.
-El visor lee después el espejo local. Reconecta ante caídas.
+``/api/events/search`` trayendo los eventos MÁS RECIENTES (por id descendente) y
+deduplicando por ``biostar_id``, y guarda solo los de ACCESO (identify/verify
+success/fail/denied) en ``BiostarAccessEvent``. El visor lee después el espejo.
+
+Antes usaba high-water por ``after_id``, pero el ``id`` de eventos de BioStar NO
+es monótono en el tiempo (hay bloques viejos con ids más altos, por reinicios de
+su base): el high-water se estancaba y los pasos aparecían en ráfagas de minutos.
+El tail-poll + dedup es inmune y da latencia de ~1 ciclo. Reconecta ante caídas.
 
 Ejemplo (contenedor `biostar-poller`):
     python manage.py biostar_poll --interval 1
@@ -21,20 +25,18 @@ from access_control.services import biostar_events
 
 
 class Command(BaseCommand):
-    help = "Poll incremental del log de eventos BioStar (accesos faciales) al espejo local."
+    help = "Poll de los eventos más recientes de BioStar (accesos faciales) al espejo local."
 
     def add_arguments(self, parser):
         parser.add_argument("--interval", type=float, default=1.0, help="Segundos entre ciclos (default 1).")
-        parser.add_argument("--limit", type=int, default=200, help="Máx. eventos por página por ciclo.")
-        parser.add_argument("--backfill", type=int, default=1000, help="Eventos recientes a sembrar en el primer arranque.")
+        parser.add_argument(
+            "--limit",
+            type=int,
+            default=300,
+            help="Cantidad de eventos más recientes a revisar por ciclo (dedup por id).",
+        )
         parser.add_argument("--retention-days", type=int, default=7, help="Días de retención de eventos.")
         parser.add_argument("--reconnect-delay", type=float, default=10.0, help="Espera al reconectar tras un error.")
-        parser.add_argument(
-            "--resync-check",
-            type=float,
-            default=120.0,
-            help="Segundos entre chequeos de secuencia de ids reiniciada en BioStar (0 = off).",
-        )
         parser.add_argument("--once", action="store_true", help="Un solo ciclo y termina (para pruebas).")
 
     def _client(self):
@@ -43,24 +45,19 @@ class Command(BaseCommand):
         return BioStar2Client.from_db_and_env()
 
     def handle(self, *args, **options):
-        from access_control.models import BiostarPollState
-
         interval = max(0.3, options["interval"])
         limit = options["limit"]
-        backfill = options["backfill"]
         retention = options["retention_days"]
         reconnect_delay = options["reconnect_delay"]
-        resync_check = options["resync_check"]
         once = options["once"]
 
         self.stdout.write(self.style.SUCCESS(
-            f"Iniciando poller BioStar incremental cada {interval}s. Ctrl-C para salir."
+            f"Iniciando poller BioStar (más recientes) cada {interval}s. Ctrl-C para salir."
         ))
 
         event_types: dict = {}
         last_meta = 0.0
         last_purge = time.monotonic()
-        last_resync = 0.0
 
         try:
             while True:
@@ -73,39 +70,9 @@ class Command(BaseCommand):
                         last_meta = now
                         self.stdout.write(f"meta: {len(event_types)} tipos de evento")
 
-                    state = BiostarPollState.get_solo()
-
-                    # Arranque en frío: sembrar el high-water con lo reciente.
-                    if state.last_event_id == 0:
-                        nuevos, mx = biostar_events.ingest_backfill(client, event_types, limit=backfill)
-                        if mx:
-                            state.last_event_id = mx
-                            state.save(update_fields=["last_event_id", "updated_at"])
-                        self.stdout.write(f"backfill: +{nuevos} accesos, high-water={state.last_event_id}")
-                    else:
-                        nuevos, new_last = biostar_events.ingest_new_events(
-                            client, event_types, state.last_event_id, limit=limit
-                        )
-                        if new_last > state.last_event_id:
-                            state.last_event_id = new_last
-                            state.save(update_fields=["last_event_id", "updated_at"])
-                        if nuevos:
-                            self.stdout.write(f"+{nuevos} accesos faciales (high-water={state.last_event_id})")
-
-                    # Auto-reseed: si BioStar reinició su secuencia de ids (limpieza o
-                    # restauración de su base), el high-water queda por encima del máximo
-                    # real y el poll incremental deja de matchear. Se detecta comparando
-                    # contra el id más nuevo y se re-siembra (backfill en el próximo ciclo).
-                    if resync_check and (time.monotonic() - last_resync) >= resync_check:
-                        last_resync = time.monotonic()
-                        mx = biostar_events.current_max_event_id(client)
-                        if mx is not None and state.last_event_id and mx < state.last_event_id:
-                            self.stdout.write(self.style.WARNING(
-                                f"high-water {state.last_event_id} > máx BioStar {mx}: "
-                                "secuencia reiniciada; re-sembrando (backfill)"
-                            ))
-                            state.last_event_id = 0
-                            state.save(update_fields=["last_event_id", "updated_at"])
+                    nuevos = biostar_events.ingest_recent(client, event_types, limit=limit)
+                    if nuevos:
+                        self.stdout.write(f"+{nuevos} accesos faciales")
 
                     if time.monotonic() - last_purge >= 3600:
                         purged = biostar_events.purge_old(retention)

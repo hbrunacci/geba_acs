@@ -156,6 +156,35 @@ def ingest_backfill(client, event_types: dict, *, limit: int = 1000) -> tuple[in
     return nuevos, mx
 
 
+def ingest_recent(client, event_types: dict, *, limit: int = 300, max_age_days: int = 2) -> int:
+    """Ingesta en TIEMPO REAL: trae los ``limit`` eventos más recientes (por id
+    descendente) y persiste los de acceso nuevos (dedup por ``biostar_id``).
+
+    A diferencia de ``ingest_new_events`` (por ``after_id``), NO depende de que el
+    ``id`` sea monótono en el tiempo. El log de BioStar puede tener bloques viejos
+    con ids MÁS ALTOS que la secuencia actual (por reinicios/restauraciones de su
+    base): caminar ``id > high-water`` cruza a esos eventos-mina y estanca el
+    poll. Sondear el tope descendente + dedup es inmune y da latencia de ~1 ciclo.
+
+    ``max_age_days`` descarta eventos claramente viejos (los ids-mina traen fecha
+    de hace meses) por si el orden descendente los devolviera.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone as _dj_tz
+
+    cutoff = _dj_tz.now() - timedelta(days=max_age_days)
+    rows = client.events_search(limit=limit, order_column="id", descending=True)
+    nuevos = 0
+    for e in rows:
+        f = parse_server_datetime(e.get("datetime")) or parse_server_datetime(e.get("server_datetime"))
+        if f is not None and f < cutoff:
+            continue  # evento viejo (id-mina de un reinicio de BioStar): ignorar
+        if _store_event(event_types, e):
+            nuevos += 1
+    return nuevos
+
+
 def purge_old(days: int) -> int:
     """Borra eventos faciales fuera de la ventana de retención. Devuelve borrados."""
     from datetime import timedelta
