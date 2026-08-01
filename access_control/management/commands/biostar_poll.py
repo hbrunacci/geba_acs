@@ -37,6 +37,12 @@ class Command(BaseCommand):
         )
         parser.add_argument("--retention-days", type=int, default=7, help="Días de retención de eventos.")
         parser.add_argument("--reconnect-delay", type=float, default=10.0, help="Espera al reconectar tras un error.")
+        parser.add_argument(
+            "--users-refresh",
+            type=float,
+            default=21600.0,
+            help="Segundos entre refrescos del espejo BioStarUser (default 6h; 0 = off).",
+        )
         parser.add_argument("--once", action="store_true", help="Un solo ciclo y termina (para pruebas).")
 
     def _client(self):
@@ -49,6 +55,7 @@ class Command(BaseCommand):
         limit = options["limit"]
         retention = options["retention_days"]
         reconnect_delay = options["reconnect_delay"]
+        users_refresh = options["users_refresh"]
         once = options["once"]
 
         self.stdout.write(self.style.SUCCESS(
@@ -58,6 +65,9 @@ class Command(BaseCommand):
         event_types: dict = {}
         last_meta = 0.0
         last_purge = time.monotonic()
+        # Se arranca el timer "ya corrido" para NO refrescar usuarios al inicio
+        # (el espejo ya está poblado); el primer refresco es a los users_refresh s.
+        last_users = time.monotonic()
 
         try:
             while True:
@@ -79,6 +89,18 @@ class Command(BaseCommand):
                         if purged:
                             self.stdout.write(f"-{purged} eventos fuera de ventana")
                         last_purge = time.monotonic()
+
+                    # Refresco periódico del espejo BioStarUser (para que las
+                    # búsquedas de la UI, que leen el espejo, no queden viejas).
+                    # Lo hace el propio poller: BioStar sigue con un solo consumidor.
+                    if users_refresh and (time.monotonic() - last_users) >= users_refresh:
+                        last_users = time.monotonic()
+                        from django.core.management import call_command
+                        try:
+                            call_command("biostar_sync_users", verbosity=0)
+                            self.stdout.write("espejo BioStarUser refrescado")
+                        except Exception as exc:  # pragma: no cover - depende de BioStar
+                            self.stderr.write(f"refresh de usuarios falló: {exc}")
 
                 except Exception as exc:  # pragma: no cover - depende de red/BioStar
                     self.stderr.write(f"Error en el poll BioStar ({exc}); reintento en {reconnect_delay}s")
