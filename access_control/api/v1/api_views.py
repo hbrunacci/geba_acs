@@ -457,19 +457,25 @@ class BioStarUserLookupAPI(views.APIView):
                     status=status.HTTP_200_OK,
                 )
 
-        try:
-            biostar_user = BioStar2Client.from_db_and_env().get_user(id_cliente)
-        except requests.RequestException as exc:
-            return Response(
-                {"detail": "No se pudo consultar BioStar: " + str(exc)},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
+        # Se resuelve contra el espejo local BioStarUser (poblado por
+        # biostar_sync_users), NO contra BioStar en vivo: así la UI no le agrega
+        # carga al servidor de BioStar. El único consumidor regular de BioStar es
+        # el biostar-poller. La frescura depende de correr biostar_sync_users.
+        mirror = BioStarUser.objects.filter(user_id=id_cliente).first()
+        if mirror is not None:
+            biostar_user = mirror.raw_payload or {
+                "user_id": str(mirror.user_id),
+                "name": mirror.name,
+            }
+        else:
+            biostar_user = None
 
         return Response(
             {
                 "found": biostar_user is not None,
                 "id_cliente": id_cliente,
                 "biostar_user": biostar_user,
+                "source": "espejo_local",
             },
             status=status.HTTP_200_OK,
         )
@@ -479,25 +485,42 @@ class BioStarUserSearchAPI(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
+        from django.db.models import Q
+
         search_text = (request.data.get("search_text") or "").strip()
         if not search_text:
             return Response(
                 {"detail": "El parámetro 'search_text' es obligatorio."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        user_group_id = str(request.data.get("user_group_id") or "1")
-        limit = int(request.data.get("limit") or 50)
-        offset = int(request.data.get("offset") or 0)
-        order_by = request.data.get("order_by") or "user_id:false"
-        client = BioStar2Client.from_db_and_env()
-        payload = client.search_users_v2(
-            search_text=search_text,
-            user_group_id=user_group_id,
-            limit=limit,
-            offset=offset,
-            order_by=order_by,
+        try:
+            limit = max(1, int(request.data.get("limit") or 50))
+            offset = max(0, int(request.data.get("offset") or 0))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "limit/offset deben ser numéricos."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Búsqueda contra el espejo local BioStarUser (poblado por
+        # biostar_sync_users), NO contra BioStar en vivo: la UI no le agrega carga
+        # al servidor de BioStar. Los campos de cada fila salen del raw_payload
+        # guardado (mismo formato que consume la consola).
+        q = Q(name__icontains=search_text) | Q(user_unique_id__icontains=search_text)
+        if search_text.isdigit():
+            q |= Q(user_id=int(search_text))
+        qs = BioStarUser.objects.filter(is_active=True).filter(q).order_by("name", "user_id")
+        total = qs.count()
+        rows = []
+        for u in qs[offset:offset + limit]:
+            row = dict(u.raw_payload) if isinstance(u.raw_payload, dict) and u.raw_payload else {}
+            row.setdefault("user_id", str(u.user_id))
+            row.setdefault("name", u.name)
+            rows.append(row)
+        return Response(
+            {"UserCollection": {"total": str(total), "rows": rows}, "source": "espejo_local"},
+            status=status.HTTP_200_OK,
         )
-        return Response(payload, status=status.HTTP_200_OK)
 
 
 biostar_logger = logging.getLogger("access_control.biostar")
