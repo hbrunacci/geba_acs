@@ -21,7 +21,7 @@
     .col:last-child { border-right: 0; }
     .col__head { flex: 0 0 auto; padding: 7px; text-align: center; font-weight: 700; background: rgba(0,0,0,.25); font-size: clamp(12px, 1.5vw, 20px); }
 
-    .col__current { flex: 1 1 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px; text-align: center; overflow: hidden; }
+    .col__current { flex: 1 1 44%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px; text-align: center; overflow: hidden; }
     /* Marco 3/4 uniforme. BASE robusta para Chrome viejo (sin aspect-ratio): tamaño fijo en vh
        que bloquea la relación 3/4; object-fit: cover (Chrome 32+) recorta parejo dentro del marco.
        El @supports de abajo restaura el dimensionado responsivo por % en navegadores con
@@ -43,9 +43,9 @@
     .ctime { margin-top: 5px; font-size: 12px; opacity: .5; }
     .idle { opacity: .45; font-size: clamp(14px, 1.6vw, 22px); text-align: center; padding: 20px; }
 
-    .col__history { flex: 1 1 50%; display: flex; border-top: 1px solid #21262d; overflow: hidden; }
+    .col__history { flex: 1 1 56%; display: flex; border-top: 1px solid #21262d; overflow: hidden; }
     .hlist { flex: 1 1 auto; min-width: 0; overflow: hidden; padding: 2px 4px; }
-    .hrow { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border-bottom: 1px solid #171d25; }
+    .hrow { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-bottom: 1px solid #171d25; }
     .hthumb { width: 68px; height: 88px; object-fit: cover; border-radius: 6px; flex: 0 0 auto; background: #21262d; border: 1px solid #30363d; }
     .hbody { min-width: 0; flex: 1; }
     .hname { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
