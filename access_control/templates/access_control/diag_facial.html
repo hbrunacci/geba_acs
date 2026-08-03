@@ -141,7 +141,11 @@
         {% if b.existe %}
         <table class="table table-sm mb-0">
           <tbody>
-            <tr><th class="w-50">USRUID</th><td>{{ b.usruid }}</td></tr>
+            <tr><th class="w-50">Estado</th>
+                <td>{% if b.estado_ok %}<span class="badge bg-success">{{ b.estado }}</span>
+                    {% else %}<span class="badge bg-danger">{{ b.estado }}</span>{% endif %}</td></tr>
+            <tr><th>USRUID</th><td>{{ b.usruid }}</td></tr>
+            <tr><th>Vigencia</th><td>{{ b.desde|default:"—" }} → {{ b.hasta|default:"—" }}</td></tr>
             <tr><th>Rostros cargados</th>
                 <td>{% if b.rostros %}<span class="text-success">{{ b.rostros }}</span>
                     {% else %}<span class="text-danger fw-bold">ninguno</span>{% endif %}</td></tr>

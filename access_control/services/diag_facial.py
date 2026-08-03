@@ -315,7 +315,7 @@ class DiagnosticadorFacial:
     def _biostar(self, cid: int, alertas: list[str]) -> dict:
         filas = _rows(
             self.cur,
-            f"""SELECT U.USRID, U.USRUID, U.NM, U.DEL,
+            f"""SELECT U.USRID, U.USRUID, U.NM, U.DEL, U.DSBDUSR, U.STTDT, U.EXPDT, U.SECLVL,
                        (SELECT COUNT(*) FROM {self.prefix}.T_CRDT CR WHERE CR.USRUID = U.USRUID) AS rostros
                 FROM {self.prefix}.T_USR U WHERE U.USRID = '{cid}'""",
         )
@@ -326,9 +326,34 @@ class DiagnosticadorFacial:
         u = filas[0]
         usruid = int(u["USRUID"])
         borrado = str(u["DEL"] or "").upper() == "Y"
+        deshabilitado = str(u["DSBDUSR"] or "").upper() == "Y"
+        desde = _fecha(u["STTDT"])
+        hasta = _fecha(u["EXPDT"])
+        vencido = bool(hasta and hasta < self.hoy)
+        no_vigente = bool(desde and desde > self.hoy)
         rostros = int(u["rostros"] or 0)
+
+        # Estado global del usuario en BioStar (por prioridad de gravedad).
+        if borrado:
+            estado = "borrado"
+        elif deshabilitado:
+            estado = "deshabilitado"
+        elif vencido:
+            estado = "vencido"
+        elif no_vigente:
+            estado = "aún no vigente"
+        else:
+            estado = "habilitado"
+        estado_ok = estado == "habilitado"
+
         if borrado:
             alertas.append("marcado como borrado (DEL='Y') en BioStar")
+        if deshabilitado:
+            alertas.append("usuario DESHABILITADO en BioStar (DSBDUSR='Y')")
+        if vencido:
+            alertas.append(f"usuario VENCIDO en BioStar (expiró el {hasta})")
+        if no_vigente:
+            alertas.append(f"usuario aún no vigente en BioStar (empieza el {desde})")
         if not rostros:
             alertas.append("sin rostro cargado en el server BioStar")
 
@@ -339,8 +364,10 @@ class DiagnosticadorFacial:
             alertas.append(f"fuera del grupo de acceso {ACCESS_GROUP_SOCIOS} (Cuota Social)")
 
         return {"existe": True, "usruid": usruid, "nombre": str(u["NM"] or "").strip(),
-                "borrado": borrado, "rostros": rostros, "grupos": ids_grupo,
-                "en_grupo_socios": en_grupo}
+                "borrado": borrado, "deshabilitado": deshabilitado, "vencido": vencido,
+                "no_vigente": no_vigente, "estado": estado, "estado_ok": estado_ok,
+                "desde": desde, "hasta": hasta, "seclvl": str(u["SECLVL"] or "").strip(),
+                "rostros": rostros, "grupos": ids_grupo, "en_grupo_socios": en_grupo}
 
     def _lista_blanca(self, cid: int, alertas: list[str]) -> bool:
         filas = _rows(self.cur, f"SELECT COUNT(*) AS n FROM CD_Lista_Blanca_Suprema WHERE Id_Cliente = {cid}")
