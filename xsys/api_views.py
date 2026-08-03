@@ -8,7 +8,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from access_control.models import BiostarAccessEvent
+from access_control.models import BiostarAccessEvent, SocioAviso
 from access_control.models.models import ExternalAccessLogEntry
 from common.roles import PuedeConfigPuertas
 from institutions.models import AccessDoor, DoorController, DoorTurnstileGroup
@@ -221,7 +221,7 @@ def _tipo_lectura(id_controlador, controladores: dict) -> str:
     return "credencial"
 
 
-def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None) -> dict:
+def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None) -> dict:
     socio = socios.get(ev.id_cliente)
     tiene_foto = ev.id_cliente in fotos
     # Mensaje original de xSys (motivo de pantalla u observación).
@@ -270,10 +270,11 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         "ult_cuota_paga": (socio.ult_cuota_paga.isoformat() if socio and socio.ult_cuota_paga else None),
         "foto_url": foto_url,
         "foto_thumb_url": (foto_url + "?thumb=1") if foto_url else None,
+        "avisos": (avisos_por_socio or {}).get(ev.id_cliente) or [],
     }
 
 
-def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set) -> dict:
+def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avisos_por_socio: dict | None = None) -> dict:
     """Payload de un acceso facial BioStar, con la MISMA forma que _evento_payload
     para poder fusionarlo en la misma columna del visor. La identidad del equipo
     (``facial_equipo``) es el dato que xSys no tiene: viene del log de BioStar."""
@@ -312,6 +313,7 @@ def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set) -> 
         "foto_url": foto_url,
         "foto_thumb_url": (foto_url + "?thumb=1") if foto_url else None,
         "facial_equipo": ev.device_name,
+        "avisos": (avisos_por_socio or {}).get(ev.id_cliente) or [],
     }
 
 
@@ -463,14 +465,19 @@ class PuertaEstadoAPI(APIView):
         foto_fetch.request_many(cids - fotos)
         motivos = {m.id_cd_motivo: m for m in XsysMotivo.objects.filter(pk__in=mids)}
         ctrls = {c.id_controlador: c for c in XsysControlador.objects.filter(pk__in=ctrl_ids)}
+        # Avisos locales por socio (los que se dejan en /diag-facial): se muestran
+        # en el visor cuando ese socio pasa.
+        avisos_por_socio: dict = {}
+        for a in SocioAviso.objects.filter(id_cliente__in=cids).order_by("-created_at"):
+            avisos_por_socio.setdefault(a.id_cliente, []).append(a.texto)
 
         columnas = []
         for cd, xs, fx in zip(cols_def, xsys_por_col, facial_por_col):
             # (fecha, payload) para poder ordenar la mezcla por tiempo (desc).
-            items = [(e.fecha, _evento_payload(e, socios, fotos, motivos, ctrls)) for e in xs]
+            items = [(e.fecha, _evento_payload(e, socios, fotos, motivos, ctrls, avisos_por_socio)) for e in xs]
             # Los faciales se ubican en la línea de tiempo por su hora de ingesta
             # (real), no por la hora de BioStar (atrasada). Los xSys sí por fecha.
-            items += [(e.synced_at, _facial_evento_payload(e, socios, fotos)) for e in fx]
+            items += [(e.synced_at, _facial_evento_payload(e, socios, fotos, avisos_por_socio)) for e in fx]
             items.sort(key=lambda t: t[0], reverse=True)
             payloads = [p for _, p in items[: HISTORIAL_LEN + 1]]
             columnas.append({

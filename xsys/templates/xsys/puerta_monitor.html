@@ -42,6 +42,8 @@
     .cmsg.ok { background: rgba(46,160,67,.16); color: #56d364; border: 1px solid #2ea043; }
     .cmsg.no { background: rgba(248,81,73,.16); color: #ff7b72; border: 1px solid #f85149; }
     .cmsg.warn { background: rgba(210,153,34,.18); color: #e3b341; border: 1px solid #d29922; }
+    .caviso { margin-top: 6px; font-weight: 700; font-size: clamp(11px, 1.05vw, 16px); padding: 4px 12px; border-radius: 8px; max-width: 94%; background: rgba(88,166,255,.18); color: #79c0ff; border: 1px solid #58a6ff; }
+    .haviso { color: #58a6ff; font-weight: 700; }
     .cextra { margin-top: 6px; font-size: clamp(11px, 1.1vw, 16px); opacity: .85; line-height: 1.3; }
     .cextra .cat { font-weight: 600; }
     .cextra .cuota { opacity: .8; }
@@ -293,9 +295,12 @@
       // Lectura · Última cuota paga
       var lecturaTxt = (ev.lectura === "facial" ? "Facial" : "Credencial");
       var cuotaTxt = ev.ult_cuota_paga ? ' · Últ. cuota: ' + esc(fechaCorta(ev.ult_cuota_paga)) : "";
+      var avisoHtml = (ev.avisos && ev.avisos.length)
+        ? '<div class="caviso">&#128227; ' + ev.avisos.map(esc).join(" &middot; ") + '</div>' : "";
       return fotoBig(ev) +
         '<div class="cname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
         '<div class="cmsg ' + clase + '">' + esc(ev.mensaje || (ev.permitido ? "Permitido" : "Denegado")) + '</div>' +
+        avisoHtml +
         extra +
         '<div class="clectura">' + lecturaIcono(ev) + lecturaTxt + cuotaTxt + '</div>' +
         '<div class="ctime">' + esc(fechaCorta(ev.fecha)) + ' · ' + esc(hora(ev.fecha)) + '</div>';
@@ -309,7 +314,7 @@
         var clase = claseEstado(ev);
         var sub = 'N° ' + esc(ev.id_cliente || "—") + (ev.doc_nro ? ' · DNI ' + esc(ev.doc_nro) : "");
         return '<div class="hrow" data-ides="' + esc(ev.id_es) + '">' + thumb + lecturaIcono(ev) +
-          '<div class="hbody"><div class="hname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
+          '<div class="hbody"><div class="hname">' + ((ev.avisos && ev.avisos.length) ? '<span class="haviso" title="' + esc(ev.avisos.join(" · ")) + '">&#128227;</span> ' : "") + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
           '<div class="hsub">' + sub + '</div>' +
           '<div class="hmsg ' + clase + '">' + esc(ev.mensaje || "") + '</div></div>' +
           '<div class="htime">' + esc(fechaCorta(ev.fecha)) + '<br>' + esc(hora(ev.fecha)) + '</div></div>';
