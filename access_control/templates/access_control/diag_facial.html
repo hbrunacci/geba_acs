@@ -113,7 +113,7 @@
                 <td>{{ s.ult_cuota_paga|default:"—" }}
                   {% if s.cuota_al_dia is True %}<span class="badge bg-success">al día</span>
                   {% elif s.cuota_al_dia is False %}<span class="badge bg-danger">vencida</span>{% endif %}
-                  {% if s.cuota_limite %}<small class="text-muted d-block">al día hasta {{ s.cuota_limite }} (mes de la cuota + 10 días del siguiente)</small>{% endif %}
+                  {% if s.cuota_al_dia is not None %}<small class="text-muted d-block">según xSys, para accesos que exigen cuota (autos). El facial no depende de la cuota.</small>{% endif %}
                 </td></tr>
           </tbody>
         </table>

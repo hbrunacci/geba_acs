@@ -25,12 +25,6 @@ ACCESS_GROUP_SOCIOS = 2
 FOTO_ANTIGUA_ANIOS = 2
 FOTO_CHICA_BYTES = 20_000
 
-# Gracia de cuota por estatuto: el mes de la cuota queda cubierto y hay 10 días de
-# gracia en el mes siguiente. => el socio está al día hasta el DÍA 10 DEL MES
-# SIGUIENTE al de la última cuota paga (Ult_Cuota_Paga).
-# Ej.: pagó julio → al día hasta el 10/08; pagó agosto → hasta el 10/09.
-CUOTA_GRACIA_DIA = 10
-
 # Motivos de CD_ES que son rechazo (el resto habilita o es informativo).
 MOTIVOS_RECHAZO = {103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 309}
 
@@ -124,12 +118,6 @@ def _fecha(valor) -> dt.date | None:
     if isinstance(valor, dt.date):
         return valor
     return None
-
-
-def _sumar_meses(d: dt.date, n: int) -> dt.date:
-    """Devuelve el 1º del mes resultante de sumar ``n`` meses a ``d``."""
-    m = d.month - 1 + n
-    return dt.date(d.year + m // 12, m % 12 + 1, 1)
 
 
 # --------------------------------------------------------------------------- #
@@ -248,17 +236,30 @@ class DiagnosticadorFacial:
             alertas.append("socio inactivo en xSys")
 
         ucp = _fecha(cliente["Ult_Cuota_Paga"])
+        # Estado de cuota según la MISMA función que usa el control de acceso de
+        # xSys (CF_SCA_ValidarUltCuotaPaga), no una regla reimplementada: así el
+        # diagnóstico coincide con la decisión real (incluida la gracia
+        # Meses_Gracia/Dias_Gracia configurada en el acceso). La cuota SOLO la
+        # exigen algunos accesos (autos, Flag_Ult_Cuota_Paga<>0); se evalúa contra
+        # uno de referencia. Si ninguno la exige, cuota_al_dia queda en None.
+        cid = int(cliente["Id_Cliente"])
         cuota_al_dia = None
-        cuota_limite = None
-        if ucp:
-            # Gracia por estatuto: mes de la cuota cubierto + 10 días del mes
-            # siguiente → al día hasta el día 10 del mes siguiente al de la última
-            # cuota paga.
-            cuota_limite = _sumar_meses(ucp, 1).replace(day=CUOTA_GRACIA_DIA)
-            cuota_al_dia = self.hoy <= cuota_limite
-            if not cuota_al_dia:
-                alertas.append(f"cuota vencida (última paga {ucp}; la gracia venció el {cuota_limite})")
-        else:
+        cuota_acceso_ref = None
+        acc = _rows(
+            self.cur,
+            "SELECT TOP 1 Id_Acceso FROM CD_Accesos "
+            "WHERE ISNULL(Flag_Ult_Cuota_Paga,0)<>0 AND Activo=1 ORDER BY Id_Acceso",
+        )
+        if acc:
+            cuota_acceso_ref = int(acc[0]["Id_Acceso"])
+            v = _rows(
+                self.cur,
+                f"SELECT dbo.CF_SCA_ValidarUltCuotaPaga({cid}, {cuota_acceso_ref}, '{self.hoy}') AS v",
+            )
+            cuota_al_dia = bool(v and v[0]["v"])
+            if cuota_al_dia is False:
+                alertas.append("cuota no válida para los accesos que la exigen (autos), según xSys")
+        if not ucp:
             alertas.append("sin última cuota paga registrada")
 
         return {
@@ -274,7 +275,7 @@ class DiagnosticadorFacial:
             "credencial": str(cliente["Credencial_Nro"] or "").strip(),
             "ult_cuota_paga": ucp,
             "cuota_al_dia": cuota_al_dia,
-            "cuota_limite": cuota_limite,
+            "cuota_acceso_ref": cuota_acceso_ref,
         }
 
     def _foto(self, cid: int, alertas: list[str]) -> dict | None:
