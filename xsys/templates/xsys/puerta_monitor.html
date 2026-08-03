@@ -105,6 +105,9 @@
     .modal__dl dt { opacity: .6; }
     .modal__dl dd { margin: 0; font-weight: 600; }
     .modal__contratos strong { font-size: 14px; }
+    .modal__acciones { margin-top: 16px; padding-top: 14px; border-top: 1px solid #21262d; }
+    .diagbtn { display: inline-flex; align-items: center; gap: 8px; background: #21262d; color: #58a6ff; border: 1px solid #30363d; border-radius: 10px; padding: 9px 14px; font-size: 14px; font-weight: 600; text-decoration: none; }
+    .diagbtn:hover { background: #2d333b; border-color: #58a6ff; }
     .contrato { display: inline-block; background: #21262d; border: 1px solid #30363d; border-radius: 999px; padding: 4px 12px; margin: 4px 6px 0 0; font-size: 13px; }
     .contrato.cs { border-color: #2ea043; }
     .modal__vacio { opacity: .5; font-size: 13px; }
@@ -145,6 +148,7 @@
       <div id="accesos"></div>
       <button class="btn" id="aplicar">Aplicar</button>
       <a class="cfglink" href="/xsys/molinetes/" target="_blank">&#9881; Administrar puertas y molinetes</a>
+      <a class="cfglink" href="/diag-facial/" target="_blank" rel="noopener">&#129513; Diagnóstico de facial</a>
       <div class="ip" id="ip"></div>
     </div>
   </div>
@@ -170,6 +174,9 @@
           <div class="modal__contratos">
             <strong>Contratos adquiridos</strong>
             <div id="m-contratos" class="modal__vacio">Cargando…</div>
+          </div>
+          <div class="modal__acciones" id="m-acciones">
+            <a class="diagbtn" id="m-diag" href="#" target="_blank" rel="noopener">&#129513; Diagnosticar facial</a>
           </div>
         </div>
       </div>
@@ -388,6 +395,14 @@
       document.getElementById("m-cuota").textContent = ev.ult_cuota_paga ? fechaCorta(ev.ult_cuota_paga) : "—";
       document.getElementById("m-fecha").textContent = fechaHora(ev.fecha);
       document.getElementById("m-contratos").innerHTML = '<span class="modal__vacio">Cargando…</span>';
+      // Acceso directo al diagnóstico de facial de ESTE socio (solo si sabemos quién es).
+      var acciones = document.getElementById("m-acciones");
+      if (ev.id_cliente) {
+        acciones.style.display = "";
+        document.getElementById("m-diag").href = "/diag-facial/?modo=socio&q=" + encodeURIComponent(ev.id_cliente);
+      } else {
+        acciones.style.display = "none";
+      }
       document.getElementById("modal").classList.add("open");
       if (!ev.id_cliente) { document.getElementById("m-contratos").innerHTML = '<span class="modal__vacio">Sin socio</span>'; return; }
       fetch(API + "/socios/" + ev.id_cliente + "/detalle/", { headers: hdr() })
