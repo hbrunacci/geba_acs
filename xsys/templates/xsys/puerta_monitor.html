@@ -14,6 +14,11 @@
     .burger { font-size: 24px; background: none; border: 0; color: #e6edf3; cursor: pointer; padding: 6px 10px; border-radius: 8px; }
     .burger:hover { background: rgba(255,255,255,.1); }
     .titulo { font-size: 18px; font-weight: 700; }
+    /* Acceso directo al diagnóstico de facial, al lado del hamburguesa. */
+    .tbtn { display: inline-flex; align-items: center; gap: 7px; color: #58a6ff; text-decoration: none; font-size: 14px; font-weight: 600; padding: 6px 10px; border-radius: 8px; }
+    .tbtn:hover { background: rgba(255,255,255,.1); }
+    .tbtn svg { width: 20px; height: 20px; }
+    @media (max-width: 620px) { .tbtn__txt { display: none; } }
     .reloj { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 18px; opacity: .8; }
 
     .columns { position: fixed; top: 52px; left: 0; right: 0; bottom: 0; display: flex; }
@@ -131,6 +136,13 @@
 <body>
   <div class="topbar">
     <button class="burger" id="burger" title="Configurar pantalla">&#9776;</button>
+    <a class="tbtn" href="/diag-facial/" target="_blank" rel="noopener" title="Diagnóstico de facial">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="10" cy="10" r="7.2"/><line x1="15.4" y1="15.4" x2="21" y2="21"/>
+        <circle cx="10" cy="8.2" r="2.1"/><path d="M6.3 14.4c0-2 1.7-3.1 3.7-3.1s3.7 1.1 3.7 3.1"/>
+      </svg>
+      <span class="tbtn__txt">Diagnóstico</span>
+    </a>
     <span class="titulo" id="titulo">Monitor</span>
     <button class="burger" id="buscar" title="Buscar accesos del día" style="margin-left:auto">&#128269;</button>
     <span class="reloj" id="reloj" style="margin-left:14px">--:--:--</span>
