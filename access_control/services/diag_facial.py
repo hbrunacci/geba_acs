@@ -25,6 +25,12 @@ ACCESS_GROUP_SOCIOS = 2
 FOTO_ANTIGUA_ANIOS = 2
 FOTO_CHICA_BYTES = 20_000
 
+# Gracia de cuota por estatuto: el mes de la cuota queda cubierto y hay 10 días de
+# gracia en el mes siguiente. => el socio está al día hasta el DÍA 10 DEL MES
+# SIGUIENTE al de la última cuota paga (Ult_Cuota_Paga).
+# Ej.: pagó julio → al día hasta el 10/08; pagó agosto → hasta el 10/09.
+CUOTA_GRACIA_DIA = 10
+
 # Motivos de CD_ES que son rechazo (el resto habilita o es informativo).
 MOTIVOS_RECHAZO = {103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 309}
 
@@ -118,6 +124,12 @@ def _fecha(valor) -> dt.date | None:
     if isinstance(valor, dt.date):
         return valor
     return None
+
+
+def _sumar_meses(d: dt.date, n: int) -> dt.date:
+    """Devuelve el 1º del mes resultante de sumar ``n`` meses a ``d``."""
+    m = d.month - 1 + n
+    return dt.date(d.year + m // 12, m % 12 + 1, 1)
 
 
 # --------------------------------------------------------------------------- #
@@ -237,10 +249,15 @@ class DiagnosticadorFacial:
 
         ucp = _fecha(cliente["Ult_Cuota_Paga"])
         cuota_al_dia = None
+        cuota_limite = None
         if ucp:
-            cuota_al_dia = ucp >= self.hoy.replace(day=1)
+            # Gracia por estatuto: mes de la cuota cubierto + 10 días del mes
+            # siguiente → al día hasta el día 10 del mes siguiente al de la última
+            # cuota paga.
+            cuota_limite = _sumar_meses(ucp, 1).replace(day=CUOTA_GRACIA_DIA)
+            cuota_al_dia = self.hoy <= cuota_limite
             if not cuota_al_dia:
-                alertas.append("última cuota paga anterior al mes en curso")
+                alertas.append(f"cuota vencida (última paga {ucp}; la gracia venció el {cuota_limite})")
         else:
             alertas.append("sin última cuota paga registrada")
 
@@ -257,6 +274,7 @@ class DiagnosticadorFacial:
             "credencial": str(cliente["Credencial_Nro"] or "").strip(),
             "ult_cuota_paga": ucp,
             "cuota_al_dia": cuota_al_dia,
+            "cuota_limite": cuota_limite,
         }
 
     def _foto(self, cid: int, alertas: list[str]) -> dict | None:
