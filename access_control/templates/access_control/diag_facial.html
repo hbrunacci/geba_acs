@@ -57,11 +57,19 @@
       {{ s.nombre_completo }}
       <span class="text-muted fw-normal">· socio {{ s.id_cliente }} · DNI {{ s.dni }}</span>
     </h5>
-    {% if r.alertas %}
-      <span class="badge bg-danger">{{ r.alertas|length }} problema{{ r.alertas|length|pluralize }}</span>
-    {% else %}
-      <span class="badge bg-success">sin problemas de datos</span>
-    {% endif %}
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      {% if r.alertas %}
+        <span class="badge bg-danger">{{ r.alertas|length }} problema{{ r.alertas|length|pluralize }}</span>
+      {% else %}
+        <span class="badge bg-success">sin problemas de datos</span>
+      {% endif %}
+      {% if b.existe %}
+        <button type="button" class="btn btn-warning btn-sm" data-force-load data-id="{{ s.id_cliente }}">
+          Forzar carga en equipos
+        </button>
+      {% endif %}
+      <span class="small" id="force-result-{{ s.id_cliente }}"></span>
+    </div>
   </div>
 
   <div class="card__body">
@@ -268,5 +276,37 @@
 </section>
 {% endwith %}
 {% endfor %}
+
+<script>
+(function () {
+  var CSRF = "{{ csrf_token }}";
+  function forzarCarga(btn) {
+    var id = btn.dataset.id;
+    var out = document.getElementById("force-result-" + id);
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Cargando…";
+    if (out) out.innerHTML = '<span class="text-muted">Enviando a los equipos…</span>';
+    fetch("/api/biostar/users/" + id + "/force-load/", {
+      method: "POST",
+      headers: { "X-CSRFToken": CSRF, "Content-Type": "application/json" },
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (res.ok) {
+          if (out) out.innerHTML = '<span class="text-success">✅ Carga forzada enviada a todos los equipos. '
+            + 'Puede tardar unos segundos; volvé a diagnosticar para verificar.</span>';
+        } else {
+          if (out) out.innerHTML = '<span class="text-danger">⚠️ ' + ((res.d && res.d.detail) || "No se pudo forzar la carga.") + '</span>';
+        }
+      })
+      .catch(function (e) { if (out) out.innerHTML = '<span class="text-danger">Error de red: ' + e + '</span>'; })
+      .finally(function () { btn.disabled = false; btn.textContent = orig; });
+  }
+  document.querySelectorAll("[data-force-load]").forEach(function (btn) {
+    btn.addEventListener("click", function () { forzarCarga(btn); });
+  });
+})();
+</script>
 
 {% endblock content %}

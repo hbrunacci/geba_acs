@@ -523,6 +523,40 @@ class BioStarUserSearchAPI(views.APIView):
         )
 
 
+class BioStarUserForceLoadAPI(views.APIView):
+    """POST /api/biostar/users/<int:id_cliente>/force-load/
+
+    Fuerza la carga (export) del socio a TODOS los equipos BioStar. Se dispara
+    desde el diagnóstico facial para re-empujar el usuario a los lectores en el
+    momento (útil cuando quedó borrado de un equipo). No crea el rostro: si el
+    usuario no tiene rostro enrolado, hay que re-enrolarlo aparte.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, id_cliente: int):
+        client, cerr = _biostar_client_or_error()
+        if cerr:
+            return cerr
+        try:
+            payload = client.add_user_to_all_devices(id_cliente, overwrite=True)
+        except requests.RequestException as exc:
+            return Response(
+                {"detail": "No se pudo forzar la carga en BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except Exception as exc:  # p.ej. sin devices / config
+            return Response(
+                {"detail": "No se pudo forzar la carga: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        biostar_logger.info("force_load user=%s by=%s", id_cliente, request.user)
+        return Response(
+            {"ok": True, "id_cliente": id_cliente, "biostar": payload},
+            status=status.HTTP_200_OK,
+        )
+
+
 biostar_logger = logging.getLogger("access_control.biostar")
 
 

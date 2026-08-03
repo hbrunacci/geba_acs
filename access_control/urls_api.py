@@ -26,6 +26,7 @@ from access_control.api.v1.api_views import (
     BioStarDeviceUsersAPI,
     BioStarDeviceUsersClearAPI,
     BioStarDoorActionAPI,
+    BioStarUserForceLoadAPI,
     BioStarUserListAPI,
     BioStarUserLookupAPI,
     BioStarUserSearchAPI,
@@ -142,6 +143,7 @@ urlpatterns = router.urls + [
     path("biostar/users/", BioStarUserListAPI.as_view(), name="biostar_users_list_api"),
     path("biostar/users/lookup/", BioStarUserLookupAPI.as_view(), name="biostar_users_lookup_api"),
     path("biostar/users/search/", BioStarUserSearchAPI.as_view(), name="biostar_users_search_api"),
+    path("biostar/users/<int:id_cliente>/force-load/", BioStarUserForceLoadAPI.as_view(), name="biostar_user_force_load_api"),
     path("biostar/users/sync/", BioStarUserSyncAPI.as_view(), name="biostar_users_sync_api"),
     path(
         "external-access/sync/",
