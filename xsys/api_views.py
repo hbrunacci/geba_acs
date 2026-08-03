@@ -632,10 +632,35 @@ class PuertaConfigDetailAPI(_ConfigPuertasAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+def _ultimos_reportes_xsys(ids) -> dict:
+    """{id_controlador: última Fecha (ISO) en CD_ES}, consultado EN VIVO a xSys.
+
+    Se consulta en vivo (no el espejo local, que solo guarda ~7 días) para poder
+    detectar lectores que dejaron de reportar hace mucho. Devuelve {} ante error
+    o sin ids, para no romper la pantalla de config si xSys no responde.
+    """
+    ids = [int(i) for i in ids if i is not None]
+    if not ids:
+        return {}
+    try:
+        from xsys.services.mssql import get_config, xsys_cursor
+
+        ph = ",".join(str(i) for i in ids)
+        with xsys_cursor(get_config(None)) as cur:
+            cur.execute(
+                f"SELECT Id_Controlador, MAX(Fecha) FROM CD_ES "
+                f"WHERE Id_Controlador IN ({ph}) GROUP BY Id_Controlador"
+            )
+            return {int(r[0]): (r[1].isoformat() if r[1] else None) for r in cur.fetchall()}
+    except Exception:
+        return {}
+
+
 class ControladoresXsysAPI(_ConfigPuertasAPIView):
     """GET /api/xsys/config/controladores-xsys/?id_acceso= → catálogo de
     controladores de xSys para asignar a una puerta. Sin id_acceso: todos.
-    Incluye la lista de accesos activos para poder filtrar en la UI."""
+    Incluye la lista de accesos activos para poder filtrar en la UI, y la última
+    vez que cada controlador reportó a xSys (para detectar lectores caídos)."""
 
     def get(self, request):
         qs = XsysControlador.objects.all()
@@ -645,11 +670,14 @@ class ControladoresXsysAPI(_ConfigPuertasAPIView):
                 qs = qs.filter(id_acceso=int(id_acceso))
             except (TypeError, ValueError):
                 return Response({"detail": "id_acceso inválido."}, status=status.HTTP_400_BAD_REQUEST)
+        ctrls_list = list(qs.order_by("id_acceso", "descripcion"))
+        ultimos = _ultimos_reportes_xsys([c.id_controlador for c in ctrls_list])
         ctrls = [
             {"id_controlador": c.id_controlador, "id_acceso": c.id_acceso,
              "descripcion": c.descripcion or f"Ctrl {c.id_controlador}",
-             "tipo_cont": c.tipo_cont, "activo": c.activo, "ip": c.ip}
-            for c in qs.order_by("id_acceso", "descripcion")
+             "tipo_cont": c.tipo_cont, "activo": c.activo, "ip": c.ip,
+             "ultimo_reporte": ultimos.get(c.id_controlador)}
+            for c in ctrls_list
         ]
         accesos = [
             {"id_acceso": a.id_acceso, "descripcion": a.descripcion or f"Acceso {a.id_acceso}"}

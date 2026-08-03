@@ -169,6 +169,18 @@
     });
   }
 
+  function reporteTxt(iso) {
+    if (!iso) return ' · <span class="text-danger fw-bold">nunca reportó</span>';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    var dias = (Date.now() - d.getTime()) / 86400000;
+    var f = ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) +
+            " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+    var cls = dias > 2 ? "text-danger fw-bold" : "text-success";
+    var hace = dias >= 1 ? " (hace " + Math.floor(dias) + "d)" : "";
+    return ' · último: <span class="' + cls + '">' + f + hace + "</span>";
+  }
+
   function renderCatalogo() {
     var cont = document.getElementById("ctrl-lista");
     if (!catalogo.length) { cont.innerHTML = '<div class="text-muted small">Sin controladores para este filtro.</div>'; return; }
@@ -178,7 +190,7 @@
       var tipo = (tag === "F" || tag === "W") ? " · facial" : "";
       var ipTxt = c.ip ? " · IP " + esc(c.ip) : "";
       return '<label class="d-block small py-1"><input type="checkbox" class="cat-ctrl" value="' + c.id_controlador + '"' + chk + '> ' +
-        "#" + c.id_controlador + " · " + esc(c.descripcion) + '<span class="text-muted">' + tipo + " · acceso " + c.id_acceso + ipTxt + (c.activo ? "" : " · inactivo") + "</span></label>";
+        "#" + c.id_controlador + " · " + esc(c.descripcion) + '<span class="text-muted">' + tipo + " · acceso " + c.id_acceso + ipTxt + (c.activo ? "" : " · inactivo") + "</span>" + reporteTxt(c.ultimo_reporte) + "</label>";
     }).join("");
     cont.querySelectorAll(".cat-ctrl").forEach(function (el) {
       el.addEventListener("change", function () {
