@@ -113,6 +113,10 @@
       <div class="col-md-6">
         <h6 class="text-uppercase text-muted small">Foto en xSys</h6>
         {% if r.foto %}
+        {% if r.foto.data_uri %}
+          <img src="{{ r.foto.data_uri }}" alt="Foto del socio {{ s.id_cliente }}"
+               class="rounded border mb-2 d-block" style="max-height:220px; width:auto;">
+        {% endif %}
         <table class="table table-sm mb-0">
           <tbody>
             <tr><th class="w-50">Fecha</th><td>{{ r.foto.fecha }}</td></tr>

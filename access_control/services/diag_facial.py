@@ -282,8 +282,35 @@ class DiagnosticadorFacial:
         if problemas:
             alertas.append("foto de baja calidad (la causa típica de los FAIL VISUAL FACE)")
 
+        # Imagen embebida (data URI) para mostrarla en el reporte. Se trae el blob
+        # de la MISMA fuente en vivo (xSys), así funciona aunque el socio no esté
+        # en el espejo local. Se reduce a miniatura para no inflar la página.
+        data_uri = self._foto_data_uri(cid)
+
         return {"fecha": fecha, "bytes": bytes_, "anios": anios,
-                "cantidad": len(fotos), "problemas": problemas}
+                "cantidad": len(fotos), "problemas": problemas, "data_uri": data_uri}
+
+    def _foto_data_uri(self, cid: int) -> str | None:
+        """Miniatura JPEG (data URI) de la foto más reciente del socio, o None."""
+        import base64
+
+        from xsys.services.images import make_thumbnail
+
+        try:
+            filas = _rows(
+                self.cur,
+                f"""SELECT TOP 1 Foto FROM Clientes_Fotos
+                    WHERE Id_Cliente = {cid} AND Foto IS NOT NULL ORDER BY Fecha DESC""",
+            )
+            raw = filas[0]["Foto"] if filas else None
+            if not raw:
+                return None
+            thumb = make_thumbnail(bytes(raw), size=(240, 300))
+            if not thumb:
+                return None
+            return "data:image/jpeg;base64," + base64.b64encode(thumb).decode("ascii")
+        except Exception:  # no romper el diagnóstico si la imagen falla
+            return None
 
     def _biostar(self, cid: int, alertas: list[str]) -> dict:
         filas = _rows(
