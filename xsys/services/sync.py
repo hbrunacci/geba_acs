@@ -184,13 +184,17 @@ class XsysSyncService:
                 total += self._upsert_socios(rows)
         return total
 
-    def sync_socios_by_ids(self, cursor, ids: Sequence[int]) -> int:
+    def sync_socios_by_ids(self, cursor, ids: Sequence[int], *, only_active: bool = True) -> int:
+        # ``only_active=False`` permite traer socios inactivos (para resolver el
+        # nombre en el visor de un socio que no está en el espejo local, que por
+        # defecto solo espeja activos).
+        activo_sql = "C.Activo = 1 AND " if only_active else ""
         total = 0
         for chunk in _chunked(list(ids)):
             placeholders = ",".join("?" for _ in chunk)
             cursor.execute(
                 f"SELECT {_SOCIO_SELECT} FROM {_SOCIO_FROM} "
-                f"WHERE C.Activo = 1 AND C.Id_Cliente IN ({placeholders})",
+                f"WHERE {activo_sql}C.Id_Cliente IN ({placeholders})",
                 list(chunk),
             )
             rows = cursor.fetchall()

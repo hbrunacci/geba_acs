@@ -450,6 +450,13 @@ class PuertaEstadoAPI(APIView):
         mids = {e.id_cd_motivo for e in todos_x if e.id_cd_motivo}
         ctrl_ids = {e.id_controlador for e in todos_x if e.id_controlador}
         socios = {s.id_cliente: s for s in XsysSocio.objects.filter(pk__in=cids)}
+        # Socios que no están en el espejo local (p.ej. inactivos): traerlos en
+        # segundo plano desde xSys para resolver el nombre en el próximo refresco.
+        faltantes_socio = cids - set(socios)
+        if faltantes_socio:
+            from xsys.services import socio_fetch
+
+            socio_fetch.request_many(faltantes_socio)
         fotos = set(XsysSocioFoto.objects.filter(id_cliente__in=cids).values_list("id_cliente", flat=True))
         # Fallback async: los socios sin foto local se buscan en xSys en segundo
         # plano; la foto aparecerá en un refresco posterior.
