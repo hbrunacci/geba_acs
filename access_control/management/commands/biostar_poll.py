@@ -17,6 +17,7 @@ Ejemplo (contenedor `biostar-poller`):
 
 from __future__ import annotations
 
+import threading
 import time
 
 from django.core.management.base import BaseCommand
@@ -50,6 +51,20 @@ class Command(BaseCommand):
 
         return BioStar2Client.from_db_and_env()
 
+    def _refresh_users(self):
+        """Refresca el espejo BioStarUser en un thread aparte (no bloquea el poll
+        de eventos, para no meter huecos de latencia en las pasadas faciales)."""
+        from django.core.management import call_command
+        from django.db import close_old_connections
+
+        try:
+            call_command("biostar_sync_users", verbosity=0)
+            self.stdout.write("espejo BioStarUser refrescado")
+        except Exception as exc:  # pragma: no cover - depende de BioStar
+            self.stderr.write(f"refresh de usuarios falló: {exc}")
+        finally:
+            close_old_connections()
+
     def handle(self, *args, **options):
         interval = max(0.3, options["interval"])
         limit = options["limit"]
@@ -68,6 +83,7 @@ class Command(BaseCommand):
         # Se arranca el timer "ya corrido" para NO refrescar usuarios al inicio
         # (el espejo ya está poblado); el primer refresco es a los users_refresh s.
         last_users = time.monotonic()
+        users_thread: threading.Thread | None = None
 
         try:
             while True:
@@ -91,16 +107,15 @@ class Command(BaseCommand):
                         last_purge = time.monotonic()
 
                     # Refresco periódico del espejo BioStarUser (para que las
-                    # búsquedas de la UI, que leen el espejo, no queden viejas).
-                    # Lo hace el propio poller: BioStar sigue con un solo consumidor.
+                    # búsquedas de la UI y las altas/bajas del club estén al día).
+                    # Corre en un THREAD aparte para NO bloquear el poll de eventos
+                    # (si no, cada refresco metería ~1 min sin captar pasos). El
+                    # guard evita solaparlos si un refresco tarda más que el intervalo.
                     if users_refresh and (time.monotonic() - last_users) >= users_refresh:
                         last_users = time.monotonic()
-                        from django.core.management import call_command
-                        try:
-                            call_command("biostar_sync_users", verbosity=0)
-                            self.stdout.write("espejo BioStarUser refrescado")
-                        except Exception as exc:  # pragma: no cover - depende de BioStar
-                            self.stderr.write(f"refresh de usuarios falló: {exc}")
+                        if users_thread is None or not users_thread.is_alive():
+                            users_thread = threading.Thread(target=self._refresh_users, daemon=True)
+                            users_thread.start()
 
                 except Exception as exc:  # pragma: no cover - depende de red/BioStar
                     self.stderr.write(f"Error en el poll BioStar ({exc}); reintento en {reconnect_delay}s")
