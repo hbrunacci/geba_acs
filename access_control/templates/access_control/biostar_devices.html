@@ -292,6 +292,7 @@
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h3>BioStar 2 - Dispositivos</h3>
     <div class="d-flex gap-2">
+      <button id="load-stats" class="btn btn-outline-secondary btn-sm">Cargar rostros/usuarios</button>
       <button id="sync-devices" class="btn btn-primary btn-sm">Sincronizar lectores</button>
     </div>
   </div>
@@ -342,6 +343,16 @@
             <th>
               <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="last_synced_at">
                 Sync <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th class="text-end">
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="num_faces">
+                Rostros <span class="text-muted">↕</span>
+              </button>
+            </th>
+            <th class="text-end">
+              <button type="button" class="btn btn-link btn-sm p-0" data-sort-key="num_users">
+                Usuarios <span class="text-muted">↕</span>
               </button>
             </th>
             <th class="text-end">Administrar</th>
@@ -639,6 +650,11 @@
     });
   }
 
+  function statCell(value) {
+    if (value === null || value === undefined) return '<span class="text-muted">—</span>';
+    return Number(value).toLocaleString("es-AR");
+  }
+
   function renderDevices(data) {
     const body = document.getElementById("devices-body");
     const sorted = applySort(data);
@@ -650,11 +666,38 @@
         <td>${d.device_type || ""}</td>
         <td>${statusBadge(d.status)}</td>
         <td>${(d.last_synced_at || "").replace("T", " ").slice(0,19)}</td>
+        <td class="text-end">${statCell(d.num_faces)}</td>
+        <td class="text-end">${statCell(d.num_users)}</td>
         <td class="text-end">
           <button type="button" class="btn btn-outline-secondary btn-sm" data-manage="${d.device_id || ""}">Administrar</button>
         </td>
       </tr>
     `).join("");
+  }
+
+  async function loadDeviceStats() {
+    const btn = document.getElementById("load-stats");
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Cargando…";
+    try {
+      const data = await fetchJSON("/api/biostar/devices/stats/");
+      const byId = {};
+      (data.stats || []).forEach(s => { byId[String(s.device_id)] = s; });
+      devicesPage.forEach(d => {
+        const s = byId[String(d.device_id)];
+        if (s) { d.num_faces = s.num_faces; d.num_users = s.num_users; }
+      });
+      filterDevices();
+      const f = (data.total_faces || 0).toLocaleString("es-AR");
+      const u = (data.total_users || 0).toLocaleString("es-AR");
+      showMsg(`Rostros: ${f} · Usuarios: ${u} (total en ${(data.stats || []).length} equipos)`, "success");
+    } catch (e) {
+      showMsg("Error cargando estadísticas: " + e.message, "danger");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
   }
 
   function setModalAlert(text, kind) {
@@ -1058,6 +1101,8 @@
       showMsg("Error sincronizando lectores: " + e.message, "danger");
     }
   });
+
+  document.getElementById("load-stats").addEventListener("click", loadDeviceStats);
 
   document.getElementById("devices-search-name").addEventListener("input", filterDevices);
   document.getElementById("devices-search-id").addEventListener("input", filterDevices);

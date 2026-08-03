@@ -9,6 +9,7 @@
 {% endblock header_subtitle %}
 
 {% block content %}
+{% csrf_token %}
 
 <section class="card mb-3">
   <div class="card__body">
@@ -193,6 +194,14 @@
         </table>
         {% else %}
           <div class="alert alert-danger py-2 mb-0">No existe en BioStar: nunca se enroló o fue borrado.</div>
+        {% endif %}
+        {% if r.foto %}
+        <div class="mt-2">
+          <button type="button" class="btn btn-warning btn-sm" data-enroll-face data-id="{{ r.id_cliente }}">
+            Cargar rostro en BioStar (con resize)
+          </button>
+          <div class="small mt-1" data-enroll-result="{{ r.id_cliente }}"></div>
+        </div>
         {% endif %}
       </div>
 
@@ -382,3 +391,46 @@
 </script>
 
 {% endblock content %}
+
+{% block extra_js %}
+<script>
+(function () {
+  function token() {
+    var el = document.querySelector('[name=csrfmiddlewaretoken]');
+    return el ? el.value : "";
+  }
+  document.addEventListener("click", function (event) {
+    var btn = event.target.closest("[data-enroll-face]");
+    if (!btn) return;
+    var id = btn.dataset.id;
+    var out = document.querySelector('[data-enroll-result="' + id + '"]');
+    btn.disabled = true;
+    var prev = btn.textContent;
+    btn.textContent = "Cargando rostro…";
+    if (out) { out.textContent = ""; out.className = "small mt-1 text-muted"; }
+    fetch("/api/biostar/enroll-face/", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": token() },
+      body: JSON.stringify({ id_cliente: id }),
+    })
+      .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+      .then(function (res) {
+        var j = res.body || {};
+        if (res.status === 200 && j.ok) {
+          if (out) { out.className = "small mt-1 text-success"; out.textContent =
+            "✅ " + (j.action === "created" ? "Creado y enrolado" : "Rostro cargado") +
+            " (rostros: " + (j.visual_face_count != null ? j.visual_face_count : "?") + ")"; }
+        } else {
+          var msg = j.detail || j.reason || ("HTTP " + res.status);
+          if (out) { out.className = "small mt-1 text-danger"; out.textContent = "⛔ " + msg; }
+        }
+      })
+      .catch(function (e) {
+        if (out) { out.className = "small mt-1 text-danger"; out.textContent = "⛔ " + e.message; }
+      })
+      .then(function () { btn.disabled = false; btn.textContent = prev; });
+  });
+})();
+</script>
+{% endblock extra_js %}
