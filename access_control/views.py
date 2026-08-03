@@ -90,6 +90,14 @@ def diag_facial_console(request):
                 )
                 contexto["reportes"] = datos["reportes"]
                 contexto["avisos"] = datos["avisos"]
+                # Adjuntar a cada reporte los avisos ya guardados del socio.
+                from access_control.models import SocioAviso
+
+                for r in contexto["reportes"]:
+                    cid = r["socio"]["id_cliente"]
+                    r["avisos_socio"] = list(
+                        SocioAviso.objects.filter(id_cliente=cid).order_by("-created_at")[:20]
+                    )
             except DiagFacialError as exc:
                 contexto["error"] = str(exc)
 

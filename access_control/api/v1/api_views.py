@@ -557,6 +557,49 @@ class BioStarUserForceLoadAPI(views.APIView):
         )
 
 
+class SocioAvisoAPI(views.APIView):
+    """GET/POST /api/socios/<id_cliente>/avisos/ — avisos/registros de un socio.
+
+    Se usan desde el diagnóstico de facial para dejar un aviso: "Notificar que
+    pase por Socios" (predefinido) o una nota libre. Registro local, no toca xSys.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @staticmethod
+    def _dict(a) -> dict:
+        return {
+            "id": a.id, "tipo": a.tipo, "texto": a.texto,
+            "creado_por": a.creado_por, "created_at": a.created_at.isoformat(),
+        }
+
+    def get(self, request, id_cliente: int):
+        from access_control.models import SocioAviso
+
+        avisos = SocioAviso.objects.filter(id_cliente=id_cliente).order_by("-created_at")[:50]
+        return Response({"id_cliente": id_cliente, "avisos": [self._dict(a) for a in avisos]})
+
+    def post(self, request, id_cliente: int):
+        from access_control.models import SocioAviso
+
+        tipo = (request.data.get("tipo") or SocioAviso.TIPO_LIBRE).strip()[:32]
+        if tipo == SocioAviso.TIPO_PASE_POR_SOCIOS:
+            texto = SocioAviso.TEXTO_PASE_POR_SOCIOS
+        else:
+            tipo = SocioAviso.TIPO_LIBRE
+            texto = (request.data.get("texto") or "").strip()[:500]
+        if not texto:
+            return Response(
+                {"detail": "El texto del aviso es obligatorio."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        aviso = SocioAviso.objects.create(
+            id_cliente=id_cliente, tipo=tipo, texto=texto,
+            creado_por=(getattr(request.user, "username", "") or "")[:150],
+        )
+        return Response(self._dict(aviso), status=status.HTTP_201_CREATED)
+
+
 biostar_logger = logging.getLogger("access_control.biostar")
 
 

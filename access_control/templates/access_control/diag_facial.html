@@ -97,6 +97,29 @@
       </div>
     {% endif %}
 
+    {# ---- Avisos al socio ---- #}
+    <div class="border rounded p-2 mb-3" data-aviso-box data-id="{{ s.id_cliente }}">
+      <h6 class="text-uppercase text-muted small mb-2">Avisos al socio</h6>
+      <ul class="list-unstyled mb-2 small" data-aviso-list>
+        {% for a in r.avisos_socio %}
+          <li class="border-bottom py-1">
+            <span class="badge bg-secondary me-1">{{ a.created_at|date:"d/m/Y H:i" }}</span>
+            {{ a.texto }}{% if a.creado_por %} <span class="text-muted">· {{ a.creado_por }}</span>{% endif %}
+          </li>
+        {% empty %}
+          <li class="text-muted" data-aviso-empty>Sin avisos.</li>
+        {% endfor %}
+      </ul>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <button type="button" class="btn btn-outline-warning btn-sm" data-aviso-pase>Notificar que pase por Socios</button>
+        <div class="input-group input-group-sm" style="max-width: 440px;">
+          <input type="text" class="form-control" placeholder="Nota libre…" data-aviso-texto maxlength="500">
+          <button type="button" class="btn btn-primary" data-aviso-guardar>Guardar</button>
+        </div>
+        <span class="small" data-aviso-msg></span>
+      </div>
+    </div>
+
     <div class="row g-3">
       {# ---- Socio ---- #}
       <div class="col-md-6">
@@ -307,6 +330,53 @@
   }
   document.querySelectorAll("[data-force-load]").forEach(function (btn) {
     btn.addEventListener("click", function () { forzarCarga(btn); });
+  });
+
+  function escapeHtml(s) { var d = document.createElement("div"); d.textContent = (s == null ? "" : String(s)); return d.innerHTML; }
+  function guardarAviso(box, body, btn) {
+    var id = box.dataset.id;
+    var msg = box.querySelector("[data-aviso-msg]");
+    btn.disabled = true;
+    if (msg) { msg.textContent = "Guardando…"; msg.className = "small text-muted"; }
+    fetch("/api/socios/" + id + "/avisos/", {
+      method: "POST",
+      headers: { "X-CSRFToken": CSRF, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          if (msg) { msg.textContent = "⚠️ " + ((res.d && res.d.detail) || "No se pudo guardar."); msg.className = "small text-danger"; }
+          return;
+        }
+        var a = res.d;
+        var list = box.querySelector("[data-aviso-list]");
+        var empty = box.querySelector("[data-aviso-empty]");
+        if (empty) empty.remove();
+        var fe = new Date(a.created_at);
+        var f = ("0"+fe.getDate()).slice(-2)+"/"+("0"+(fe.getMonth()+1)).slice(-2)+"/"+fe.getFullYear()+" "+("0"+fe.getHours()).slice(-2)+":"+("0"+fe.getMinutes()).slice(-2);
+        var li = document.createElement("li");
+        li.className = "border-bottom py-1";
+        li.innerHTML = '<span class="badge bg-secondary me-1">' + f + '</span>' + escapeHtml(a.texto) + (a.creado_por ? ' <span class="text-muted">· ' + escapeHtml(a.creado_por) + '</span>' : "");
+        list.insertBefore(li, list.firstChild);
+        var inp = box.querySelector("[data-aviso-texto]");
+        if (inp) inp.value = "";
+        if (msg) { msg.textContent = "✅ Aviso guardado."; msg.className = "small text-success"; }
+      })
+      .catch(function (e) { if (msg) { msg.textContent = "Error de red: " + e; msg.className = "small text-danger"; } })
+      .finally(function () { btn.disabled = false; });
+  }
+  document.querySelectorAll("[data-aviso-box]").forEach(function (box) {
+    var pase = box.querySelector("[data-aviso-pase]");
+    if (pase) pase.addEventListener("click", function () { guardarAviso(box, { tipo: "pase_por_socios" }, pase); });
+    var guardar = box.querySelector("[data-aviso-guardar]");
+    var texto = box.querySelector("[data-aviso-texto]");
+    if (guardar) guardar.addEventListener("click", function () {
+      var t = texto ? texto.value.trim() : "";
+      if (!t) { var m = box.querySelector("[data-aviso-msg]"); if (m) { m.textContent = "Escribí una nota."; m.className = "small text-danger"; } return; }
+      guardarAviso(box, { tipo: "libre", texto: t }, guardar);
+    });
+    if (texto) texto.addEventListener("keydown", function (e) { if (e.key === "Enter" && guardar) { e.preventDefault(); guardar.click(); } });
   });
 })();
 </script>
