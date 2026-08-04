@@ -23,6 +23,11 @@ class SocioAviso(models.Model):
     creado_por = models.CharField(max_length=150, blank=True, default="")
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
 
+    # Estado de gestión: la oficina de Socios lo marca como notificado/resuelto.
+    resuelto = models.BooleanField(default=False, db_index=True)
+    resuelto_at = models.DateTimeField(null=True, blank=True)
+    resuelto_por = models.CharField(max_length=150, blank=True, default="")
+
     class Meta:
         db_table = "socio_aviso"
         ordering = ("-created_at",)

@@ -104,6 +104,50 @@ def diag_facial_console(request):
     return render(request, "access_control/diag_facial.html", contexto)
 
 
+@puertas_requerido
+def avisos_pendientes(request):
+    """Pantalla para la oficina de Socios: avisos pendientes de notificar.
+
+    Lista los avisos dejados en el diagnóstico de facial (``SocioAviso``), con los
+    datos del socio, y permite marcarlos como notificados/resueltos.
+    """
+    from access_control.models import SocioAviso
+    from xsys.models import XsysSocio, XsysSocioFoto
+    from xsys.services import socio_fetch
+
+    estado = request.GET.get("estado") or "pendientes"
+    qs = SocioAviso.objects.all().order_by("-created_at")
+    if estado != "todos":
+        qs = qs.filter(resuelto=False)
+    avisos = list(qs[:400])
+
+    cids = {a.id_cliente for a in avisos}
+    socios = {s.id_cliente: s for s in XsysSocio.objects.filter(pk__in=cids)}
+    faltan = cids - set(socios)
+    if faltan:
+        socio_fetch.request_many(faltan)
+    fotos = set(XsysSocioFoto.objects.filter(id_cliente__in=cids).values_list("id_cliente", flat=True))
+
+    filas = []
+    for a in avisos:
+        s = socios.get(a.id_cliente)
+        nombre = (f"{s.apellido}, {s.nombre}".strip(", ") or s.razon_social) if s else ""
+        filas.append({
+            "aviso": a,
+            "nombre": nombre,
+            "doc": (s.doc_nro if s else None),
+            "categoria": (s.categoria if s else ""),
+            "foto_url": (f"/api/xsys/socios/{a.id_cliente}/foto/?thumb=1" if a.id_cliente in fotos else None),
+        })
+
+    contexto = {
+        "filas": filas,
+        "estado": estado,
+        "pendientes": SocioAviso.objects.filter(resuelto=False).count(),
+    }
+    return render(request, "access_control/avisos_pendientes.html", contexto)
+
+
 @admin_requerido
 def biostar_devices_console(request):
     """Consola web para ver lectores BioStar."""

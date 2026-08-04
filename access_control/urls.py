@@ -4,6 +4,7 @@ from access_control.views import (
     access_reports_console,
     anses_verification_console,
     api3000_test_console,
+    avisos_pendientes,
     intelektron_admin,
     biostar_devices_console,
     biostar_users_console,
@@ -52,4 +53,5 @@ urlpatterns = [
         diag_facial_console,
         name="diag_facial_console",
     ),
+    path("avisos/", avisos_pendientes, name="avisos_pendientes"),
 ]

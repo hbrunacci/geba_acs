@@ -32,6 +32,7 @@ from access_control.api.v1.api_views import (
     BioStarUserSearchAPI,
     BioStarUserSyncAPI,
     ExternalAccessLogSyncAPI,
+    AvisoResolverAPI,
     IntelektronDeviceListAPI,
     IntelektronEventsAPI,
     SocioAvisoAPI,
@@ -146,6 +147,7 @@ urlpatterns = router.urls + [
     path("biostar/users/search/", BioStarUserSearchAPI.as_view(), name="biostar_users_search_api"),
     path("biostar/users/<int:id_cliente>/force-load/", BioStarUserForceLoadAPI.as_view(), name="biostar_user_force_load_api"),
     path("socios/<int:id_cliente>/avisos/", SocioAvisoAPI.as_view(), name="socio_avisos_api"),
+    path("avisos/<int:aviso_id>/resolver/", AvisoResolverAPI.as_view(), name="aviso_resolver_api"),
     path("biostar/users/sync/", BioStarUserSyncAPI.as_view(), name="biostar_users_sync_api"),
     path(
         "external-access/sync/",

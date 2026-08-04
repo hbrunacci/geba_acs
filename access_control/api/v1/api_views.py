@@ -571,6 +571,9 @@ class SocioAvisoAPI(views.APIView):
         return {
             "id": a.id, "tipo": a.tipo, "texto": a.texto,
             "creado_por": a.creado_por, "created_at": a.created_at.isoformat(),
+            "resuelto": a.resuelto,
+            "resuelto_por": a.resuelto_por,
+            "resuelto_at": a.resuelto_at.isoformat() if a.resuelto_at else None,
         }
 
     def get(self, request, id_cliente: int):
@@ -598,6 +601,32 @@ class SocioAvisoAPI(views.APIView):
             creado_por=(getattr(request.user, "username", "") or "")[:150],
         )
         return Response(self._dict(aviso), status=status.HTTP_201_CREATED)
+
+
+class AvisoResolverAPI(views.APIView):
+    """POST /api/avisos/<aviso_id>/resolver/ — marca un aviso como notificado
+    (o lo reabre con ``{"deshacer": true}``)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, aviso_id: int):
+        from django.utils import timezone
+
+        from access_control.models import SocioAviso
+
+        a = SocioAviso.objects.filter(pk=aviso_id).first()
+        if not a:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        if request.data.get("deshacer"):
+            a.resuelto = False
+            a.resuelto_at = None
+            a.resuelto_por = ""
+        else:
+            a.resuelto = True
+            a.resuelto_at = timezone.now()
+            a.resuelto_por = (getattr(request.user, "username", "") or "")[:150]
+        a.save(update_fields=["resuelto", "resuelto_at", "resuelto_por"])
+        return Response({"id": a.id, "resuelto": a.resuelto, "resuelto_por": a.resuelto_por})
 
 
 biostar_logger = logging.getLogger("access_control.biostar")
