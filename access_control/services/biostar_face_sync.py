@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import re
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,26 @@ ACCESS_GROUP_SOCIOS = 2
 RESIZE_STEPS = (600, 480, 360)
 # code de la Response de BioStar cuando revienta la pila del regex por foto grande.
 STACK_CODE = "1000"
+
+# Modo de la sincronización automática de rostros (hook del sync + backfill).
+FACE_SYNC_MODE_ENV = "BIOSTAR_FACE_SYNC_MODE"
+DEFAULT_FACE_MODE = "off"
+VALID_FACE_MODES = ("off", "dryrun", "on")
+
+
+def get_face_sync_mode() -> str:
+    m = (os.getenv(FACE_SYNC_MODE_ENV, DEFAULT_FACE_MODE) or DEFAULT_FACE_MODE).strip().lower()
+    return m if m in VALID_FACE_MODES else DEFAULT_FACE_MODE
+
+
+def resize_steps() -> tuple[int, ...]:
+    """Tamaños de resize; el mayor sale de BIOSTAR_FACE_MAX_SIDE (default 600)."""
+    try:
+        top = int(os.getenv("BIOSTAR_FACE_MAX_SIDE", "600"))
+    except (TypeError, ValueError):
+        top = 600
+    steps = tuple(s for s in (top, 480, 360) if s <= top)
+    return steps or (top,)
 
 
 def limpiar_nombre(n: str) -> str:
@@ -53,13 +74,15 @@ def enroll_one(
     name: str = "",
     access_group_ids=(ACCESS_GROUP_SOCIOS,),
     exists: bool = True,
-    sizes=RESIZE_STEPS,
+    sizes=None,
 ) -> dict:
     """Enrola/actualiza el rostro de un socio, redimensionando ante rechazo por tamaño.
 
     Devuelve {id_cliente, action: enrolled|created|failed, reason, maxside}.
     """
     from xsys.services.images import resize_for_face
+
+    sizes = sizes or resize_steps()
 
     created = not exists
     exists_now = exists
@@ -169,3 +192,77 @@ def fetch_photo(cur, id_cliente: int) -> bytes | None:
     if not row or row[0] is None:
         return None
     return bytes(row[0])
+
+
+def push_faces_affected(changed_ids, *, mode: str | None = None, max_per_run: int = 200) -> dict:
+    """Re-enrola el rostro de los socios cuya FOTO cambió (habilitados con imagen).
+
+    Es el gemelo facial de ``biostar_push.push_enabled_affected``: se llama desde el
+    sync incremental de xSys con los ids cuya foto cambió. Usa la imagen del espejo
+    local (``XsysSocioFoto``), no MSSQL. Best-effort: no lanza excepciones. Gobernado
+    por ``BIOSTAR_FACE_SYNC_MODE`` (off|dryrun|on, default off).
+    """
+    from xsys.models import XsysWhitelist, XsysSocio, XsysSocioFoto
+
+    mode = (mode or get_face_sync_mode()).strip().lower()
+    result = {"mode": mode, "candidatos": 0, "enrolados": 0, "creados": 0, "errores": 0}
+    ids = [int(i) for i in (changed_ids or []) if i is not None]
+    if mode == "off" or not ids:
+        result["skipped"] = mode == "off"
+        return result
+
+    habil = set(
+        XsysWhitelist.objects.filter(id_cliente__in=ids, habilitado=True)
+        .values_list("id_cliente", flat=True)
+    )
+    fotos = {
+        f.id_cliente: f
+        for f in XsysSocioFoto.objects.filter(id_cliente__in=habil).exclude(imagen=None)
+    }
+    to_do = sorted(fotos.keys())[:max_per_run]
+    result["candidatos"] = len(to_do)
+    if not to_do:
+        return result
+
+    if mode == "dryrun":
+        logger.info("biostar_face_sync[DRYRUN]: re-enrolaría %s rostro(s): %s%s",
+                    len(to_do), to_do[:20], " ..." if len(to_do) > 20 else "")
+        result["dryrun_ids"] = to_do
+        return result
+
+    from access_control.services.biostar2_client import BioStar2Client
+
+    try:
+        client = BioStar2Client.from_db_and_env()
+    except Exception as exc:
+        logger.warning("biostar_face_sync[on]: no se pudo crear el cliente: %s", exc)
+        result["error"] = str(exc)[:200]
+        return result
+
+    nombres = {
+        s.id_cliente: f"{(s.apellido or '').strip()} {(s.nombre or '').strip()}".strip()
+        for s in XsysSocio.objects.filter(pk__in=to_do)
+    }
+    for cid in to_do:
+        foto = fotos[cid]
+        jpeg = bytes(foto.imagen) if foto.imagen else None
+        if not jpeg:
+            continue
+        try:
+            probe = client.request("GET", f"/api/users/{cid}", check=False)
+            exists = probe.status_code == 200
+            res = enroll_one(client, id_cliente=cid, jpeg_bytes=jpeg,
+                             name=nombres.get(cid, ""), exists=exists)
+            action = res.get("action")
+            if action == "enrolled":
+                result["enrolados"] += 1
+            elif action == "created":
+                result["creados"] += 1
+            else:
+                result["errores"] += 1
+        except Exception as exc:  # pragma: no cover - red/BioStar
+            result["errores"] += 1
+            logger.warning("biostar_face_sync[on]: %s falló: %s", cid, str(exc)[:120])
+
+    logger.info("biostar_face_sync[on]: %s", result)
+    return result

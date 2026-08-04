@@ -26,8 +26,9 @@ class Command(BaseCommand):
     help = "Enrola el rostro (visualFace) de los socios habilitados sin rostro en BioStar, con resize."
 
     def add_arguments(self, parser):
-        parser.add_argument("--mode", choices=["dryrun", "on"], default="dryrun",
-                            help="dryrun (default): solo cuenta/muestra. on: enrola de verdad.")
+        parser.add_argument("--mode", choices=["off", "dryrun", "on"], default="dryrun",
+                            help="off: no hace nada (para el contenedor de backfill). "
+                                 "dryrun (default): solo cuenta/muestra. on: enrola de verdad.")
         parser.add_argument("--limit", type=int, default=0, help="Máx. a procesar (0 = sin límite).")
         parser.add_argument("--delay", type=float, default=0.5, help="Segundos entre enrolamientos (default 0.5).")
         parser.add_argument("--only", type=int, default=None, help="Procesar un solo Id_Cliente.")
@@ -41,6 +42,9 @@ class Command(BaseCommand):
         from access_control.services import biostar_face_sync as fs
 
         mode = opts["mode"]
+        if mode == "off":
+            self.stdout.write("mode=off: nada que hacer.")
+            return
         limit = opts["limit"]
         delay = opts["delay"]
         only = opts["only"]
