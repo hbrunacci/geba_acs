@@ -148,12 +148,14 @@ services:
       POSTGRES_PORT: "5432"
       DJANGO_DEBUG: "0"
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
+    # OJO: bloque `>` folded. Todas las lineas van al MISMO nivel de indentacion,
+    # si no YAML conserva los saltos y sh revienta ("Syntax error: || unexpected").
     command: >
       sh -c "while true; do
-               python -u manage.py biostar_enroll_faces --mode $${BIOSTAR_FACE_SYNC_MODE:-off}
-                 || echo 'biostar_enroll_faces fallo (se reintenta)';
-               sleep $${BIOSTAR_FACE_SYNC_INTERVAL:-3600};
-             done"
+      python -u manage.py biostar_enroll_faces --mode $${BIOSTAR_FACE_SYNC_MODE:-off}
+      || echo 'biostar_enroll_faces fallo (se reintenta)';
+      sleep $${BIOSTAR_FACE_SYNC_INTERVAL:-3600};
+      done"
     # Código en vivo: `docker compose restart biostar-face-sync` aplica cambios sin rebuild.
     volumes:
       - .:/app
