@@ -220,8 +220,10 @@ class XsysSyncService:
                     written += 1
         return written
 
-    def sync_fotos_by_ids(self, cursor, ids: Sequence[int]) -> int:
-        written = 0
+    def sync_fotos_by_ids(self, cursor, ids: Sequence[int]) -> list[int]:
+        """Baja las fotos de ``ids`` al espejo. Devuelve los Id_Cliente cuya foto
+        efectivamente cambió (para re-enrolar el rostro en BioStar)."""
+        changed: list[int] = []
         for chunk in _chunked(list(ids)):
             placeholders = ",".join("?" for _ in chunk)
             cursor.execute(
@@ -230,8 +232,8 @@ class XsysSyncService:
             )
             for id_cliente, nro, fecha, blob in cursor.fetchall():
                 if self._upsert_foto(id_cliente, nro, fecha, blob):
-                    written += 1
-        return written
+                    changed.append(int(id_cliente))
+        return changed
 
     def sync_accesos(self, cursor) -> int:
         """Espejo de CD_Accesos (puertas). Tabla chica: upsert completo."""
@@ -501,7 +503,7 @@ class XsysSyncService:
             habilitados = list(
                 XsysWhitelist.objects.filter(habilitado=True).values_list("id_cliente", flat=True)
             )
-            stats["fotos"] = self.sync_fotos_by_ids(cursor, habilitados)
+            stats["fotos"] = len(self.sync_fotos_by_ids(cursor, habilitados))
 
             # Novedades / fotos: fijar high-water sin backfill.
             max_nov = self._max_scalar(cursor, "SELECT MAX(Id_Novedad) FROM CD_Clientes_Novedades") or 0
@@ -604,7 +606,8 @@ class XsysSyncService:
                         id_cliente__in=affected, habilitado=True
                     ).values_list("id_cliente", flat=True)
                 )
-                stats["fotos"] = self.sync_fotos_by_ids(cursor, habilitados)
+                changed_fotos = self.sync_fotos_by_ids(cursor, habilitados)
+                stats["fotos"] = len(changed_fotos)
 
                 # Push best-effort a los lectores BioStar (SOLO altas de habilitados
                 # enrolados). Nunca rompe el sync xSys->local; modo por env
@@ -616,6 +619,18 @@ class XsysSyncService:
                 except Exception as exc:  # pragma: no cover - defensivo
                     logger.warning("biostar_push falló (no afecta el sync): %s", exc)
                     stats["biostar_push"] = {"error": str(exc)[:200]}
+
+                # Re-enrolar el ROSTRO de los socios cuya foto cambió. Best-effort,
+                # nunca rompe el sync; modo por env BIOSTAR_FACE_SYNC_MODE
+                # (off|dryrun|on, default off). El backfill de los que quedan sin
+                # rostro lo hace el comando/tarea biostar_enroll_faces.
+                try:
+                    from access_control.services.biostar_face_sync import push_faces_affected
+
+                    stats["biostar_faces"] = push_faces_affected(changed_fotos)
+                except Exception as exc:  # pragma: no cover - defensivo
+                    logger.warning("biostar_face_sync falló (no afecta el sync): %s", exc)
+                    stats["biostar_faces"] = {"error": str(exc)[:200]}
 
                 new_last = max(r[0] for r in rows)
             else:

@@ -99,7 +99,7 @@ class BioStar2Client:
 
         self.cfg.set_session(session_id.strip())
 
-    def request(self, method: str, path: str, *, json=None, params=None):
+    def request(self, method: str, path: str, *, json=None, params=None, check: bool = True):
         if not path.startswith("/"):
             path = "/" + path
 
@@ -131,7 +131,10 @@ class BioStar2Client:
                 timeout=self.env.timeout_seconds,
             )
 
-        resp.raise_for_status()
+        # check=False permite inspeccionar el cuerpo de un 4xx/5xx (p. ej. el
+        # enrolamiento facial, que ante una foto grande devuelve 500 code 1000).
+        if check:
+            resp.raise_for_status()
         return resp
 
     def list_devices(self) -> dict[str, Any]:
@@ -152,6 +155,48 @@ class BioStar2Client:
             if exc.response is not None and exc.response.status_code == 404:
                 return None
             raise
+
+    def enroll_face(self, user_id: int, template_ex_picture_b64: str, access_group_ids=None):
+        """Carga/actualiza el rostro (visualFace) de un usuario por PUT, y opcionalmente
+        le asigna grupos de acceso (el PUT sí acepta access_groups; el POST NO — ver create_user).
+
+        Response cruda (check=False) para inspeccionar el cuerpo ante un rechazo
+        (p. ej. 500 code 1000 por foto grande).
+        """
+        user = {
+            "user_id": str(user_id),
+            "credentials": {
+                "visualFaces": [{"index": 0, "template_ex_picture": template_ex_picture_b64}]
+            },
+        }
+        if access_group_ids:
+            user["access_groups"] = [{"id": str(g)} for g in access_group_ids]
+        return self.request("PUT", f"/api/users/{user_id}", json={"User": user}, check=False)
+
+    def create_user(
+        self,
+        user_id: int,
+        *,
+        name: str,
+        start_datetime: str = "2001-01-01T00:00:00.00Z",
+        expiry_datetime: str = "2030-12-31T23:59:00.00Z",
+    ):
+        """Crea el usuario BioStar (cascarón, sin rostro).
+
+        IMPORTANTE: ``expiry_datetime`` NO puede ser 2037+ — BioStar guarda las fechas
+        como timestamp de 32 bits (problema del año 2038) y devuelve 500 code 131085
+        "Unknown exception". Se usa 2030. El grupo se asigna después por PUT
+        (ver enroll_face con access_group_ids). Response cruda (check=False).
+        """
+        user = {
+            "user_id": str(user_id),
+            "name": name,
+            "user_group_id": {"id": "1"},
+            "start_datetime": start_datetime,
+            "expiry_datetime": expiry_datetime,
+            "disabled": False,
+        }
+        return self.request("POST", "/api/users", json={"User": user}, check=False)
 
     def list_device_groups(self) -> dict:
         """

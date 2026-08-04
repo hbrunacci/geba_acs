@@ -402,6 +402,94 @@ class BioStarDeviceUsersAPI(views.APIView):
         )
 
 
+class BioStarEnrollFaceAPI(views.APIView):
+    """Enrola/actualiza el rostro de un socio desde su foto de xSys (con resize).
+
+    Lo usa el botón de la pantalla de diagnóstico facial para arreglar de a uno.
+    Redimensiona la imagen para esquivar el 500 'stack space' de BioStar con fotos
+    grandes. Acepta ``id_cliente`` o ``doc_nro`` en el body.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from access_control.services import biostar_face_sync as fs
+        from access_control.services.diag_facial import conectar, DiagFacialError
+
+        id_cliente_raw = request.data.get("id_cliente")
+        doc_nro_raw = request.data.get("doc_nro")
+        by_dni = bool(doc_nro_raw) and not id_cliente_raw
+        try:
+            ident = int(str(doc_nro_raw if by_dni else id_cliente_raw).strip())
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "Indicá un id_cliente o doc_nro numérico."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            conn, _driver = conectar()
+        except DiagFacialError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        try:
+            cur = conn.cursor()
+            if by_dni:
+                cur.execute(
+                    f"SELECT TOP 1 Id_Cliente, Apellido, Nombre FROM Clientes WHERE Doc_Nro = '{ident}'"
+                )
+            else:
+                cur.execute(
+                    f"SELECT Id_Cliente, Apellido, Nombre FROM Clientes WHERE Id_Cliente = {ident}"
+                )
+            row = cur.fetchone()
+            if not row:
+                return Response(
+                    {"detail": "No se encontró el socio en xSys."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            id_cliente = int(row[0])
+            nombre = f"{(row[1] or '').strip()} {(row[2] or '').strip()}".strip()
+            jpeg = fs.fetch_photo(cur, id_cliente)
+        finally:
+            conn.close()
+
+        if not jpeg:
+            return Response(
+                {"ok": False, "detail": "El socio no tiene foto en xSys."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        client = BioStar2Client.from_db_and_env()
+        try:
+            probe = client.request("GET", f"/api/users/{id_cliente}", check=False)
+            exists = probe.status_code == 200
+            res = fs.enroll_one(
+                client, id_cliente=id_cliente, jpeg_bytes=jpeg, name=nombre, exists=exists
+            )
+            vfc = None
+            if res.get("action") in ("enrolled", "created"):
+                verif = client.request("GET", f"/api/users/{id_cliente}", check=False)
+                if verif.status_code == 200:
+                    vfc = verif.json().get("User", {}).get("visual_face_count")
+        except requests.RequestException as exc:
+            return Response(
+                {"ok": False, "detail": "Error hablando con BioStar: " + str(exc)},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        ok = res.get("action") in ("enrolled", "created")
+        return Response(
+            {
+                "ok": ok,
+                "id_cliente": id_cliente,
+                "action": res.get("action"),
+                "reason": res.get("reason"),
+                "visual_face_count": vfc,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class BioStarDeviceUserdataAPI(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -409,6 +497,47 @@ class BioStarDeviceUserdataAPI(views.APIView):
         client = BioStar2Client.from_db_and_env()
         payload = client.discover_device_userdata(device_id)
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class BioStarDeviceStatsAPI(views.APIView):
+    """Rostros y usuarios registrados por equipo (en vivo).
+
+    Recorre los dispositivos de la caché local y consulta discover_userdata en
+    BioStar para cada uno. Devuelve conteos por equipo + totales.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        client = BioStar2Client.from_db_and_env()
+        stats = []
+        total_faces = total_users = 0
+        for device in BioStarDevice.objects.order_by("name", "device_id"):
+            entry = {
+                "device_id": device.device_id,
+                "name": device.name,
+                "num_faces": None,
+                "num_users": None,
+                "error": None,
+            }
+            try:
+                payload = client.discover_device_userdata(device.device_id)
+                s = payload.get("UserStatistics") or payload.get("user_statistics") or {}
+                faces = int(s.get("numFaces") or 0)
+                users = int(s.get("numUsers") or 0)
+                entry["num_faces"] = faces
+                entry["num_users"] = users
+                total_faces += faces
+                total_users += users
+            except requests.RequestException as exc:
+                entry["error"] = str(exc)
+            except (TypeError, ValueError):
+                entry["error"] = "Respuesta inesperada de BioStar."
+            stats.append(entry)
+        return Response(
+            {"stats": stats, "total_faces": total_faces, "total_users": total_users},
+            status=status.HTTP_200_OK,
+        )
 
 
 class BioStarUserLookupAPI(views.APIView):

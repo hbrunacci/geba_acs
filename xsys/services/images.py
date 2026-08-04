@@ -34,3 +34,24 @@ def make_thumbnail(data: bytes, size: tuple[int, int] = THUMBNAIL_SIZE) -> bytes
     except Exception as exc:  # pragma: no cover - imágenes corruptas
         logger.warning("no se pudo generar miniatura: %s", exc)
         return None
+
+
+def resize_for_face(data: bytes, max_side: int = 600, quality: int = 88) -> bytes | None:
+    """Redimensiona una foto para enrolarla en BioStar.
+
+    BioStar 2 devuelve ``500 code 1000 "Ran out of stack space trying to match the
+    regular expression"`` cuando el ``template_ex_picture`` (base64) es muy grande.
+    Bajar el lado mayor a ~600 px resuelve el rechazo. Devuelve JPEG RGB o None.
+    """
+    if not data or Image is None:
+        return None
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            img = img.convert("RGB")
+            img.thumbnail((max_side, max_side), Image.LANCZOS)
+            out = io.BytesIO()
+            img.save(out, format="JPEG", quality=quality, optimize=True)
+            return out.getvalue()
+    except Exception as exc:  # pragma: no cover - imágenes corruptas
+        logger.warning("no se pudo redimensionar foto para facial: %s", exc)
+        return None

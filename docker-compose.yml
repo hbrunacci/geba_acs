@@ -132,6 +132,36 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Backfill de rostros: cada BIOSTAR_FACE_SYNC_INTERVAL s enrola/crea en BioStar a
+  # los socios habilitados con foto que quedaron sin rostro. No hace nada si
+  # BIOSTAR_FACE_SYNC_MODE=off (default). El re-enrolado al cambiar la foto lo hace
+  # el hook del sync (xsys_sync); esto atrapa a los que quedan colgados.
+  biostar-face-sync:
+    build: .
+    image: geba_acs-web:latest
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acs}
+      POSTGRES_USER: ${POSTGRES_USER:-acs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acs}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      DJANGO_DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
+    command: >
+      sh -c "while true; do
+               python -u manage.py biostar_enroll_faces --mode $${BIOSTAR_FACE_SYNC_MODE:-off}
+                 || echo 'biostar_enroll_faces fallo (se reintenta)';
+               sleep $${BIOSTAR_FACE_SYNC_INTERVAL:-3600};
+             done"
+    # Código en vivo: `docker compose restart biostar-face-sync` aplica cambios sin rebuild.
+    volumes:
+      - .:/app
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Listener por polling de marcas de un molinete Intelektron API-3000: lee
   # list_marks cada INTELEKTRON_INTERVAL s y persiste en IntelektronEvent (solo
   # escucha, no autoriza). Requiere INTELEKTRON_IP en .env para arrancar.
