@@ -167,7 +167,19 @@ services:
   # Listener por polling de marcas de un molinete Intelektron API-3000: lee
   # list_marks cada INTELEKTRON_INTERVAL s y persiste en IntelektronEvent (solo
   # escucha, no autoriza). Requiere INTELEKTRON_IP en .env para arrancar.
+  #
+  # APAGADO (2026-08-04): puesto bajo el profile "intelektron" para que NO
+  # arranque con `docker compose up` — se sospechaba que podía interferir con la
+  # app de molinetes de CleverSoft. El código queda intacto; para reactivarlo:
+  #     docker compose --profile intelektron up -d intelektron-listener
+  #
+  # NOTA (2026-08-04, mismo dia): la sospecha quedo DESCARTADA. Los crashes de
+  # CleverIntelekReiIn.exe eran por su SP CP_SCA_RegistrarAcceso (55 PRINT sin
+  # SET NOCOUNT ON -> la rta caia en el resultset #22 -> su API devolvia
+  # data:null). Con este listener apagado los crashes seguian igual. Se puede
+  # volver a levantar cuando haga falta.
   intelektron-listener:
+    profiles: ["intelektron"]
     build: .
     image: geba_acs-web:latest
     env_file: .env
