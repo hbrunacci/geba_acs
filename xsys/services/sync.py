@@ -632,6 +632,18 @@ class XsysSyncService:
                     logger.warning("biostar_face_sync falló (no afecta el sync): %s", exc)
                     stats["biostar_faces"] = {"error": str(exc)[:200]}
 
+                # Deshabilitar/rehabilitar en BioStar a los enrolados afectados según
+                # su habilitación (reconocer pero denegar; NO borra el rostro).
+                # Best-effort; modo por env BIOSTAR_DISABLE_MODE (off|dryrun|on,
+                # default dryrun). Complemento de biostar_push (que solo da altas).
+                try:
+                    from access_control.services.biostar_access_state import push_access_state_affected
+
+                    stats["biostar_disable"] = push_access_state_affected(affected)
+                except Exception as exc:  # pragma: no cover - defensivo
+                    logger.warning("biostar_disable falló (no afecta el sync): %s", exc)
+                    stats["biostar_disable"] = {"error": str(exc)[:200]}
+
                 new_last = max(r[0] for r in rows)
             else:
                 new_last = last_id

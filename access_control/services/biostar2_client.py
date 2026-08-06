@@ -198,6 +198,35 @@ class BioStar2Client:
         }
         return self.request("POST", "/api/users", json={"User": user}, check=False)
 
+    # Fecha "válida" (habilitado) y fecha "vencida" (deshabilitado) para el método expiry.
+    EXPIRY_ENABLED = "2030-12-31T23:59:00.00Z"
+    EXPIRY_DISABLED = "2020-01-01T00:00:00.00Z"
+
+    def set_user_access_state(self, user_id: int, *, enabled: bool, method: str = "expiry"):
+        """Habilita/inhabilita el acceso de un usuario SIN tocar su rostro.
+
+        Hace un PUT PARCIAL: envía solo ``user_id`` + el campo de estado. BioStar
+        hace merge (igual que ``enroll_face``, que manda solo el rostro y no borra
+        el nombre), así que ``credentials.visualFaces``, nombre y grupos se
+        preservan. El objetivo es "reconocer pero denegar": la cara sigue enrolada.
+
+        Dos mecanismos (``method``):
+        - ``expiry`` (default): ``enabled=False`` pone ``expiry_datetime`` en el
+          pasado → el equipo reconoce la cara pero deniega por vencimiento
+          (IDENTIFY_SUCCESS + rechazo, con el id del socio). ``enabled=True`` la
+          restaura a 2030.
+        - ``disabled``: usa el flag ``disabled`` del usuario. Más simple, pero según
+          el equipo puede que directamente no matchee la cara (a validar).
+
+        Response cruda (check=False) para inspeccionar el cuerpo ante un rechazo.
+        """
+        user: dict[str, Any] = {"user_id": str(user_id)}
+        if method == "disabled":
+            user["disabled"] = (not enabled)
+        else:  # expiry
+            user["expiry_datetime"] = self.EXPIRY_ENABLED if enabled else self.EXPIRY_DISABLED
+        return self.request("PUT", f"/api/users/{user_id}", json={"User": user}, check=False)
+
     def list_device_groups(self) -> dict:
         """
         Lista grupos de dispositivos en BioStar 2
