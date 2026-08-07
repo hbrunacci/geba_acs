@@ -30,18 +30,43 @@ class Command(BaseCommand):
         interval = max(0.2, options["interval"])
         reconnect_delay = options["reconnect_delay"]
         service = XsysSyncService()
+
+        # El poller mantiene UNA conexión viva en un loop largo. El pooling de ODBC
+        # (default ON) devuelve conexiones MUERTAS del pool tras un corte de red:
+        # connect() entrega el cadáver, el primer uso da "connection already closed"
+        # y el poller queda en un loop infinito de reconexión que nunca se recupera
+        # (visto en prod 2026-08-07, ~1h sin replicar). Sin pooling, cada connect()
+        # abre un socket fresco y el reconnect SÍ se recupera solo.
+        try:  # pragma: no cover - depende del entorno
+            import pyodbc
+
+            pyodbc.pooling = False
+        except Exception:
+            pass
+
         self.stdout.write(self.style.SUCCESS(f"Iniciando poller CD_ES cada {interval}s. Ctrl-C para salir."))
 
         try:
             while True:
+                # (Re)conectar con VALIDACIÓN: un SELECT 1 descarta cualquier
+                # conexión muerta antes de entrar al loop de poll.
+                conn = None
                 try:
                     conn = connect(service.config)
-                except XsysConnectionError as exc:
+                    probe = conn.cursor()
+                    probe.execute("SELECT 1")
+                    probe.fetchall()
+                    cursor = conn.cursor()
+                except Exception as exc:
                     self.stderr.write(f"Sin conexión a xSys ({exc}); reintento en {reconnect_delay}s")
+                    if conn is not None:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
                     time.sleep(reconnect_delay)
                     continue
 
-                cursor = conn.cursor()
                 last_purge = time.monotonic()
                 try:
                     while True:
