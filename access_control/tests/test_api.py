@@ -339,51 +339,68 @@ class Api3000TestAPITestCase(BaseAPITestCase):
 
 
 class AccessReportsAPITestCase(BaseAPITestCase):
+    """Los reportes salen del espejo de xSys (ExternalAccessLogEntry + xsys.*),
+    que es donde están los accesos reales; AccessEvent quedó sin uso."""
+
     def setUp(self):
         super().setUp()
         self.authenticate()
-        self.site_id = self.client.post(
-            reverse("site-list"),
-            {"name": "Sede Reportes", "address": "Av. 123"},
-            format="json",
-        ).data["id"]
-        self.category_id = self.client.post(
-            reverse("personcategory-list"),
-            {"code": "prof", "name": "Profesores", "description": "", "is_active": True},
-            format="json",
-        ).data["id"]
-        person_payload = {
-            "first_name": "Mario",
-            "last_name": "Lopez",
-            "dni": "20111222",
-            "address": "Calle",
-            "phone": "123",
-            "email": "mario@example.com",
-            "person_type": PersonType.EMPLOYEE,
-            "person_category": self.category_id,
-            "guest_type": None,
-            "is_active": True,
-        }
-        self.person_id = self.client.post(reverse("person-list"), person_payload, format="json").data["id"]
-        AccessEvent.objects.create(
-            person_id=self.person_id,
-            site_id=self.site_id,
-            category_id=self.category_id,
-            occurred_at=timezone.now(),
-            source="test",
-        )
+        from xsys.models import XsysAcceso, XsysControlador, XsysMotivo, XsysSocio
+
+        XsysAcceso.objects.create(id_acceso=14, descripcion="SM-Alcorta", activo=1)
+        XsysControlador.objects.create(id_controlador=59, id_acceso=14, descripcion="Alcorta Mol1", activo=1)
+        XsysMotivo.objects.create(id_cd_motivo=112, descripcion="No cumple ninguna condición habilitante")
+        XsysSocio.objects.create(id_cliente=944426, apellido="SIMOUR", nombre="GERMAN",
+                                 activo=1, categoria="SOCIO ACTIVO")
+        XsysSocio.objects.create(id_cliente=555001, apellido="PEREZ", nombre="ANA",
+                                 activo=1, categoria="VITALICIO 61/65")
+        # 2 permitidos (socios de distinta categoría) + 1 rechazado con motivo.
+        for i, (cid, res, motivo) in enumerate(
+            ((944426, "S", None), (555001, "S", None), (944426, "E", 112))
+        ):
+            ExternalAccessLogEntry.objects.create(
+                external_id=9000 + i, tipo="E", id_cliente=cid, fecha=timezone.now(),
+                resultado=res, id_acceso=14, id_controlador=59, id_cd_motivo=motivo,
+            )
 
     def test_access_by_category_report(self):
-        response = self.client.get(reverse("report_access_by_category"), {"site": self.site_id})
+        response = self.client.get(reverse("report_access_by_category"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["site"], self.site_id)
-        self.assertTrue(response.data["by_category"])
+        self.assertEqual(response.data["total"], 3)
+        self.assertEqual(response.data["permitidos"], 2)
+        self.assertEqual(response.data["rechazados"], 1)
+        cats = {r["categoria"]: r["total"] for r in response.data["by_category"]}
+        self.assertEqual(cats["SOCIO ACTIVO"], 2)
+        self.assertEqual(cats["VITALICIO 61/65"], 1)
+
+    def test_access_by_site_report(self):
+        response = self.client.get(reverse("report_access_by_site"))
+        self.assertEqual(response.status_code, 200)
+        sede = response.data["sites"][0]
+        self.assertEqual(sede["acceso"], "SM-Alcorta")
+        self.assertEqual((sede["total"], sede["permitidos"], sede["rechazados"]), (3, 2, 1))
+        self.assertEqual(response.data["molinetes"][0]["molinete"], "Alcorta Mol1")
+
+    def test_access_denials_report(self):
+        response = self.client.get(reverse("report_access_denials"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["total_rechazos"], 1)
+        self.assertEqual(response.data["motivos"][0]["motivo"],
+                         "No cumple ninguna condición habilitante")
 
     def test_access_heatmap_report(self):
-        response = self.client.get(reverse("report_access_heatmap"), {"site": self.site_id})
+        response = self.client.get(reverse("report_access_heatmap"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["site"], self.site_id)
         self.assertTrue(response.data["heatmap"])
+        self.assertEqual(sum(r["total"] for r in response.data["heatmap"]), 3)
+
+    def test_filtro_por_categoria_y_rango(self):
+        r = self.client.get(reverse("report_access_by_category"), {"categoria": "VITALICIO 61/65"})
+        self.assertEqual(r.data["total"], 1)
+        # Rango que no incluye hoy: sin datos.
+        r = self.client.get(reverse("report_access_by_category"),
+                            {"desde": "2020-01-01", "hasta": "2020-01-31"})
+        self.assertEqual(r.data["total"], 0)
 
 
 class ParkingMovementAPITestCase(BaseAPITestCase):
