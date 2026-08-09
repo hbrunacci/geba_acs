@@ -23,6 +23,7 @@ import time
 from django.core.management.base import BaseCommand
 
 from access_control.services import biostar_events
+from access_control.services.watchdog import run_with_deadline
 
 
 class Command(BaseCommand):
@@ -38,6 +39,12 @@ class Command(BaseCommand):
         )
         parser.add_argument("--retention-days", type=int, default=7, help="Días de retención de eventos.")
         parser.add_argument("--reconnect-delay", type=float, default=10.0, help="Espera al reconectar tras un error.")
+        parser.add_argument(
+            "--call-timeout",
+            type=float,
+            default=60.0,
+            help="Watchdog: si un ciclo de red se cuelga más de esto (s), se abandona y reintenta.",
+        )
         parser.add_argument(
             "--users-refresh",
             type=float,
@@ -71,6 +78,7 @@ class Command(BaseCommand):
         retention = options["retention_days"]
         reconnect_delay = options["reconnect_delay"]
         users_refresh = options["users_refresh"]
+        call_timeout = options["call_timeout"]
         once = options["once"]
 
         self.stdout.write(self.style.SUCCESS(
@@ -92,11 +100,13 @@ class Command(BaseCommand):
                     now = time.monotonic()
                     # Catálogo de tipos de evento: refrescar cada ~10 min.
                     if not event_types or (now - last_meta) >= 600:
-                        event_types = client.event_types()
+                        event_types = run_with_deadline(client.event_types, call_timeout)
                         last_meta = now
                         self.stdout.write(f"meta: {len(event_types)} tipos de evento")
 
-                    nuevos = biostar_events.ingest_recent(client, event_types, limit=limit)
+                    nuevos = run_with_deadline(
+                        biostar_events.ingest_recent, call_timeout, client, event_types, limit=limit
+                    )
                     if nuevos:
                         self.stdout.write(f"+{nuevos} accesos faciales")
 

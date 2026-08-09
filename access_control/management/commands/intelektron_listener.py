@@ -22,6 +22,8 @@ from django.core.management.base import BaseCommand
 from django.db import close_old_connections
 from django.utils import timezone
 
+from access_control.services.watchdog import run_with_deadline
+
 
 # Mapeos de códigos → nombre legible (constants.py del wrapper).
 EVENT_NAMES = {
@@ -48,6 +50,12 @@ class Command(BaseCommand):
         parser.add_argument("--id-controlador", type=int, default=None, help="Id_Controlador xSys a asociar.")
         parser.add_argument("--retention-days", type=int, default=30, help="Días de retención de eventos.")
         parser.add_argument("--reconnect-delay", type=float, default=10.0, help="Espera tras un error.")
+        parser.add_argument(
+            "--call-timeout",
+            type=float,
+            default=20.0,
+            help="Watchdog: si el equipo no responde el list_marks en esto (s), se abandona y reintenta.",
+        )
         parser.add_argument("--once", action="store_true", help="Un solo ciclo y termina (para pruebas).")
 
     def handle(self, *args, **options):
@@ -67,7 +75,7 @@ class Command(BaseCommand):
         cycles = 0
         while True:
             try:
-                new_count = self._poll_once(base, params, options["id_controlador"])
+                new_count = self._poll_once(base, params, options["id_controlador"], options["call_timeout"])
                 if new_count:
                     self.stdout.write(f"{timezone.now():%H:%M:%S} · {new_count} marca(s) nueva(s) de {ip}")
             except KeyboardInterrupt:
@@ -90,11 +98,15 @@ class Command(BaseCommand):
                 break
             time.sleep(interval)
 
-    def _poll_once(self, base: dict, params: dict, id_controlador) -> int:
+    def _poll_once(self, base: dict, params: dict, id_controlador, call_timeout: float = 20.0) -> int:
         from access_control.services.intelectron.api3000_console import execute_command
         from access_control.models import IntelektronEvent
 
-        result = execute_command(command="list_marks", base=base, params=params)
+        # La lectura del equipo (ctypes/socket) puede colgarse indefinidamente si el
+        # molinete acepta la conexión pero no responde: el watchdog acota el ciclo.
+        result = run_with_deadline(
+            execute_command, call_timeout, command="list_marks", base=base, params=params
+        )
         marks = result.get("marks", []) if isinstance(result, dict) else []
         new_count = 0
         for mark in marks:
