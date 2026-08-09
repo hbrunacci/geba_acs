@@ -100,6 +100,9 @@
           <li class="nav__item{% if current_url == 'intelektron_admin' %} nav__item--active{% endif %}">
             <a href="{% url 'intelektron_admin' %}">Equipos Intelektron</a>
           </li>
+          <li class="nav__item{% if current_url == 'pollers_dashboard' %} nav__item--active{% endif %}">
+            <a href="{% url 'pollers_dashboard' %}">Salud de pollers</a>
+          </li>
           {% endif %}
         </ul>
         {% endwith %}

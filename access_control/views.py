@@ -459,3 +459,177 @@ class ParkingMovementMarkExitView(APIView):
             "exit_at": movement.exit_at.isoformat() if movement.exit_at else None,
             "stay_duration_seconds": _parking_stay_duration_seconds(movement.stay_duration),
         })
+
+
+@admin_requerido
+def pollers_dashboard(request):
+    """Panel de salud: estado de los pollers, datos del espejo y últimos movimientos."""
+    from access_control.models import (
+        BiostarAccessEvent,
+        BiostarPollState,
+        ExternalAccessLogEntry,
+        IntelektronEvent,
+    )
+    from xsys.models import (
+        SyncState,
+        XsysControlador,
+        XsysSocio,
+        XsysSocioFoto,
+        XsysWhitelist,
+    )
+
+    now = timezone.now()
+
+    def aw(ts):
+        """Normaliza a datetime aware (o None)."""
+        if not ts:
+            return None
+        try:
+            if timezone.is_naive(ts):
+                return timezone.make_aware(ts, timezone.get_current_timezone())
+        except Exception:
+            return None
+        return ts
+
+    def edad_min(ts):
+        ts = aw(ts)
+        if ts is None:
+            return None
+        return round((now - ts).total_seconds() / 60.0, 1)
+
+    def estado(edad, ok=True, warn=30, err=180):
+        if edad is None:
+            return "sindato"
+        if not ok or edad > err:
+            return "error"
+        if edad > warn:
+            return "stale"
+        return "ok"
+
+    pollers = []
+
+    # --- xSys sync streams (novedades / cd_es / fotos / whitelist) ---
+    try:
+        for s in SyncState.objects.all().order_by("stream"):
+            ult = s.last_run_finished_at or s.last_datetime
+            edad = edad_min(ult)
+            pollers.append({
+                "grupo": "xSys sync",
+                "nombre": s.stream,
+                "detalle": (f"last_id={s.last_id}" if s.last_id else
+                            (aw(s.last_datetime).strftime("%d/%m %H:%M") if s.last_datetime else "—")),
+                "ultima": ult,
+                "edad_min": edad,
+                "rows": s.rows_last_run,
+                "error": (s.last_error or "")[:180],
+                "estado": estado(edad, s.last_run_ok),
+            })
+    except Exception as exc:  # pragma: no cover - tabla ausente
+        pollers.append({"grupo": "xSys sync", "nombre": "(no disponible)", "detalle": str(exc)[:100],
+                        "ultima": None, "edad_min": None, "rows": 0, "error": str(exc)[:180], "estado": "error"})
+
+    # --- BioStar poller ---
+    try:
+        bps = BiostarPollState.objects.order_by("-updated_at").first()
+        edad = edad_min(bps.updated_at if bps else None)
+        pollers.append({
+            "grupo": "BioStar",
+            "nombre": "biostar_poll",
+            "detalle": (f"last_event_id={bps.last_event_id}" if bps else "sin estado"),
+            "ultima": bps.updated_at if bps else None,
+            "edad_min": edad,
+            "rows": BiostarAccessEvent.objects.count(),
+            "error": "",
+            "estado": estado(edad),
+        })
+    except Exception as exc:  # pragma: no cover
+        pollers.append({"grupo": "BioStar", "nombre": "biostar_poll", "detalle": str(exc)[:100],
+                        "ultima": None, "edad_min": None, "rows": 0, "error": str(exc)[:180], "estado": "error"})
+
+    # --- Intelektron listener (sin state model: se infiere del último evento) ---
+    try:
+        last = IntelektronEvent.objects.order_by("-created_at").first()
+        edad = edad_min(last.created_at if last else None)
+        pollers.append({
+            "grupo": "Intelektron",
+            "nombre": "intelektron_listener",
+            "detalle": (last.device_ip if last else "sin eventos"),
+            "ultima": last.created_at if last else None,
+            "edad_min": edad,
+            "rows": IntelektronEvent.objects.count(),
+            "error": "",
+            "estado": estado(edad),
+        })
+    except Exception as exc:  # pragma: no cover
+        pollers.append({"grupo": "Intelektron", "nombre": "intelektron_listener", "detalle": str(exc)[:100],
+                        "ultima": None, "edad_min": None, "rows": 0, "error": str(exc)[:180], "estado": "error"})
+
+    # --- Movimientos externos (CD_ES) ---
+    try:
+        last = ExternalAccessLogEntry.objects.order_by("-fecha").first()
+        edad = edad_min(last.fecha if last else None)
+        pollers.append({
+            "grupo": "Movimientos externos",
+            "nombre": "sync_external_access_logs",
+            "detalle": (f"external_id={last.external_id}" if last else "sin datos"),
+            "ultima": last.fecha if last else None,
+            "edad_min": edad,
+            "rows": ExternalAccessLogEntry.objects.count(),
+            "error": "",
+            "estado": estado(edad, warn=120, err=1440),
+        })
+    except Exception as exc:  # pragma: no cover
+        pollers.append({"grupo": "Movimientos externos", "nombre": "sync_external_access_logs", "detalle": str(exc)[:100],
+                        "ultima": None, "edad_min": None, "rows": 0, "error": str(exc)[:180], "estado": "error"})
+
+    # --- Datos del espejo ---
+    def _c(fn):
+        try:
+            return fn()
+        except Exception:
+            return "—"
+
+    datos = {
+        "whitelist_hab": _c(lambda: XsysWhitelist.objects.filter(habilitado=True).count()),
+        "whitelist_tot": _c(lambda: XsysWhitelist.objects.count()),
+        "socios": _c(lambda: XsysSocio.objects.count()),
+        "controladores": _c(lambda: XsysControlador.objects.count()),
+        "molinetes_ip": _c(lambda: XsysControlador.objects.filter(tipo_cont="K").exclude(ip="").count()),
+        "fotos": _c(lambda: XsysSocioFoto.objects.count()),
+    }
+
+    # --- Historial de movimientos (merge de las 3 fuentes) ---
+    movimientos = []
+    try:
+        for e in BiostarAccessEvent.objects.order_by("-fecha")[:30]:
+            movimientos.append({"ts": aw(e.fecha), "origen": "Facial", "id_cliente": e.id_cliente,
+                                "equipo": e.device_name or e.device_id, "evento": e.event_name,
+                                "permitido": e.permitido})
+    except Exception:
+        pass
+    try:
+        for e in IntelektronEvent.objects.order_by("-created_at")[:30]:
+            ev = (e.event_name or "") + (f" / {e.direction_name}" if e.direction_name else "")
+            movimientos.append({"ts": aw(e.device_time or e.created_at), "origen": "Molinete",
+                                "id_cliente": e.access_id, "equipo": e.device_ip, "evento": ev.strip(" /"),
+                                "permitido": None})
+    except Exception:
+        pass
+    try:
+        for e in ExternalAccessLogEntry.objects.order_by("-fecha")[:30]:
+            movimientos.append({"ts": aw(e.fecha), "origen": "Externo", "id_cliente": e.id_cliente,
+                                "equipo": e.id_controlador, "evento": e.resultado, "permitido": None})
+    except Exception:
+        pass
+    movimientos = sorted([m for m in movimientos if m["ts"]], key=lambda m: m["ts"], reverse=True)[:40]
+
+    resumen = {
+        "ok": sum(1 for p in pollers if p["estado"] == "ok"),
+        "stale": sum(1 for p in pollers if p["estado"] == "stale"),
+        "error": sum(1 for p in pollers if p["estado"] in ("error", "sindato")),
+        "total": len(pollers),
+    }
+
+    contexto = {"pollers": pollers, "datos": datos, "movimientos": movimientos,
+                "resumen": resumen, "ahora": now}
+    return render(request, "access_control/pollers_dashboard.html", contexto)

@@ -11,6 +11,7 @@ from access_control.views import (
     diag_facial_console,
     external_access_console,
     parking_movements_console,
+    pollers_dashboard,
 )
 
 
@@ -18,6 +19,7 @@ urlpatterns = [
     path("ACS/test", api3000_test_console, name="api3000_test_console"),
     path("ACS/test/", api3000_test_console),
     path("intelektron/devices/", intelektron_admin, name="intelektron_admin"),
+    path("salud/", pollers_dashboard, name="pollers_dashboard"),
     path(
         "parking-movements/",
         parking_movements_console,
