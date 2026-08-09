@@ -1,52 +1,203 @@
 {% extends "common/base.html" %}
 
 {% block page_title %}Reportes de Accesos{% endblock %}
-{% block header_title %}Reportes por categoría, sede y hora{% endblock %}
-{% block header_subtitle %}Visualización operativa para últimos 5 días.{% endblock %}
+{% block header_title %}Reportes de accesos{% endblock %}
+{% block header_subtitle %}Sobre el espejo local de xSys (CD_ES). Por defecto, los últimos 5 días.{% endblock %}
 
 {% block content %}
-<section class="card shadow-sm border-0">
+<section class="card shadow-sm border-0 mb-3">
   <div class="card__body">
-    <form id="report-form" class="row g-2">
-      <input class="form-control" name="site" placeholder="ID sede" required>
-      <input class="form-control" name="category" placeholder="ID categoría (opcional)">
-      <button class="btn btn-primary" type="submit">Consultar</button>
+    <form id="report-form" class="row g-2 align-items-end">
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1" for="desde">Desde</label>
+        <input class="form-control" type="date" id="desde" name="desde">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1" for="hasta">Hasta</label>
+        <input class="form-control" type="date" id="hasta" name="hasta">
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label small mb-1" for="acceso">Acceso / sede</label>
+        <select class="form-select" id="acceso" name="acceso"><option value="">Todos</option></select>
+      </div>
+      <div class="col-12 col-md-3 d-grid">
+        <button class="btn btn-primary" type="submit">Consultar</button>
+      </div>
     </form>
   </div>
 </section>
 
 <div class="row g-3 mb-3">
+  <div class="col-6 col-xl-3">
+    <div class="card shadow-sm border-0 h-100"><div class="card__body">
+      <div class="text-muted small">Accesos</div>
+      <div class="fs-3 fw-semibold" id="kpi-total">—</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card shadow-sm border-0 h-100"><div class="card__body">
+      <div class="text-muted small">Permitidos</div>
+      <div class="fs-3 fw-semibold text-success" id="kpi-ok">—</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card shadow-sm border-0 h-100"><div class="card__body">
+      <div class="text-muted small">Rechazados</div>
+      <div class="fs-3 fw-semibold text-danger" id="kpi-no">—</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card shadow-sm border-0 h-100"><div class="card__body">
+      <div class="text-muted small">% rechazo</div>
+      <div class="fs-3 fw-semibold" id="kpi-pct">—</div>
+    </div></div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
   <section class="card shadow-sm border-0 col-12 col-xl-6">
-    <header class="card__header"><h2 class="card__title">Accesos por categoría</h2></header>
-    <div class="card__body card__body--scroll table-responsive"><table class="table table-striped table-sm align-middle"><thead><tr><th>Categoría</th><th>Total</th></tr></thead><tbody id="by-category"></tbody></table></div>
+    <header class="card__header"><h2 class="card__title">Accesos por categoría de socio</h2></header>
+    <div class="card__body card__body--scroll table-responsive">
+      <table class="table table-striped table-sm align-middle">
+        <thead><tr><th>Categoría</th><th class="text-end">Total</th></tr></thead>
+        <tbody id="by-category"></tbody>
+      </table>
+    </div>
   </section>
   <section class="card shadow-sm border-0 col-12 col-xl-6">
     <header class="card__header"><h2 class="card__title">Accesos por sede</h2></header>
-    <div class="card__body card__body--scroll table-responsive"><table class="table table-striped table-sm align-middle"><thead><tr><th>Sede</th><th>Total</th></tr></thead><tbody id="by-site"></tbody></table></div>
+    <div class="card__body card__body--scroll table-responsive">
+      <table class="table table-striped table-sm align-middle">
+        <thead><tr><th>Sede</th><th class="text-end">Total</th><th class="text-end">Permitidos</th><th class="text-end">Rechazados</th></tr></thead>
+        <tbody id="by-site"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<div class="row g-3 mb-3">
+  <section class="card shadow-sm border-0 col-12 col-xl-6">
+    <header class="card__header"><h2 class="card__title">Motivos de rechazo</h2></header>
+    <div class="card__body card__body--scroll table-responsive">
+      <table class="table table-striped table-sm align-middle">
+        <thead><tr><th>Motivo</th><th class="text-end">Total</th></tr></thead>
+        <tbody id="motivos"></tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card shadow-sm border-0 col-12 col-xl-6">
+    <header class="card__header"><h2 class="card__title">Accesos por molinete</h2></header>
+    <div class="card__body card__body--scroll table-responsive">
+      <table class="table table-striped table-sm align-middle">
+        <thead><tr><th>Molinete</th><th class="text-end">Total</th></tr></thead>
+        <tbody id="molinetes"></tbody>
+      </table>
+    </div>
   </section>
 </div>
 
 <section class="card shadow-sm border-0">
-  <header class="card__header"><h2 class="card__title">Mapa de calor (día / hora)</h2></header>
-  <div class="card__body card__body--scroll table-responsive"><table class="table table-striped table-sm align-middle"><thead><tr><th>Día</th><th>Hora</th><th>Total</th></tr></thead><tbody id="heatmap"></tbody></table></div>
+  <header class="card__header"><h2 class="card__title">Distribución por día y hora</h2></header>
+  <div class="card__body card__body--scroll table-responsive">
+    <table class="table table-sm align-middle mb-0" id="heat-table">
+      <thead><tr><th class="text-nowrap">Día</th></tr></thead>
+      <tbody id="heatmap"></tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-async function api(url){ const r=await fetch(url,{credentials:'same-origin'}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
-function fill(id, arr, mapper, cols){ document.getElementById(id).innerHTML = (arr||[]).map(mapper).join('') || `<tr><td colspan="${cols}">Sin datos</td></tr>`; }
-async function load(site, category){
-  const suffix = category ? `?site=${site}&category=${category}` : `?site=${site}`;
-  const [c,s,h] = await Promise.all([
-    api('/api/reports/access-by-category/' + suffix),
-    api('/api/reports/access-by-site/'),
-    api('/api/reports/access-heatmap/' + suffix),
-  ]);
-  fill('by-category', c.by_category, r => `<tr><td>${r.category__name || 'Sin categoría'}</td><td>${r.total}</td></tr>`, 2);
-  fill('by-site', s.sites, r => `<tr><td>${r.site__name}</td><td>${r.total}</td></tr>`, 2);
-  fill('heatmap', h.heatmap, r => `<tr><td>${r.day}</td><td>${r.hour}:00</td><td>${r.total}</td></tr>`, 3);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num = (n) => (n == null ? '—' : Number(n).toLocaleString('es-AR'));
+
+async function api(url) {
+  const r = await fetch(url, {credentials: 'same-origin'});
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
 }
-document.getElementById('report-form').addEventListener('submit', (e)=>{ e.preventDefault(); const f = new FormData(e.target); load(f.get('site'), f.get('category')); });
+
+function fill(id, rows, mapper, cols) {
+  $(id).innerHTML = (rows || []).map(mapper).join('') ||
+    `<tr><td colspan="${cols}" class="text-muted">Sin datos en el período</td></tr>`;
+}
+
+// El mapa de calor se arma como matriz día x hora, sombreando según el máximo.
+function renderHeatmap(rows) {
+  const horas = [...new Set((rows || []).map(r => r.hour))].sort((a, b) => a - b);
+  const dias = [...new Set((rows || []).map(r => r.day))].sort();
+  const max = Math.max(1, ...(rows || []).map(r => r.total));
+  const idx = new Map((rows || []).map(r => [`${r.day}|${r.hour}`, r.total]));
+
+  $('heat-table').querySelector('thead').innerHTML =
+    '<tr><th class="text-nowrap">Día</th>' + horas.map(h => `<th class="text-end small">${h}h</th>`).join('') + '</tr>';
+
+  if (!dias.length) {
+    $('heatmap').innerHTML = `<tr><td colspan="${horas.length + 1}" class="text-muted">Sin datos en el período</td></tr>`;
+    return;
+  }
+  $('heatmap').innerHTML = dias.map(d => {
+    const celdas = horas.map(h => {
+      const v = idx.get(`${d}|${h}`) || 0;
+      const alpha = v ? (0.12 + 0.88 * (v / max)).toFixed(2) : 0;
+      const style = v ? ` style="background: rgba(13,110,253,${alpha})"` : '';
+      return `<td class="text-end small"${style}>${v || ''}</td>`;
+    }).join('');
+    return `<tr><th class="text-nowrap small fw-normal">${esc(d)}</th>${celdas}</tr>`;
+  }).join('');
+}
+
+function qs() {
+  const p = new URLSearchParams();
+  for (const k of ['desde', 'hasta', 'acceso']) { if ($(k).value) p.set(k, $(k).value); }
+  const s = p.toString();
+  return s ? '?' + s : '';
+}
+
+async function load() {
+  const suffix = qs();
+  const [cat, site, heat, den] = await Promise.all([
+    api('/api/reports/access-by-category/' + suffix),
+    api('/api/reports/access-by-site/' + suffix),
+    api('/api/reports/access-heatmap/' + suffix),
+    api('/api/reports/access-denials/' + suffix),
+  ]);
+
+  $('kpi-total').textContent = num(cat.total);
+  $('kpi-ok').textContent = num(cat.permitidos);
+  $('kpi-no').textContent = num(cat.rechazados);
+  $('kpi-pct').textContent = cat.total ? ((cat.rechazados / cat.total) * 100).toFixed(1) + '%' : '—';
+
+  fill('by-category', cat.by_category,
+    r => `<tr><td>${esc(r.categoria || 'Sin categoría')}</td><td class="text-end">${num(r.total)}</td></tr>`, 2);
+  fill('by-site', site.sites,
+    r => `<tr><td>${esc(r.acceso || ('Acceso ' + r.id_acceso))}</td><td class="text-end">${num(r.total)}</td>` +
+         `<td class="text-end text-success">${num(r.permitidos)}</td>` +
+         `<td class="text-end text-danger">${num(r.rechazados)}</td></tr>`, 4);
+  fill('molinetes', site.molinetes,
+    r => `<tr><td>${esc(r.molinete || ('Controlador ' + r.id_controlador))}</td><td class="text-end">${num(r.total)}</td></tr>`, 2);
+  fill('motivos', den.motivos,
+    r => `<tr><td>${esc(r.motivo || 'Sin motivo registrado')}</td><td class="text-end">${num(r.total)}</td></tr>`, 2);
+  renderHeatmap(heat.heatmap);
+}
+
+// El selector de sedes sale de los accesos que realmente aparecen en el período.
+async function cargarAccesos() {
+  try {
+    const d = await api('/api/reports/access-by-site/');
+    $('acceso').innerHTML = '<option value="">Todos</option>' + (d.sites || [])
+      .map(r => `<option value="${r.id_acceso}">${esc(r.acceso || ('Acceso ' + r.id_acceso))}</option>`).join('');
+  } catch (e) { /* el filtro queda en "Todos" */ }
+}
+
+$('report-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  load().catch(err => alert('No se pudo cargar el reporte: ' + err.message));
+});
+
+cargarAccesos();
+load().catch(err => alert('No se pudo cargar el reporte: ' + err.message));
 </script>
 {% endblock %}

@@ -47,6 +47,7 @@ from access_control.api.v1.intelectron_api_views import (
 from access_control.views import (
     AccessByCategoryReportView,
     AccessBySiteReportView,
+    AccessDenialsReportView,
     AccessEventViewSet,
     AccessHeatmapReportView,
     ExternalAccessLogView,
@@ -172,6 +173,7 @@ urlpatterns = router.urls + [
     path("reports/access-by-category/", AccessByCategoryReportView.as_view(), name="report_access_by_category"),
     path("reports/access-by-site/", AccessBySiteReportView.as_view(), name="report_access_by_site"),
     path("reports/access-heatmap/", AccessHeatmapReportView.as_view(), name="report_access_heatmap"),
+    path("reports/access-denials/", AccessDenialsReportView.as_view(), name="report_access_denials"),
     path("anses/candidates/", AnsesCandidatesAPI.as_view(), name="anses_candidates_api"),
     path("anses/processed/export/", AnsesProcessedExportAPI.as_view(), name="anses_processed_export_api"),
     path("anses/verify/", AnsesVerifyAPI.as_view(), name="anses_verify_api"),
