@@ -220,6 +220,7 @@ services:
               "--port", "${INTELEKTRON_PORT:-3001}",
               "--source-node", "${INTELEKTRON_SOURCE_NODE:-0}",
               "--dest-node", "${INTELEKTRON_DEST_NODE:-1}",
+              "--id-controlador", "${INTELEKTRON_ID_CONTROLADOR:-53}",
               "--interval", "${INTELEKTRON_INTERVAL:-5}"]
     # Código en vivo: `docker compose restart intelektron-listener` aplica cambios sin rebuild.
     volumes:
