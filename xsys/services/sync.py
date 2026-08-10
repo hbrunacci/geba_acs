@@ -235,6 +235,55 @@ class XsysSyncService:
                     changed.append(int(id_cliente))
         return changed
 
+    def sync_fotos_incremental(self, cursor, *, overlap_minutes: int = 2) -> list[int]:
+        """Refresca fotos por high-water de ``Fecha``, INDEPENDIENTE de novedades.
+
+        Cierra el hueco por el que las fotos quedaban desactualizadas: el sync
+        incremental solo bajaba fotos de los socios afectados por una novedad, así
+        que una foto nueva/cambiada de un socio SIN novedad no se replicaba nunca
+        (el high-water ``SyncState('fotos')`` se fijaba en el init pero no se
+        consumía). Acá se traen las fotos de socios ACTIVOS con ``Fecha`` posterior
+        al mark (menos un solapamiento de seguridad), se upsertean por SHA (no
+        reescribe las iguales) y se avanza el mark al máximo visto.
+
+        ``Clientes_Fotos.Fecha`` es hora local naive; el mark se guarda aware
+        (Argentina) vía ``_aware``, así que se compara en local naive.
+        Devuelve los Id_Cliente cuya foto cambió (para re-enrolar en BioStar).
+        """
+        st = SyncState.get("fotos")
+        last = st.last_datetime
+        changed: list[int] = []
+        max_fecha = None
+
+        if last is not None:
+            last_local = timezone.localtime(last).replace(tzinfo=None) - timedelta(minutes=overlap_minutes)
+            cursor.execute(
+                "SELECT F.Id_Cliente, F.Nro, F.Fecha, F.Foto FROM Clientes_Fotos F "
+                "JOIN Clientes C ON C.Id_Cliente = F.Id_Cliente "
+                "WHERE C.Activo = 1 AND F.Fecha > ? ORDER BY F.Fecha",
+                (last_local,),
+            )
+        else:  # sin mark previo: primera corrida trae todo (activos)
+            cursor.execute(
+                "SELECT F.Id_Cliente, F.Nro, F.Fecha, F.Foto FROM Clientes_Fotos F "
+                "JOIN Clientes C ON C.Id_Cliente = F.Id_Cliente WHERE C.Activo = 1 ORDER BY F.Fecha"
+            )
+
+        while True:
+            rows = cursor.fetchmany(self.batch_size)
+            if not rows:
+                break
+            with transaction.atomic():
+                for id_cliente, nro, fecha, blob in rows:
+                    if self._upsert_foto(id_cliente, nro, fecha, blob):
+                        changed.append(int(id_cliente))
+                    if fecha is not None and (max_fecha is None or fecha > max_fecha):
+                        max_fecha = fecha
+
+        if max_fecha is not None:
+            SyncState.advance("fotos", last_datetime=_aware(max_fecha), rows=len(changed))
+        return changed
+
     def sync_accesos(self, cursor) -> int:
         """Espejo de CD_Accesos (puertas). Tabla chica: upsert completo."""
         cursor.execute(
