@@ -4,7 +4,8 @@ import re
 from datetime import timedelta
 
 from django.shortcuts import render
-from django.db.models import Count
+from django.db.models import Count, OuterRef, Q, Subquery
+from django.utils.dateparse import parse_date
 
 from common.roles import admin_requerido, puertas_requerido
 from django.db.utils import OperationalError
@@ -27,6 +28,7 @@ from people.models import Cliente
 from access_control.services import ClientLookupError, MSSQLClientLookupService
 from access_control.services.diag_facial import DiagFacialError, diagnosticar
 from access_control.services.intelectron.api3000_console import COMMAND_CATALOG
+from xsys.models import XsysAcceso, XsysControlador, XsysMotivo, XsysSocio
 
 
 def _parking_quota_access_status(ult_cuota_paga):
@@ -249,55 +251,141 @@ class ExternalAccessLogView(APIView):
         return paginator.get_paginated_response(serializer.data)
 
 
+DIAS_REPORTE_DEFAULT = 5
+
+# En CD_ES el resultado es 'S' (paso permitido) o 'E' (rechazado). No hay otros
+# valores en uso, así que "rechazado" = todo lo que no sea 'S'.
+RESULTADO_PERMITIDO = "S"
+
+
+def _rango_reporte(request):
+    """Rango de fechas del reporte: ?desde=&hasta= (ISO) o los últimos N días."""
+    hoy = timezone.localdate()
+    desde = parse_date(request.query_params.get("desde") or "") or hoy - timedelta(days=DIAS_REPORTE_DEFAULT - 1)
+    hasta = parse_date(request.query_params.get("hasta") or "") or hoy
+    if desde > hasta:
+        desde, hasta = hasta, desde
+    return desde, hasta
+
+
+def _accesos_qs(request):
+    """Accesos del período, con los filtros opcionales de la consola aplicados.
+
+    Se usa ``ExternalAccessLogEntry`` (espejo local de CD_ES), que es donde están
+    los accesos reales; ``AccessEvent`` quedó sin uso.
+    """
+    desde, hasta = _rango_reporte(request)
+    qs = ExternalAccessLogEntry.objects.filter(fecha__date__range=(desde, hasta))
+    acceso = request.query_params.get("acceso")
+    if acceso:
+        qs = qs.filter(id_acceso=acceso)
+    categoria = (request.query_params.get("categoria") or "").strip()
+    if categoria:
+        socios = XsysSocio.objects.filter(categoria=categoria).values("id_cliente")
+        qs = qs.filter(id_cliente__in=Subquery(socios))
+    return qs, desde, hasta
+
+
+def _con_categoria(qs):
+    """Anota la categoría del socio resolviéndola en SQL (evita traer los ids)."""
+    return qs.annotate(
+        categoria=Subquery(
+            XsysSocio.objects.filter(id_cliente=OuterRef("id_cliente")).values("categoria")[:1]
+        )
+    )
+
+
+def _totales(qs):
+    total = qs.count()
+    permitidos = qs.filter(resultado=RESULTADO_PERMITIDO).count()
+    return {"total": total, "permitidos": permitidos, "rechazados": total - permitidos}
+
+
 class AccessByCategoryReportView(APIView):
+    """Accesos agrupados por categoría de socio, más los totales del período."""
+
     def get(self, request):
-        site_id = request.query_params.get("site")
-        if not site_id:
-            return Response({"detail": "El parámetro 'site' es obligatorio."}, status=400)
-        end_date = timezone.localdate()
-        start_date = end_date - timezone.timedelta(days=4)
-
-        base_qs = AccessEvent.objects.filter(site_id=site_id, occurred_at__date__range=(start_date, end_date))
-        category_id = request.query_params.get("category")
-        if category_id:
-            base_qs = base_qs.filter(category_id=category_id)
-
-        totals_by_day = list(
-            base_qs.annotate(day=TruncDate("occurred_at")).values("day").annotate(total=Count("id")).order_by("day")
-        )
+        qs, desde, hasta = _accesos_qs(request)
         by_category = list(
-            base_qs.values("category__id", "category__name").annotate(total=Count("id")).order_by("-total")
+            _con_categoria(qs).values("categoria").annotate(total=Count("id")).order_by("-total")[:40]
         )
-        return Response({"site": int(site_id), "start_date": start_date, "end_date": end_date, "totals_by_day": totals_by_day, "by_category": by_category})
+        totals_by_day = list(
+            qs.annotate(day=TruncDate("fecha")).values("day").annotate(total=Count("id")).order_by("day")
+        )
+        return Response({
+            "desde": desde, "hasta": hasta,
+            **_totales(qs),
+            "by_category": by_category,
+            "totals_by_day": totals_by_day,
+        })
 
 
 class AccessBySiteReportView(APIView):
+    """Accesos por acceso/sede de xSys y, dentro, por molinete."""
+
     def get(self, request):
-        end_date = timezone.localdate()
-        start_date = end_date - timezone.timedelta(days=4)
-        qs = AccessEvent.objects.filter(occurred_at__date__range=(start_date, end_date))
-        rows = list(qs.values("site__id", "site__name").annotate(total=Count("id")).order_by("-total"))
-        return Response({"start_date": start_date, "end_date": end_date, "sites": rows})
+        qs, desde, hasta = _accesos_qs(request)
+        by_site = list(
+            qs.annotate(
+                acceso=Subquery(
+                    XsysAcceso.objects.filter(id_acceso=OuterRef("id_acceso")).values("descripcion")[:1]
+                )
+            )
+            .values("id_acceso", "acceso")
+            .annotate(
+                total=Count("id"),
+                permitidos=Count("id", filter=Q(resultado=RESULTADO_PERMITIDO)),
+            )
+            .order_by("-total")
+        )
+        by_controlador = list(
+            qs.annotate(
+                molinete=Subquery(
+                    XsysControlador.objects.filter(id_controlador=OuterRef("id_controlador"))
+                    .values("descripcion")[:1]
+                )
+            )
+            .values("id_controlador", "molinete")
+            .annotate(total=Count("id"))
+            .order_by("-total")[:30]
+        )
+        for row in by_site:
+            row["rechazados"] = row["total"] - row["permitidos"]
+        return Response({"desde": desde, "hasta": hasta, "sites": by_site, "molinetes": by_controlador})
+
+
+class AccessDenialsReportView(APIView):
+    """Rechazos del período agrupados por motivo (por qué no pudo pasar)."""
+
+    def get(self, request):
+        qs, desde, hasta = _accesos_qs(request)
+        rechazos = qs.exclude(resultado=RESULTADO_PERMITIDO)
+        motivos = list(
+            rechazos.annotate(
+                motivo=Subquery(
+                    XsysMotivo.objects.filter(id_cd_motivo=OuterRef("id_cd_motivo"))
+                    .values("descripcion")[:1]
+                )
+            )
+            .values("id_cd_motivo", "motivo")
+            .annotate(total=Count("id"))
+            .order_by("-total")[:20]
+        )
+        return Response({"desde": desde, "hasta": hasta, "total_rechazos": rechazos.count(), "motivos": motivos})
 
 
 class AccessHeatmapReportView(APIView):
+    """Distribución día / hora de los accesos del período."""
+
     def get(self, request):
-        site_id = request.query_params.get("site")
-        if not site_id:
-            return Response({"detail": "El parámetro 'site' es obligatorio."}, status=400)
-        end_date = timezone.localdate()
-        start_date = end_date - timezone.timedelta(days=4)
-        qs = AccessEvent.objects.filter(site_id=site_id, occurred_at__date__range=(start_date, end_date))
-        category_id = request.query_params.get("category")
-        if category_id:
-            qs = qs.filter(category_id=category_id)
+        qs, desde, hasta = _accesos_qs(request)
         matrix = list(
-            qs.annotate(day=TruncDate("occurred_at"), hour=ExtractHour("occurred_at"))
+            qs.annotate(day=TruncDate("fecha"), hour=ExtractHour("fecha"))
             .values("day", "hour")
             .annotate(total=Count("id"))
             .order_by("day", "hour")
         )
-        return Response({"site": int(site_id), "start_date": start_date, "end_date": end_date, "heatmap": matrix})
+        return Response({"desde": desde, "hasta": hasta, "heatmap": matrix})
 
 
 class ParkingClienteLookupView(APIView):
