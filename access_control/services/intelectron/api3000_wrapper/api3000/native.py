@@ -127,6 +127,39 @@ class NativeLibrary:
         lib.itk_close.argtypes = [c_long]
         lib.itk_close.restype = c_long
 
+        # --- Modo listen/accept: el EQUIPO se conecta a NOSOTROS -------------
+        # Firmas del SDK oficial (itkcom_api.bas):
+        #   itk_listen(ByRef error_code, ByVal port As Integer, ByVal timeout As Long,
+        #              ByVal callback_args As Any, ByVal callback_conn As Any) As Long
+        #   itk_close_listen(ByVal h_listen As Long) As Long
+        #   itk_accept(ByRef h_link, ByRef dest_node As Integer, ByRef port As Integer,
+        #              ByVal packet_protocol As Byte, ByVal source_node As Integer,
+        #              ByVal accept_timeout As Long, ByVal rcv_timeout As Long) As Long
+        # Es la via para recibir eventos en vivo: el itk_open cliente con callbacks
+        # NO recibe nada (probado en vivo 2026-08-11 contra .67 y .115).
+        lib.itk_listen.argtypes = [
+            POINTER(c_long),  # error_code
+            c_int16,          # port
+            c_long,           # timeout
+            c_long,           # callback_args
+            c_long,           # callback_conn
+        ]
+        lib.itk_listen.restype = c_long
+
+        lib.itk_close_listen.argtypes = [c_long]
+        lib.itk_close_listen.restype = c_long
+
+        lib.itk_accept.argtypes = [
+            POINTER(c_long),   # h_link (out)
+            POINTER(c_int16),  # dest_node (out)
+            POINTER(c_int16),  # port (out)
+            c_uint8,           # packet_protocol
+            c_int16,           # source_node
+            c_long,            # accept_timeout
+            c_long,            # rcv_timeout
+        ]
+        lib.itk_accept.restype = c_long
+
         lib.itk_set_rcv_timeout.argtypes = [c_long, c_long]
         lib.itk_set_rcv_timeout.restype = c_long
 

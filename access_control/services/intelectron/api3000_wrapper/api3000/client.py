@@ -128,6 +128,56 @@ class Api3000Client:
         self.conn_string = conn_string
         return self._handle
 
+    def listen(self, port: int, *, timeout: int = 10000) -> int:
+        """Abre un socket de escucha para que el EQUIPO se conecte a nosotros.
+
+        Modo inverso a ``open()``: en vez de nosotros conectarnos a la placa, la
+        placa (configurada en modo online) se conecta a este host. Es la via para
+        recibir eventos en vivo — el ``itk_open`` cliente con callbacks NO recibe
+        nada (verificado en vivo contra .67 y .115 el 2026-08-11).
+
+        Devuelve el handle de listen (``h_listen``), para usar con ``accept()``.
+        """
+        if not self._initialized:
+            self.init_library()
+        error_code = c_long(0)
+        h_listen = self._native.cdll.itk_listen(
+            byref(error_code), c_int16(int(port)), int(timeout), 0, 0
+        )
+        if h_listen <= 0:
+            code = int(error_code.value) if error_code.value else h_listen
+            raise Api3000Error(f"itk_listen fallo. codigo={code}, port={port}")
+        return int(h_listen)
+
+    def close_listen(self, h_listen: int) -> None:
+        """Cierra el socket de escucha."""
+        self._native.cdll.itk_close_listen(int(h_listen))
+
+    def accept(self, *, packet_protocol=None, source_node: int | None = None,
+               accept_timeout: int = 60000, rcv_timeout: int = 20000) -> dict:
+        """Espera (bloqueante) que un equipo se conecte al socket de escucha.
+
+        Devuelve {h_link, dest_node, port} del equipo que se conecto. El
+        ``h_link`` resultante se usa como cualquier conexion (get_time,
+        rele_control, etc.) y es por donde llegan los eventos del equipo.
+        """
+        h_link = c_long(0)
+        dest_node = c_int16(0)
+        port = c_int16(0)
+        proto = int(self.packet_protocol if packet_protocol is None else packet_protocol)
+        sn = int(self.source_node if source_node is None else source_node)
+        code = self._native.cdll.itk_accept(
+            byref(h_link), byref(dest_node), byref(port),
+            proto, c_int16(sn), int(accept_timeout), int(rcv_timeout),
+        )
+        ensure_ok(code, "itk_accept")
+        self._handle = int(h_link.value)
+        return {
+            "h_link": int(h_link.value),
+            "dest_node": int(dest_node.value),
+            "port": int(port.value),
+        }
+
     def close(self) -> None:
         """Cierra la conexión abierta."""
         if self._handle is None:
