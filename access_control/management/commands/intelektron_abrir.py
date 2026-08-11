@@ -7,13 +7,15 @@ Valores (del SDK oficial, frmReles):
   rele_id: 0=Desactivado, 1..8=rele N, 254=Multi ON, 255=Multi OFF
   time_mode (funcion): 0=Pulse, N=Time (N segundos), 253=ON, 254=OFF, 255=Inv
 
+VALIDADO EN VIVO (2026-08-11, molinete 10.0.0.115): la apertura que hace girar
+el aspa es --rele 2 --time 3 (rele 2 = relé de paso, pulso de 3 segundos).
+Con rele 1/3 o Pulse(0) no acciona; relés 4-8 no existen (error 147).
+
 Ejemplos:
   # solo validar conexion (get_time), no abre nada:
   python manage.py intelektron_abrir --ip 10.0.0.67 --check
-  # abrir rele 1 con pulso (time_mode=0):
-  python manage.py intelektron_abrir --ip 10.0.0.67 --rele 1 --time 0
-  # abrir rele 1 temporizado 3 segundos:
-  python manage.py intelektron_abrir --ip 10.0.0.115 --rele 1 --time 3
+  # ABRIR (validado): rele 2, pulso 3 segundos:
+  python manage.py intelektron_abrir --ip 10.0.0.115 --rele 2 --time 3
 """
 
 from __future__ import annotations
