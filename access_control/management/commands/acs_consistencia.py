@@ -43,6 +43,11 @@ class Command(BaseCommand):
                             help="Minutos de antigüedad tolerados en la whitelist (default 120).")
         parser.add_argument("--detalle", type=int, default=20,
                             help="Cuántos ids mostrar por categoría (default 20).")
+        parser.add_argument("--umbral", type=int, default=25,
+                            help="Divergencias whitelist↔xSys toleradas antes de dar error "
+                                 "(default 25). Un socio que se pone al día entre dos barridas "
+                                 "aparece como divergente hasta la siguiente: es el desfasaje "
+                                 "normal del intervalo, no una falla. Un número alto sí lo es.")
         parser.add_argument("--muestra", type=int, default=0,
                             help="Comparar contra xSys sólo N socios al azar en vez de todos "
                                  "(0 = todos; la barrida completa tarda ~30 s).")
@@ -53,7 +58,7 @@ class Command(BaseCommand):
 
         problemas += self._frescura(opts["max_edad"])
         if not opts["rapido"]:
-            problemas += self._vs_xsys(n, opts["muestra"])
+            problemas += self._vs_xsys(n, opts["muestra"], opts["umbral"])
         problemas += self._vs_biostar(n)
 
         self.stdout.write("")
@@ -88,7 +93,7 @@ class Command(BaseCommand):
         return 0
 
     # -------------------------------------------------- 2. whitelist vs. xSys
-    def _vs_xsys(self, n: int, muestra: int) -> int:
+    def _vs_xsys(self, n: int, muestra: int, umbral: int = 0) -> int:
         import random
 
         from xsys.models import XsysWhitelist
@@ -127,12 +132,20 @@ class Command(BaseCommand):
         if not de_mas and not de_menos:
             self.stdout.write(self.style.SUCCESS("   la whitelist coincide con xSys en el 100 %"))
             return 0
+        total = len(de_mas) + len(de_menos)
+        # Por debajo del umbral es el desfasaje esperable entre barridas: se
+        # informa, pero no se marca como falla (si no, la alarma suena siempre y
+        # deja de mirarse).
+        estilo = self.style.WARNING if total <= umbral else self.style.ERROR
         if de_mas:
-            self.stdout.write(self.style.ERROR(
+            self.stdout.write(estilo(
                 f"   {len(de_mas)} habilitados DE MÁS (pasarían sin poder): {de_mas[:n]}"))
         if de_menos:
-            self.stdout.write(self.style.ERROR(
+            self.stdout.write(estilo(
                 f"   {len(de_menos)} habilitados DE MENOS (no pasarían pudiendo): {de_menos[:n]}"))
+        if total <= umbral:
+            self.stdout.write(f"   dentro del desfasaje normal entre barridas (umbral {umbral})")
+            return 0
         return 1
 
     # ------------------------------------------------------- 3. BioStar
