@@ -41,6 +41,10 @@ class Command(BaseCommand):
                                  "y verifica que el rostro se preserva.")
         parser.add_argument("--restore", action="store_true",
                             help="Con --test: rehabilita al socio en vez de deshabilitarlo.")
+        parser.add_argument("--todos", action="store_true",
+                            help="Emitir el PUT para TODOS los enrolados, incluso los que ya están "
+                                 "como corresponde. Por defecto sólo se tocan los desincronizados "
+                                 "(evita disparar ~16.000 PUT innecesarios contra BioStar).")
 
     def handle(self, *args, **opts):
         if opts["test"] is not None:
@@ -53,6 +57,7 @@ class Command(BaseCommand):
             mode=opts["mode"],
             method=opts["method"],
             reenable=not opts["no_reenable"],
+            only_divergent=not opts["todos"],
             max_per_run=opts["limit"],
         )
         self.stdout.write(self.style.SUCCESS(str(res)))

@@ -32,6 +32,9 @@ DISABLE_MODE_ENV = "BIOSTAR_DISABLE_MODE"
 DEFAULT_MODE = "dryrun"
 VALID_MODES = ("off", "dryrun", "on")
 
+MAX_DISABLE_ENV = "BIOSTAR_MAX_DISABLE_PER_RUN"
+DEFAULT_MAX_DISABLE = 3000
+
 DISABLE_METHOD_ENV = "BIOSTAR_DISABLE_METHOD"
 DEFAULT_METHOD = "expiry"
 VALID_METHODS = ("expiry", "disabled")
@@ -88,6 +91,21 @@ def protected_user_ids() -> set[int]:
 def get_disable_mode() -> str:
     m = (os.getenv(DISABLE_MODE_ENV, DEFAULT_MODE) or DEFAULT_MODE).strip().lower()
     return m if m in VALID_MODES else DEFAULT_MODE
+
+
+def max_disable_per_run() -> int:
+    """Tope de denegaciones que una sola corrida puede propagar a los lectores.
+
+    Válvula de seguridad: si un estado transitorio de xSys (un proceso nocturno a
+    medio correr, una tabla vacía) hiciera caer la habilitación de media base, sin
+    esto lo empujaríamos a los molinetes y dejaríamos a miles de socios afuera. Un
+    corte de gracia mensual normal mueve ~1.200, así que el default deja pasar lo
+    legítimo y frena lo catastrófico. 0 = sin tope.
+    """
+    try:
+        return int(os.getenv(MAX_DISABLE_ENV, str(DEFAULT_MAX_DISABLE)))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_DISABLE
 
 
 def get_disable_method() -> str:
@@ -223,6 +241,19 @@ def push_access_state_affected(
     result["a_rehabilitar"] = len(to_enable)
 
     if not to_disable and not to_enable:
+        return result
+
+    tope = max_disable_per_run()
+    if mode == "on" and tope and len(to_disable) > tope:
+        # No se deniega a nadie: es más seguro dejar de más que dejar afuera a
+        # miles por un dato transitorio. Queda para revisión manual.
+        logger.error(
+            "biostar_disable: ABORTADO — la corrida quiere denegar a %s socios, por encima del "
+            "tope de %s (%s). No se tocó BioStar; revisar la whitelist y, si el número es "
+            "correcto, correr el backfill a mano o subir el tope.",
+            len(to_disable), tope, MAX_DISABLE_ENV,
+        )
+        result["abortado_por_tope"] = {"a_deshabilitar": len(to_disable), "tope": tope}
         return result
 
     if mode == "dryrun":
