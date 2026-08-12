@@ -125,6 +125,19 @@ def _descr_tipo(cursor, id_tipo) -> str:
     return (row[0] or "").strip() if row else ""
 
 
+def server_now(cursor) -> datetime:
+    """Reloj del SQL Server de xSys.
+
+    Es el que hay que usar para evaluar la habilitación: los contenedores corren
+    en UTC y el club está en UTC-3, así que ``datetime.now()`` adelanta la fecha
+    tres horas y entre las 21:00 y la medianoche aplica los cortes de gracia un
+    día antes. ``GETDATE()`` es el mismo reloj con el que xSys decide en el
+    molinete.
+    """
+    cursor.execute("SELECT GETDATE()")
+    return cursor.fetchone()[0]
+
+
 def get_acceso_flags(cursor, id_acceso: int) -> tuple[int, int, str]:
     """Devuelve (Flag_Ult_Cuota_Paga, Flag_Evento, Descripcion) del acceso."""
     cursor.execute(
@@ -157,7 +170,8 @@ def compute_habilitacion_bulk(
     ids = [int(i) for i in ids]
     if not ids:
         return {}
-    fecha = fecha or datetime.now()
+    if fecha is None:
+        fecha = server_now(cursor)
     if flag_ucp is None:
         flag_ucp, _flag_evento, _d = get_acceso_flags(cursor, id_acceso)
 
@@ -256,7 +270,8 @@ def verify_bulk_against_single(
     if not ids:
         return {"muestra": 0, "coinciden": 0, "difieren": 0, "detalle": []}
 
-    fecha = fecha or datetime.now()
+    if fecha is None:
+        fecha = server_now(cursor)
     masivo = compute_habilitacion_bulk(cursor, ids, id_acceso=id_acceso, fecha=fecha)
 
     service = XsysAccessCheckService()

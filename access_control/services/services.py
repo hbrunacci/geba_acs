@@ -414,12 +414,21 @@ class MSSQLAccessCheckService:
         if id_acceso is None and id_controlador is None:
             raise AccessCheckError("Debe indicar id_acceso o id_controlador.")
 
-        fecha = fecha or datetime.now()
         own_connection = cursor is None
         connection = self._connect() if own_connection else None
         try:
             if own_connection:
                 cursor = connection.cursor()
+
+            # La fecha por defecto sale del RELOJ DEL SERVIDOR SQL, no de
+            # ``datetime.now()``: los contenedores corren en UTC y el club está
+            # en UTC-3, así que entre las 21:00 y la medianoche evaluábamos con
+            # la fecha del día siguiente y aplicábamos un día antes los cortes
+            # de gracia (la noche del 11-08-2026 eso adelantaba la baja de ~1100
+            # socios). ``GETDATE()`` es exactamente el reloj con el que xSys
+            # decide en el molinete.
+            if fecha is None:
+                fecha = self._scalar(cursor, "SELECT GETDATE()", ())
 
             resolved_id_acceso = self._resolve_id_acceso(cursor, id_acceso, id_controlador)
             if not resolved_id_acceso:

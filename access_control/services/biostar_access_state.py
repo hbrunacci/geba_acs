@@ -61,6 +61,19 @@ def is_operator_account(payload: dict | None) -> bool:
     return False
 
 
+def biostar_permite(payload: dict | None) -> bool:
+    """¿El estado actual en BioStar deja pasar a este usuario?
+
+    BioStar devuelve los booleanos como strings ('true'/'false').
+    """
+    p = payload or {}
+
+    def es_true(v) -> bool:
+        return v is True or str(v).strip().lower() == "true"
+
+    return not es_true(p.get("disabled")) and not es_true(p.get("expired"))
+
+
 def protected_user_ids() -> set[int]:
     """Ids que nunca deben tocarse, por si hace falta forzar alguno desde el env."""
     raw = os.getenv(PROTECTED_IDS_ENV, "1") or ""
@@ -82,11 +95,22 @@ def get_disable_method() -> str:
     return m if m in VALID_METHODS else DEFAULT_METHOD
 
 
-def resolve_state_targets(ids: Sequence[int] | None = None) -> dict[str, list[int]]:
+def resolve_state_targets(
+    ids: Sequence[int] | None = None,
+    *,
+    only_divergent: bool = False,
+) -> dict[str, list[int]]:
     """Separa los enrolados en BioStar según deban quedar habilitados o no.
 
     Si ``ids`` es None, considera TODOS los enrolados (backfill). Si viene una
     lista (incremental), solo esos.
+
+    Con ``only_divergent`` se descartan además los que YA están como deben según
+    el espejo (``disabled``/``expired``), y quedan sólo los realmente
+    desincronizados. Eso hace la sincronización **convergente**: empujar "todos"
+    pasa a ser barato y, sobre todo, repara los que quedaron mal por un PUT
+    fallido. Empujando sólo a los que cambian, un fallo puntual no se reintenta
+    nunca y ese socio queda desincronizado para siempre.
 
     Devuelve {to_disable: [...], to_enable: [...]} — ambos sobre socios ENROLADOS
     (existen en BioStar), porque no tiene sentido tocar el estado de quien no está.
@@ -103,11 +127,13 @@ def resolve_state_targets(ids: Sequence[int] | None = None) -> dict[str, list[in
 
     protegidos = protected_user_ids()
     enrolled = set()
+    estado_actual: dict[int, bool] = {}
     for uid, payload in enrolled_q.values_list("user_id", "raw_payload"):
         if uid in protegidos or is_operator_account(payload):
             logger.info("biostar_disable: se protege la cuenta de operador %s", uid)
             continue
         enrolled.add(uid)
+        estado_actual[uid] = biostar_permite(payload)
     if not enrolled:
         return {"to_disable": [], "to_enable": [], "ignorados": []}
 
@@ -125,8 +151,13 @@ def resolve_state_targets(ids: Sequence[int] | None = None) -> dict[str, list[in
         logger.info("biostar_disable: %s usuarios de BioStar no son socios, se ignoran: %s",
                     len(ajenos), ajenos[:20])
 
-    to_enable = sorted(c for c, h in conocidos.items() if h)
-    to_disable = sorted(c for c, h in conocidos.items() if not h)
+    if only_divergent:
+        # Sólo los que hoy están al revés de lo que corresponde.
+        to_enable = sorted(c for c, h in conocidos.items() if h and not estado_actual.get(c, True))
+        to_disable = sorted(c for c, h in conocidos.items() if not h and estado_actual.get(c, True))
+    else:
+        to_enable = sorted(c for c, h in conocidos.items() if h)
+        to_disable = sorted(c for c, h in conocidos.items() if not h)
     return {"to_disable": to_disable, "to_enable": to_enable, "ignorados": ajenos}
 
 
@@ -156,6 +187,7 @@ def push_access_state_affected(
     mode: str | None = None,
     method: str | None = None,
     reenable: bool = True,
+    only_divergent: bool = False,
     max_per_run: int = 2000,
 ) -> dict[str, Any]:
     """Sincroniza el estado (habilitado/denegado) de los socios enrolados afectados.
@@ -178,7 +210,7 @@ def push_access_state_affected(
         return result
 
     try:
-        targets = resolve_state_targets(affected_ids)
+        targets = resolve_state_targets(affected_ids, only_divergent=only_divergent)
     except Exception as exc:  # pragma: no cover - defensivo
         logger.warning("biostar_disable: fallo resolviendo targets: %s", exc)
         result["error"] = str(exc)[:200]

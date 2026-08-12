@@ -27,10 +27,8 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
-
 from django.core.management.base import BaseCommand
-from django.db import transaction
+from django.db import close_old_connections, transaction
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -83,11 +81,17 @@ class Command(BaseCommand):
         from xsys.services.whitelist_bulk import (
             compute_habilitacion_bulk,
             get_acceso_flags,
+            server_now,
             verify_bulk_against_single,
         )
 
         id_acceso, _ctrl = whitelist_params()
         t0 = time.time()
+        # Corriendo con --loop, entre barridas pasan minutos: Postgres cierra la
+        # conexión por inactividad y Django reusa la muerta ("connection already
+        # closed"). Se descartan las vencidas al empezar y otra vez antes de
+        # escribir, porque la parte MSSQL de la barrida dura decenas de segundos.
+        close_old_connections()
         # Sin pooling: tras un corte de red pyodbc devuelve conexiones muertas
         # del pool y la barrida entera falla (mismo problema ya visto en el poller).
         pyodbc.pooling = False
@@ -123,7 +127,11 @@ class Command(BaseCommand):
             # --- estado previo, para saber qué cambió ---
             previo = dict(XsysWhitelist.objects.values_list("id_cliente", "habilitado"))
 
-            fecha = datetime.now()
+            # Un único instante para toda la barrida, tomado del reloj de xSys
+            # (no del contenedor, que corre en UTC): si no, socios evaluados en
+            # lotes distintos podrían caer a distinto lado de un corte de gracia.
+            fecha = server_now(cursor)
+            self.stdout.write(f"fecha de evaluación (reloj de xSys): {fecha:%Y-%m-%d %H:%M:%S}")
             batch = max(1, opts["batch"])
             resultados: dict[int, dict] = {}
             for i in range(0, len(ids), batch):
@@ -164,12 +172,13 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("--dry-run: no se escribió la whitelist."))
             return
 
+        close_old_connections()
         escritos = self._persist(resultados)
         self.stdout.write(self.style.SUCCESS(
             f"whitelist actualizada: {escritos} filas en {time.time() - t0:.0f}s"))
 
         if opts["push_biostar"]:
-            self._push_biostar(sorted(set(pasan_a_si) | set(pasan_a_no)))
+            self._push_biostar()
 
     # ------------------------------------------------------------- auxiliares
     def _target_ids(self, cursor, *, limit=None) -> list[int]:
@@ -215,14 +224,20 @@ class Command(BaseCommand):
                 )
         return len(objs)
 
-    def _push_biostar(self, cambiados: list[int]) -> None:
-        if not cambiados:
-            self.stdout.write("BioStar: no hubo cambios de habilitación que empujar.")
-            return
+    def _push_biostar(self) -> None:
+        """Reconcilia BioStar con la whitelist.
+
+        Se recorren TODOS los enrolados, no sólo los que acaban de cambiar: con
+        ``only_divergent`` la comparación es contra el estado real del espejo, así
+        que sólo se emiten PUT para los que están mal. Empujar únicamente los
+        cambios dejaba sin reintento a cualquiera cuyo PUT hubiera fallado una vez.
+        """
         try:
             from access_control.services.biostar_access_state import push_access_state_affected
 
-            res = push_access_state_affected(cambiados, max_per_run=len(cambiados))
+            res = push_access_state_affected(None, only_divergent=True, max_per_run=5000)
+            res.pop("dryrun_disable_ids", None)
+            res.pop("dryrun_enable_ids", None)
             self.stdout.write(self.style.SUCCESS(f"BioStar: {res}"))
         except Exception as exc:  # pragma: no cover - best effort
             logger.warning("xsys_whitelist_full: push a BioStar falló: %s", exc)
