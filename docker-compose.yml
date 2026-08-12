@@ -133,6 +133,38 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Barrida COMPLETA de la lista blanca contra xSys, cada 15 min.
+  #
+  # El sync incremental sólo recalcula a los socios tocados por novedades, así
+  # que quien cambiaba de estado sin generar novedad quedaba congelado: el
+  # 11-08-2026 el 100 % de las filas tenía más de un día y el 63 % más de quince
+  # (147 socios negados de más y 71 habilitados de más). Esta barrida cierra ese
+  # hueco: recorre los 52.000 socios en ~25 s (set-based) y deja la antigüedad
+  # máxima acotada al intervalo.
+  #
+  # --push-biostar propaga a los lectores faciales sólo a los que cambiaron, y
+  # respeta BIOSTAR_DISABLE_MODE (off|dryrun|on) del .env.
+  whitelist-full:
+    build: .
+    image: geba_acs-web:latest
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acs}
+      POSTGRES_USER: ${POSTGRES_USER:-acs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acs}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      DJANGO_DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
+    command: ["python", "manage.py", "xsys_whitelist_full",
+              "--loop", "--interval", "900", "--push-biostar"]
+    volumes:
+      - .:/app
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Poller del log de eventos de BioStar (accesos faciales por-equipo): única
   # fuente con identidad de facial, ya que en CD_ES colapsan en un controlador.
   biostar-poller:
@@ -181,6 +213,38 @@ services:
       sleep $${BIOSTAR_FACE_SYNC_INTERVAL:-3600};
       done"
     # Código en vivo: `docker compose restart biostar-face-sync` aplica cambios sin rebuild.
+    volumes:
+      - .:/app
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Modo LISTEN de Intelektron: NOSOTROS somos el servidor y la placa se conecta
+  # a este host para reportar eventos en vivo (lectores/sensores). A diferencia
+  # del intelektron-listener (que hace polling saliente), este PUBLICA el puerto
+  # hacia la LAN: sin eso el molinete no puede alcanzarnos.
+  # Bajo profile para no arrancar con `docker compose up`:
+  #     docker compose --profile intelektron up -d intelektron-server
+  intelektron-server:
+    profiles: ["intelektron"]
+    build: .
+    image: geba_acs-web:latest
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acs}
+      POSTGRES_USER: ${POSTGRES_USER:-acs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acs}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      DJANGO_DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
+    command: ["python", "manage.py", "intelektron_listen",
+              "--port", "${INTELEKTRON_LISTEN_PORT:-3002}",
+              "--wait", "${INTELEKTRON_LISTEN_WAIT:-3600}",
+              "--escuchar", "${INTELEKTRON_LISTEN_SECS:-3600}"]
+    ports:
+      - "${INTELEKTRON_LISTEN_PORT:-3002}:${INTELEKTRON_LISTEN_PORT:-3002}"
     volumes:
       - .:/app
     depends_on:
