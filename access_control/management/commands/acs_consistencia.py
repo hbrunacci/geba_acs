@@ -43,6 +43,10 @@ class Command(BaseCommand):
                             help="Minutos de antigüedad tolerados en la whitelist (default 120).")
         parser.add_argument("--detalle", type=int, default=20,
                             help="Cuántos ids mostrar por categoría (default 20).")
+        parser.add_argument("--max-atraso", type=int, default=15,
+                            help="Minutos de atraso tolerados entre CD_ES en xSys y nuestro espejo "
+                                 "(default 15). Detecta pollers colgados, que es como se pierden "
+                                 "los movimientos en los visores.")
         parser.add_argument("--umbral", type=int, default=25,
                             help="Divergencias whitelist↔xSys toleradas antes de dar error "
                                  "(default 25). Un socio que se pone al día entre dos barridas "
@@ -60,6 +64,7 @@ class Command(BaseCommand):
         if not opts["rapido"]:
             problemas += self._vs_xsys(n, opts["muestra"], opts["umbral"])
         problemas += self._vs_biostar(n)
+        problemas += self._flujo(opts["max_atraso"])
 
         self.stdout.write("")
         if problemas:
@@ -213,4 +218,71 @@ class Command(BaseCommand):
                 f"{sin_rostro[:n]}"))
         if not problemas:
             self.stdout.write(self.style.SUCCESS("   BioStar refleja exactamente la habilitación"))
+        return problemas
+
+    # ------------------------------------------------- 4. flujo de eventos
+    def _flujo(self, max_atraso_min: int) -> int:
+        """¿Están entrando los movimientos, o hay un poller colgado?
+
+        Se compara contra el máximo de CD_ES en xSys en vez de mirar sólo la edad
+        del último evento propio: así no da falso positivo cuando simplemente no
+        hubo tráfico (de noche los dos quedan igual de viejos). El 12-08-2026 los
+        dos pollers estuvieron horas girando en falso —contenedor ``Up``, cero
+        ingesta— y sólo se notó porque los visores se veían vacíos.
+        """
+        import datetime as _dt
+
+        from access_control.models import BiostarAccessEvent
+        from access_control.models.models import ExternalAccessLogEntry
+        from xsys.services.mssql import connect
+
+        self.stdout.write(self.style.MIGRATE_HEADING("4) Flujo de eventos (pollers)"))
+        problemas = 0
+        ahora = timezone.now()
+
+        conn = connect()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT MAX(Fecha), GETDATE() FROM CD_ES")
+            max_xsys, ahora_xsys = cur.fetchone()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        ultimo = ExternalAccessLogEntry.objects.order_by("-fecha").first()
+        if not ultimo or not max_xsys:
+            self.stdout.write(self.style.ERROR("   no hay movimientos para comparar"))
+            return 1
+        atraso = (max_xsys - timezone.localtime(ultimo.fecha).replace(tzinfo=None)).total_seconds() / 60.0
+        self.stdout.write(f"   CD_ES: xSys {max_xsys:%H:%M:%S} | espejo "
+                          f"{timezone.localtime(ultimo.fecha):%H:%M:%S} | atraso {atraso:.1f} min")
+        if atraso > max_atraso_min:
+            self.stdout.write(self.style.ERROR(
+                f"   el poller de CD_ES está atrasado más de {max_atraso_min} min "
+                f"→ los visores no muestran los movimientos"))
+            problemas = 1
+
+        # Para el facial no hay contra qué comparar sin llamar a BioStar, así que
+        # se usa CD_ES como testigo de si el club está activo: sólo se marca falla
+        # si ENTRA gente por los molinetes y aun así no llegan pasadas faciales.
+        # Mirar la edad a secas daba falso positivo de madrugada, con el club
+        # cerrado y ningún poller colgado.
+        edad_club = (ahora_xsys - max_xsys).total_seconds() / 60.0
+        club_activo = edad_club <= max_atraso_min
+        b = BiostarAccessEvent.objects.order_by("-synced_at").first()
+        if not b:
+            self.stdout.write(self.style.WARNING("   sin eventos faciales registrados"))
+        else:
+            edad = (ahora - b.synced_at).total_seconds() / 60.0
+            recientes = BiostarAccessEvent.objects.filter(
+                synced_at__gte=ahora - _dt.timedelta(hours=1)).count()
+            linea = (f"   facial: último hace {edad:.0f} min | última hora: {recientes} | "
+                     f"club {'activo' if club_activo else 'sin tráfico hace %.0f min' % edad_club}")
+            if club_activo and edad > max(60, max_atraso_min * 4):
+                self.stdout.write(self.style.ERROR(linea + "  → poller facial colgado"))
+                problemas = 1
+            else:
+                self.stdout.write(linea)
         return problemas

@@ -18,6 +18,8 @@ Ejemplo (contenedor `biostar-poller`):
 from __future__ import annotations
 
 import threading
+
+from common.dbhealth import reset_db_connections
 import time
 
 from django.core.management.base import BaseCommand
@@ -131,6 +133,10 @@ class Command(BaseCommand):
                     self.stderr.write(f"Error en el poll BioStar ({exc}); reintento en {reconnect_delay}s")
                     if once:
                         raise
+                    # Sin esto, una conexión a Postgres caída deja el poller
+                    # girando en falso para siempre: el contenedor figura Up y no
+                    # ingiere nada (12-08-2026: 37 h sin eventos faciales).
+                    reset_db_connections()
                     time.sleep(reconnect_delay)
                     continue
 

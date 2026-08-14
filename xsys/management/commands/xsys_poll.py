@@ -14,6 +14,7 @@ import time
 
 from django.core.management.base import BaseCommand
 
+from common.dbhealth import reset_db_connections
 from xsys.services import XsysConnectionError
 from xsys.services.mssql import connect
 from xsys.services.sync import XsysSyncService
@@ -59,6 +60,7 @@ class Command(BaseCommand):
                     cursor = conn.cursor()
                 except Exception as exc:
                     self.stderr.write(f"Sin conexión a xSys ({exc}); reintento en {reconnect_delay}s")
+                    reset_db_connections()
                     if conn is not None:
                         try:
                             conn.close()
@@ -83,6 +85,11 @@ class Command(BaseCommand):
                         time.sleep(interval)
                 except Exception as exc:  # pragma: no cover - caída de conexión
                     self.stderr.write(f"Error en el poll ({exc}); reconectando en {reconnect_delay}s")
+                    # El error puede venir de Postgres, no de MSSQL: acá abajo se
+                    # reconecta xSys, pero si no se descarta también la conexión de
+                    # Django el poller queda en un lazo infinito de "connection
+                    # already closed" (12-08-2026: 12 h sin movimientos de CD_ES).
+                    reset_db_connections()
                     time.sleep(reconnect_delay)
                 finally:
                     try:

@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import time
 from django.core.management.base import BaseCommand
+from common.dbhealth import reset_db_connections
 from django.db import close_old_connections, transaction
 from django.utils import timezone
 
@@ -67,6 +68,10 @@ class Command(BaseCommand):
             except Exception as exc:  # pragma: no cover - servicio de larga vida
                 logger.exception("xsys_whitelist_full: barrida falló: %s", exc)
                 self.stderr.write(self.style.ERROR(f"barrida falló: {exc}"))
+                # Si la que se cayó fue la conexión a Postgres, sin esto todas
+                # las barridas siguientes fallan igual y el servicio queda Up sin
+                # hacer nada.
+                reset_db_connections()
             espera = max(0.0, opts["interval"] - (time.time() - inicio))
             if espera:
                 time.sleep(espera)

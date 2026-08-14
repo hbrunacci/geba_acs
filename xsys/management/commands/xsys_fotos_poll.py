@@ -15,6 +15,7 @@ import time
 
 from django.core.management.base import BaseCommand
 
+from common.dbhealth import reset_db_connections
 from xsys.services.mssql import connect
 from xsys.services.sync import XsysSyncService
 
@@ -56,6 +57,7 @@ class Command(BaseCommand):
                     cursor = conn.cursor()
                 except Exception as exc:
                     self.stderr.write(f"Sin conexión a xSys ({exc}); reintento en {reconnect_delay}s")
+                    reset_db_connections()
                     if conn is not None:
                         try:
                             conn.close()
@@ -82,6 +84,7 @@ class Command(BaseCommand):
                         time.sleep(interval)
                 except Exception as exc:  # pragma: no cover - caída de conexión
                     self.stderr.write(f"Error en el refresco ({exc}); reconectando en {reconnect_delay}s")
+                    reset_db_connections()
                     time.sleep(reconnect_delay)
                 finally:
                     try:
