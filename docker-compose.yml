@@ -133,6 +133,38 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Detector rápido de cambios de cuota/estado, cada 20 s.
+  #
+  # Barrer Clientes entero pidiendo sólo (Id_Cliente, Ult_Cuota_Paga, Activo)
+  # cuesta ~0,5 s para 223.859 filas, así que no hace falta adivinar quién cambió
+  # a partir de las novedades: se compara el padrón completo contra el espejo y se
+  # actúa sólo sobre los que difieren. Con esto, pagar y poder entrar por el
+  # facial baja de ~15 min (la barrida) a menos de un minuto, y el visor deja de
+  # mostrar cuotas viejas (el 14-08-2026 lo hacía en 8.422 de 21.858 socios).
+  #
+  # No reemplaza a whitelist-full: lo que cambia sin tocar Ult_Cuota_Paga ni
+  # Activo (contratos, productos, vencimientos) y los cortes de gracia, que
+  # dependen del paso del tiempo, siguen necesitando la barrida completa.
+  cambios-poller:
+    build: .
+    image: geba_acs-web:latest
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acs}
+      POSTGRES_USER: ${POSTGRES_USER:-acs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acs}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      DJANGO_DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
+    command: ["python", "manage.py", "xsys_cambios_poll", "--interval", "20"]
+    volumes:
+      - .:/app
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Barrida COMPLETA de la lista blanca contra xSys, cada 15 min.
   #
   # El sync incremental sólo recalcula a los socios tocados por novedades, así
