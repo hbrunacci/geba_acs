@@ -19,9 +19,12 @@ Activo) cuesta **~0,5 s para 223.859 filas**. Siendo tan barato no hace falta
 adivinar quién cambió a partir de las novedades: se compara el padrón completo
 contra nuestro espejo en cada vuelta y se actúa sólo sobre los que difieren.
 
-Se descartó mirar comprobantes recientes (``Cbtes``) como disparador: su campo
-``Fecha`` es la fecha del documento, no la de la transacción — devuelve fechas
-futuras y no sirve para detectar actividad.
+Hay una segunda señal, los comprobantes nuevos, porque la habilitación del
+acceso general NO se gatea por cuota (``Flag_Ult_Cuota_Paga=0``): se gana por
+producto comprado, y comprar algo que no sea la cuota social no mueve
+``Ult_Cuota_Paga``. Para eso se usa una marca de agua sobre ``Cbtes.Id_Trans`` y
+NO sobre ``Cbtes.Fecha``: ese campo es la fecha del documento, no la de la
+transacción, y devuelve fechas futuras.
 
 Para cada socio que cambió: se refresca el espejo, se recalcula su habilitación
 con la lógica de xSys y se empuja el estado a BioStar. Con el intervalo por
@@ -63,6 +66,10 @@ class Command(BaseCommand):
                                  "señal de que xSys está a medio escribir (default 20000).")
         parser.add_argument("--reconnect-delay", type=float, default=10.0,
                             help="Espera tras un error antes de reintentar (default 10).")
+        parser.add_argument("--margen-cbtes", type=int, default=500,
+                            help="Se re-miran los últimos N Id_Trans por debajo de la marca de "
+                                 "agua (default 500). Id_Trans no es identity: lo asigna la app, "
+                                 "así que puede aparecer alguno fuera de orden.")
         parser.add_argument("--no-biostar", action="store_true",
                             help="No empujar el estado a BioStar (sólo espejo y lista blanca).")
 
@@ -111,7 +118,14 @@ class Command(BaseCommand):
                     "id_cliente", "ult_cuota_paga", "activo")
             }
 
-            cambiados = self._diferencias(remoto, local)
+            cambiados = set(self._diferencias(remoto, local))
+            # Segunda señal: comprobantes nuevos. Hace falta porque la habilitación
+            # del acceso general NO se gatea por cuota (Flag_Ult_Cuota_Paga=0): se
+            # gana por producto comprado, y comprar un producto que no sea la cuota
+            # social no mueve Ult_Cuota_Paga. Sin esto, esas altas esperaban a la
+            # barrida completa.
+            cambiados |= set(self._por_comprobantes(cursor, opts["margen_cbtes"]))
+            cambiados = sorted(cambiados)
             if not cambiados:
                 return
 
@@ -141,6 +155,47 @@ class Command(BaseCommand):
 
         if not opts["no_biostar"]:
             self._push_biostar(cambiados)
+
+    def _por_comprobantes(self, cursor, margen: int) -> list[int]:
+        """Socios con comprobantes nuevos desde la última vuelta.
+
+        Se usa ``Id_Trans`` como marca de agua y no ``Fecha``: ese campo es la
+        fecha del DOCUMENTO (devuelve fechas futuras) y no sirve para detectar
+        actividad reciente. ``Id_Trans`` no es identity —lo asigna la aplicación—
+        así que se re-miran los últimos ``margen`` ids por si alguno entra fuera
+        de orden.
+        """
+        from xsys.models import SyncState
+
+        estado = SyncState.get("cbtes")
+        cursor.execute("SELECT MAX(Id_Trans) FROM Cbtes")
+        maximo = cursor.fetchone()[0]
+        if maximo is None:
+            return []
+        maximo = int(maximo)
+        if estado.last_id is None:
+            # Primer arranque: no se dispara sobre el histórico entero, sólo se
+            # fija la marca. Del pasado ya se encarga la barrida completa.
+            SyncState.advance("cbtes", last_id=maximo)
+            return []
+        desde = max(0, int(estado.last_id) - margen)
+        if maximo <= desde:
+            return []
+        cursor.execute(
+            "SELECT DISTINCT Id_Cliente FROM Cbtes WHERE Id_Trans > ? AND Id_Trans <= ? AND Id_Cliente > 0",
+            (desde, maximo),
+        )
+        ids = [int(r[0]) for r in cursor.fetchall()]
+        # El margen vuelve a traer los MISMOS socios en cada vuelta (la ventana no
+        # se mueve tan rápido), así que sin deduplicar el detector reprocesaba
+        # cientos de socios cada 20 s para nada. Se recuerda lo visto en la vuelta
+        # anterior y se devuelven sólo los que aparecen ahora; los que salen de la
+        # ventana se olvidan solos.
+        vistos = getattr(self, "_cbtes_vistos", set())
+        nuevos = [i for i in ids if i not in vistos]
+        self._cbtes_vistos = set(ids)
+        SyncState.advance("cbtes", last_id=maximo, rows=len(nuevos))
+        return nuevos
 
     def _diferencias(self, remoto: dict, local: dict) -> list[int]:
         """Ids cuya cuota o estado activo difieren entre xSys y el espejo.
