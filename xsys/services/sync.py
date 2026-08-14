@@ -54,6 +54,9 @@ SOCIO_COLUMNS: tuple[tuple[str, str], ...] = (
     ("Id_Cliente_Externo", "id_cliente_externo"),
     ("Fecha_Alta", "fecha_alta"),
     ("Fecha_Baja", "fecha_baja"),
+    # Titular del grupo familiar: a los adherentes la cuota social se les
+    # factura contra el contrato del titular, no el propio.
+    ("Id_Cliente_Ref", "id_cliente_ref"),
 )
 # SELECT con JOIN a Clientes_Tipos para traer la categoría (última columna).
 _SOCIO_SELECT = ", ".join(f"C.{col}" for col, _ in SOCIO_COLUMNS) + ", CT.Descripcion"
@@ -99,6 +102,17 @@ def _aware(dt):
     if timezone.is_naive(dt):
         return timezone.make_aware(dt, timezone.get_current_timezone())
     return dt
+
+
+def _date(dt):
+    """Fecha calendario de un datetime de xSys, sin tocar la zona horaria.
+
+    Las fechas contables (emisión, pago) son días, no instantes: convertirlas a
+    aware y después a local puede correrlas un día. Se toma el .date() crudo.
+    """
+    if dt is None:
+        return None
+    return dt.date() if hasattr(dt, "date") else dt
 
 
 def _chunked(seq: Sequence[Any], size: int = CHUNK) -> Iterator[Sequence[Any]]:
@@ -373,24 +387,66 @@ class XsysSyncService:
             )
         return len(objs)
 
+    # SELECT de contratos enriquecido: además del contrato y su tipo trae la
+    # disciplina (producto), el último pago imputado y el saldo impago. Los tres
+    # OUTER APPLY se resuelven por contrato, no por socio, así que el costo es
+    # ~0,5 ms por socio (medido: 51k socios ≈ 30 s).
+    _CONTRATO_SELECT = """
+        SELECT CO.Id_Contrato, CO.Id_Cliente, CO.Id_Tipo_Con, CT.Descripcion,
+               CO.Fecha_Alta, CO.Fecha_Hasta, CO.Activo,
+               P.ProdDesc, PG.UltPagoFecha, PG.UltPagoImporte, DE.Deuda, DE.UltCbteFecha
+        FROM Contratos CO
+        JOIN Contratos_Tipos CT ON CT.Id_Tipo_Con = CO.Id_Tipo_Con
+        OUTER APPLY (
+            SELECT TOP 1 PR.Descripcion_Resumida AS ProdDesc
+            FROM Contratos_Prod CP
+            LEFT JOIN Productos PR ON PR.Id_Producto = CP.Id_Producto
+            WHERE CP.Id_Contrato = CO.Id_Contrato
+            ORDER BY CP.Item
+        ) P
+        OUTER APPLY (
+            SELECT TOP 1 CC.Fecha AS UltPagoFecha, -CC.Importe AS UltPagoImporte
+            FROM Clientes_CtaCte CC
+            WHERE CC.Id_Cliente = CO.Id_Cliente AND CC.Importe < 0
+              AND CC.Id_Trans_Origen IN (SELECT Id_Trans FROM Cbtes WHERE Id_Contrato = CO.Id_Contrato)
+            ORDER BY CC.Fecha DESC
+        ) PG
+        OUTER APPLY (
+            -- Solo el saldo YA VENCIDO. El club emite la cuota del mes siguiente
+            -- por adelantado (la de septiembre existe desde agosto), así que sumar
+            -- todo el saldo marcaría en rojo hasta al socio que está al día.
+            SELECT SUM(CASE WHEN CC2.Fecha_Vence < GETDATE() THEN CC2.Saldo ELSE 0 END) AS Deuda,
+                   MAX(CC2.Fecha) AS UltCbteFecha
+            FROM Clientes_CtaCte CC2
+            WHERE CC2.Id_Cliente = CO.Id_Cliente AND CC2.Importe > 0
+              AND CC2.Id_Trans IN (SELECT Id_Trans FROM Cbtes WHERE Id_Contrato = CO.Id_Contrato)
+        ) DE
+        WHERE CO.Activo = 1
+    """
+
+    _CONTRATO_UPDATE_FIELDS = [
+        "id_cliente", "id_tipo_con", "descripcion", "fecha_alta", "fecha_hasta", "activo",
+        "producto_desc", "ultimo_pago_fecha", "ultimo_pago_importe", "deuda",
+        "ultimo_cbte_fecha", "synced_at",
+    ]
+
     def _contrato_objs(self, rows):
         now = timezone.now()
         return [
             XsysContrato(
                 id_contrato=r[0], id_cliente=r[1], id_tipo_con=r[2],
                 descripcion=(r[3] or "").strip()[:50], fecha_alta=_aware(r[4]),
-                fecha_hasta=_aware(r[5]), activo=r[6], synced_at=now,
+                fecha_hasta=_aware(r[5]), activo=r[6],
+                producto_desc=(r[7] or "").strip()[:80],
+                ultimo_pago_fecha=_date(r[8]), ultimo_pago_importe=r[9],
+                deuda=r[10], ultimo_cbte_fecha=_date(r[11]),
+                synced_at=now,
             )
             for r in rows
         ]
 
     def sync_contratos_all(self, cursor) -> int:
-        cursor.execute(
-            "SELECT CO.Id_Contrato, CO.Id_Cliente, CO.Id_Tipo_Con, CT.Descripcion, "
-            "CO.Fecha_Alta, CO.Fecha_Hasta, CO.Activo "
-            "FROM Contratos CO JOIN Contratos_Tipos CT ON CT.Id_Tipo_Con = CO.Id_Tipo_Con "
-            "WHERE CO.Activo = 1"
-        )
+        cursor.execute(self._CONTRATO_SELECT)
         total = 0
         while True:
             rows = cursor.fetchmany(self.batch_size)
@@ -400,7 +456,7 @@ class XsysSyncService:
             with transaction.atomic():
                 XsysContrato.objects.bulk_create(
                     objs, update_conflicts=True, unique_fields=["id_contrato"],
-                    update_fields=["id_cliente", "id_tipo_con", "descripcion", "fecha_alta", "fecha_hasta", "activo", "synced_at"],
+                    update_fields=self._CONTRATO_UPDATE_FIELDS,
                 )
             total += len(objs)
         return total
@@ -410,10 +466,7 @@ class XsysSyncService:
         for chunk in _chunked(list(ids)):
             ph = ",".join("?" for _ in chunk)
             cursor.execute(
-                "SELECT CO.Id_Contrato, CO.Id_Cliente, CO.Id_Tipo_Con, CT.Descripcion, "
-                "CO.Fecha_Alta, CO.Fecha_Hasta, CO.Activo "
-                "FROM Contratos CO JOIN Contratos_Tipos CT ON CT.Id_Tipo_Con = CO.Id_Tipo_Con "
-                f"WHERE CO.Activo = 1 AND CO.Id_Cliente IN ({ph})",
+                f"{self._CONTRATO_SELECT} AND CO.Id_Cliente IN ({ph})",
                 list(chunk),
             )
             rows = cursor.fetchall()

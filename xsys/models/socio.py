@@ -24,6 +24,10 @@ class XsysSocio(models.Model):
     id_cliente_externo = models.CharField(max_length=14, blank=True, default="")
     fecha_alta = models.DateTimeField(null=True, blank=True)
     fecha_baja = models.DateTimeField(null=True, blank=True)
+    # Titular del grupo familiar (Clientes.Id_Cliente_Ref). A los adherentes la
+    # cuota social se les factura contra el contrato del titular: sin esto, el
+    # visor los muestra sin ningún contrato pago.
+    id_cliente_ref = models.IntegerField(null=True, blank=True, db_index=True)
     synced_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

@@ -28,6 +28,7 @@ def _socio_row(id_cliente=944426, apellido="SIMOUR ", cred="BCB30514  "):
         "Id_Cliente_Externo": "EXT1",
         "Fecha_Alta": datetime(2020, 1, 1, 0, 0, 0),
         "Fecha_Baja": None,
+        "Id_Cliente_Ref": None,
     }
     return tuple(values[col] for col, _ in SOCIO_COLUMNS)
 

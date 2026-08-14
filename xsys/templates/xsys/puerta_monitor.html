@@ -43,6 +43,16 @@
     .cmsg.no { background: rgba(248,81,73,.16); color: #ff7b72; border: 1px solid #f85149; }
     .cmsg.warn { background: rgba(210,153,34,.18); color: #e3b341; border: 1px solid #d29922; }
     .caviso { margin-top: 6px; font-weight: 700; font-size: clamp(11px, 1.05vw, 16px); padding: 4px 12px; border-radius: 8px; max-width: 94%; background: rgba(88,166,255,.18); color: #79c0ff; border: 1px solid #58a6ff; }
+    /* Contratos vigentes del socio + estado de pago de cada uno. */
+    .cctr { margin-top: 7px; width: 94%; display: flex; flex-direction: column; gap: 3px; }
+    .cctr__t { font-size: clamp(9px, .8vw, 12px); letter-spacing: .08em; color: #6e7681; text-transform: uppercase; border-top: 1px solid #21262d; padding-top: 5px; }
+    .cctrow { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: clamp(10px, 1vw, 15px); line-height: 1.25; }
+    .cctname { font-weight: 700; color: #c9d1d9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cctval { font-weight: 600; white-space: nowrap; flex: 0 0 auto; }
+    .cctval.ok { color: #56d364; }
+    .cctval.deuda { color: #ff7b72; }
+    .cctval.sin_pagos { color: #8b949e; }
+    .cctr__tit { font-size: clamp(9px, .8vw, 12px); color: #8b949e; font-style: italic; text-align: left; }
     .haviso { color: #58a6ff; font-weight: 700; }
     .cextra { margin-top: 6px; font-size: clamp(11px, 1.1vw, 16px); opacity: .85; line-height: 1.3; }
     .cextra .cat { font-weight: 600; }
@@ -278,6 +288,39 @@
       var facial = ev.lectura === "facial";
       return '<span class="licon-wrap" title="' + (facial ? "Facial" : "Credencial") + '">' + (facial ? SVG_FACIAL : SVG_CRED) + '</span>';
     }
+    // "2026-08-03" -> "03/08/26". No usa Date(): un ISO sin hora se parsea como
+    // UTC y en zona -03 se mostraría el día anterior.
+    function fechaDia(iso) {
+      if (!iso) return "";
+      var p = String(iso).slice(0, 10).split("-");
+      return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0].slice(2) : "";
+    }
+    // Importe en pesos, sin decimales: 329100 -> "$329.100"
+    function pesos(n) {
+      if (n === null || n === undefined) return "";
+      return "$" + Math.round(n).toLocaleString("es-AR");
+    }
+    // Contratos vigentes del socio, uno por línea: qué tiene y cómo viene de pago.
+    // Se limita a 3 para no desbordar la tarjeta en las pantallas más chicas.
+    function contratosHTML(ev) {
+      var cs = ev.contratos || [];
+      if (!cs.length) return "";
+      var filas = cs.slice(0, 3).map(function (c) {
+        var val;
+        if (c.estado === "deuda") val = "debe " + pesos(c.deuda);
+        else if (c.estado === "sin_pagos") val = "sin pagos";
+        else val = "✓ " + fechaDia(c.ultimo_pago);
+        return '<div class="cctrow"><span class="cctname">' + esc(c.nombre) + '</span>' +
+               '<span class="cctval ' + esc(c.estado) + '">' + esc(val) + '</span></div>';
+      }).join("");
+      var mas = cs.length > 3 ? '<div class="cctrow"><span class="cctname">+' + (cs.length - 3) + ' más</span></div>' : "";
+      // Si los contratos son del titular del grupo familiar hay que decirlo:
+      // el pago que se muestra no es del socio que acaba de pasar.
+      var tit = cs[0].via_titular
+        ? '<div class="cctr__tit">grupo familiar de ' + esc(cs[0].via_titular) + '</div>' : "";
+      var titulo = cs[0].via_titular ? "Contratos del titular" : "Contratos";
+      return '<div class="cctr"><div class="cctr__t">' + titulo + '</div>' + filas + mas + tit + '</div>';
+    }
     function fotoBig(ev) {
       var marco = claseEstado(ev);
       return ev.foto_url
@@ -287,6 +330,7 @@
     function currentHTML(ev) {
       if (!ev) return '<div class="idle">Sin ingresos</div>';
       var clase = claseEstado(ev);
+
       // Categoría · N° de socio
       var partes = [];
       if (ev.categoria) partes.push('<span class="cat">' + esc(ev.categoria) + '</span>');
@@ -301,6 +345,7 @@
         '<div class="cname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
         '<div class="cmsg ' + clase + '">' + esc(ev.mensaje || (ev.permitido ? "Permitido" : "Denegado")) + '</div>' +
         avisoHtml +
+        contratosHTML(ev) +
         extra +
         '<div class="clectura">' + lecturaIcono(ev) + lecturaTxt + cuotaTxt + '</div>' +
         '<div class="ctime">' + esc(fechaCorta(ev.fecha)) + ' · ' + esc(hora(ev.fecha)) + '</div>';
