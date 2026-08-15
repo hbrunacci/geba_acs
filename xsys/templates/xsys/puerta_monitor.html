@@ -660,7 +660,7 @@
       btn.textContent = "Enviando…";
       fetch(API + "/socios/" + idCliente + "/aviso/", {
         method: "POST",
-        headers: Object.assign({ "Content-Type": "application/json" }, hdr()),
+        headers: hdr({ "Content-Type": "application/json" }),
         body: JSON.stringify({ tipo: btn.getAttribute("data-tipo") })
       })
         .then(function (r) {
@@ -790,7 +790,13 @@
           if (keys.join("|") !== currentKeys.join("|")) { currentKeys = keys; rebuildSkeleton(d.columnas); }
           (d.columnas || []).forEach(updateColumna);
         })
-        .catch(function () { /* red intermitente: reintenta */ });
+        .catch(function (e) {
+          // Un corte de red es normal y se reintenta en el próximo tick. Pero acá
+          // caía TAMBIÉN cualquier error de código del bloque de arriba, y el
+          // visor se quedaba en blanco sin dejar rastro (así pasó inadvertido que
+          // padStart no existe en el Chrome 49 de Alcorta). Se deja registro.
+          if (window.console && console.error) console.error("[monitor] poll:", e);
+        });
     }
 
     poll();
