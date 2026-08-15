@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
+
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import status
@@ -214,6 +217,28 @@ def _registrar_pantalla(request) -> PantallaPuerta | None:
 HISTORIAL_LEN = 50
 
 
+def _version_visor() -> str:
+    """Huella del template del monitor, para que las pantallas se auto-recarguen.
+
+    Los molinetes son kioscos que quedan abiertos días: sin esto, un cambio en el
+    visor no se ve hasta que alguien va y aprieta F5 en cada pantalla. El valor
+    viaja en cada respuesta de estado y la pantalla se recarga sola si cambió.
+    """
+    global _VERSION_CACHE
+    ruta = Path(__file__).resolve().parent / "templates" / "xsys" / "puerta_monitor.html"
+    try:
+        marca = str(ruta.stat().st_mtime_ns)
+    except OSError:
+        return ""
+    if _VERSION_CACHE[0] != marca:
+        _VERSION_CACHE = (marca, hashlib.md5(marca.encode()).hexdigest()[:8])
+    return _VERSION_CACHE[1]
+
+
+# (mtime del template, hash corto) — evita stat+hash en cada poll de cada pantalla.
+_VERSION_CACHE: tuple[str, str] = ("", "")
+
+
 def _tipo_lectura(id_controlador, controladores: dict) -> str:
     """'facial' si el controlador es un facial (Tipo_Cont F/W), si no 'credencial'."""
     ctrl = controladores.get(id_controlador)
@@ -416,6 +441,7 @@ class PuertaEstadoAPI(APIView):
                 "configurada": False,
                 "ip": pantalla.ip,
                 "puertas": _puertas_disponibles(),
+                "visor_version": _version_visor(),
             })
 
         cols_def = _columnas_de_puerta(door)
@@ -499,6 +525,7 @@ class PuertaEstadoAPI(APIView):
             "nombre": pantalla.nombre or door.name,
             "puerta": {"id": door.id, "nombre": door.name, "xsys_id_acceso": door.xsys_id_acceso},
             "columnas": columnas,
+            "visor_version": _version_visor(),
         })
 
 

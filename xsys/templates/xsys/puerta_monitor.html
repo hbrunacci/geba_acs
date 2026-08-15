@@ -24,27 +24,35 @@
     .columns { position: fixed; top: 52px; left: 0; right: 0; bottom: 0; display: flex; }
     .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; border-right: 1px solid #21262d; }
     .col:last-child { border-right: 0; }
-    .col__head { flex: 0 0 auto; padding: 7px; text-align: center; font-weight: 700; background: rgba(0,0,0,.25); font-size: clamp(12px, 1.5vw, 20px); }
+    .col__head { flex: 0 0 auto; padding: 5px 10px; text-align: right; font-weight: 600; background: rgba(0,0,0,.25); font-size: clamp(10px, .95vw, 14px); color: #8b949e; letter-spacing: .04em; }
 
-    .col__current { flex: 1 1 44%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px; text-align: center; overflow: hidden; }
+    .col__current { flex: 1 1 44%; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; padding: 8px; text-align: left; overflow: hidden; }
+    /* Foto + identidad en una fila de ALTO FIJO. Es lo que mantiene la sección de
+       contratos siempre a la misma altura, sin importar si el nombre entra en una
+       línea o en dos (antes un nombre largo empujaba todo hacia abajo). */
+    .chead { flex: 0 0 auto; height: 28vh; width: 100%; display: flex; align-items: center; gap: 10px; overflow: hidden; }
+    @supports (aspect-ratio: 1) { .chead { height: 58%; } }
+    .cinfo { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 6px; overflow: hidden; }
     /* Marco 3/4 uniforme. BASE robusta para Chrome viejo (sin aspect-ratio): tamaño fijo en vh
        que bloquea la relación 3/4; object-fit: cover (Chrome 32+) recorta parejo dentro del marco.
        El @supports de abajo restaura el dimensionado responsivo por % en navegadores con
        aspect-ratio (Chrome 88+), dejando el render moderno idéntico al actual. */
-    .cfoto { flex: 0 1 auto; height: 28vh; width: 21vh; max-width: 92%; object-fit: cover; border-radius: 12px; background: #161b22; border: 6px solid #30363d; transition: border-color .15s, box-shadow .15s; }
-    @supports (aspect-ratio: 1) { .cfoto { height: 60%; width: auto; aspect-ratio: 3 / 4; } }
+    .cfoto { flex: 0 0 auto; height: 100%; width: 21vh; max-width: 55%; object-fit: cover; border-radius: 12px; background: #161b22; border: 6px solid #30363d; transition: border-color .15s, box-shadow .15s; }
+    @supports (aspect-ratio: 1) { .cfoto { width: auto; aspect-ratio: 3 / 4; } }
     .cfoto.ok { border-color: #2ea043; box-shadow: 0 0 22px rgba(46,160,67,.4); }
     .cfoto.no { border-color: #f85149; box-shadow: 0 0 22px rgba(248,81,73,.4); }
     .cfoto.warn { border-color: #d29922; box-shadow: 0 0 22px rgba(210,153,34,.5); }
     .cfoto.sinfoto { display: flex; align-items: center; justify-content: center; font-size: clamp(40px, 6vw, 68px); color: #30363d; }
-    .cname { margin-top: 8px; font-weight: 700; font-size: clamp(15px, 1.7vw, 28px); line-height: 1.1; }
-    .cmsg { margin-top: 5px; font-weight: 600; font-size: clamp(11px, 1.05vw, 16px); padding: 3px 10px; border-radius: 8px; max-width: 94%; }
+    /* El nombre vive en un bloque de alto fijo: se corta a 3 líneas para que un
+       apellido largo no empuje la pill de acceso fuera del recuadro. */
+    .cname { font-weight: 700; font-size: clamp(14px, 1.5vw, 25px); line-height: 1.12; overflow: hidden; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+    .cmsg { font-weight: 600; font-size: clamp(11px, 1.05vw, 16px); padding: 3px 10px; border-radius: 8px; max-width: 100%; align-self: flex-start; }
     .cmsg.ok { background: rgba(46,160,67,.16); color: #56d364; border: 1px solid #2ea043; }
     .cmsg.no { background: rgba(248,81,73,.16); color: #ff7b72; border: 1px solid #f85149; }
     .cmsg.warn { background: rgba(210,153,34,.18); color: #e3b341; border: 1px solid #d29922; }
-    .caviso { margin-top: 6px; font-weight: 700; font-size: clamp(11px, 1.05vw, 16px); padding: 4px 12px; border-radius: 8px; max-width: 94%; background: rgba(88,166,255,.18); color: #79c0ff; border: 1px solid #58a6ff; }
+    .caviso { font-weight: 700; font-size: clamp(11px, 1.05vw, 16px); padding: 4px 12px; border-radius: 8px; max-width: 100%; align-self: flex-start; background: rgba(88,166,255,.18); color: #79c0ff; border: 1px solid #58a6ff; }
     /* Contratos vigentes del socio + estado de pago de cada uno. */
-    .cctr { margin-top: 7px; width: 94%; display: flex; flex-direction: column; gap: 3px; }
+    .cctr { margin-top: 7px; width: 100%; display: flex; flex-direction: column; gap: 3px; }
     .cctr__t { font-size: clamp(9px, .8vw, 12px); letter-spacing: .08em; color: #6e7681; text-transform: uppercase; border-top: 1px solid #21262d; padding-top: 5px; }
     .cctrow { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: clamp(10px, 1vw, 15px); line-height: 1.25; }
     .cctname { font-weight: 700; color: #c9d1d9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -341,10 +349,16 @@
       var cuotaTxt = ev.ult_cuota_paga ? ' · Últ. cuota: ' + esc(fechaCorta(ev.ult_cuota_paga)) : "";
       var avisoHtml = (ev.avisos && ev.avisos.length)
         ? '<div class="caviso">&#128227; ' + ev.avisos.map(esc).join(" &middot; ") + '</div>' : "";
-      return fotoBig(ev) +
-        '<div class="cname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
-        '<div class="cmsg ' + clase + '">' + esc(ev.mensaje || (ev.permitido ? "Permitido" : "Denegado")) + '</div>' +
-        avisoHtml +
+      // Foto a la izquierda e identidad a la derecha, dentro de un bloque de alto
+      // fijo: así los nombres de dos líneas no empujan a los contratos y la
+      // sección arranca siempre a la misma altura en las cuatro columnas.
+      return '<div class="chead">' + fotoBig(ev) +
+          '<div class="cinfo">' +
+            '<div class="cname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
+            '<div class="cmsg ' + clase + '">' + esc(ev.mensaje || (ev.permitido ? "Permitido" : "Denegado")) + '</div>' +
+            avisoHtml +
+          '</div>' +
+        '</div>' +
         contratosHTML(ev) +
         extra +
         '<div class="clectura">' + lecturaIcono(ev) + lecturaTxt + cuotaTxt + '</div>' +
@@ -562,11 +576,24 @@
       if (!drawer.classList.contains("open")) { renderPuertas(puertas || [], null); drawer.classList.add("open"); }
     }
 
+    // Estas pantallas son kioscos que quedan abiertos días: si el visor cambió en
+    // el servidor, se recargan solas en vez de esperar a que alguien vaya con un
+    // teclado. Devuelve true si disparó la recarga (hay que cortar el ciclo).
+    var visorVersion = null;
+    function chequearVersion(v) {
+      if (!v) return false;
+      if (visorVersion === null) { visorVersion = v; return false; }
+      if (visorVersion === v) return false;
+      location.reload(true);
+      return true;
+    }
+
     function poll() {
       fetch(API + "/puerta/estado/", { headers: hdr() })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           document.getElementById("ip").textContent = "IP: " + (d.ip || "") + " · token " + TOKEN.slice(0, 8);
+          if (chequearVersion(d.visor_version)) return;
           if (!d.configurada) { mostrarSinConfig(d.puertas); return; }
           document.getElementById("titulo").textContent = d.nombre || "Monitor";
           currentPuerta = d.puerta ? d.puerta.id : null;

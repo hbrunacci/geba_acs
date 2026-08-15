@@ -16,8 +16,13 @@ def xsys_puerta_monitor(request):
 
     Todos los datos salen del espejo local vía la API AllowAny; la propia pantalla
     se identifica por su token y elige la puerta con la hamburguesa.
+
+    Se sirve sin caché: son pantallas de kiosco que quedan abiertas días, y sin
+    esto un cambio en el template no llega hasta que alguien las refresca a mano.
     """
-    return render(request, "xsys/puerta_monitor.html")
+    response = render(request, "xsys/puerta_monitor.html")
+    response["Cache-Control"] = "no-store, must-revalidate"
+    return response
 
 
 @puertas_requerido
