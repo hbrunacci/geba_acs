@@ -130,6 +130,10 @@
     .modal__dl dt { opacity: .6; }
     .modal__dl dd { margin: 0; font-weight: 600; }
     .modal__contratos strong { font-size: 14px; }
+    /* Contador de ingresos del día (solo barreras de auto). */
+    .cingresos { margin: 4px 0 2px; font-size: 13px; color: #b45309;
+                 background: #fef3c7; border-radius: 6px; padding: 3px 8px; }
+    .cingresos strong { font-size: 15px; }
     .modal__acciones { margin-top: 16px; padding-top: 14px; border-top: 1px solid #21262d; }
     /* Avisos de un toque. Son pantallas táctiles sin teclado: botones grandes,
        texto fijo y confirmación en el propio botón. */
@@ -200,6 +204,9 @@
       <button class="btn" id="aplicar">Aplicar</button>
       <a class="cfglink" href="/xsys/molinetes/" target="_blank">&#9881; Administrar puertas y molinetes</a>
       <a class="cfglink" href="/diag-facial/" target="_blank" rel="noopener">&#129513; Diagnóstico de facial</a>
+      <!-- Ruta relativa a propósito: la pantalla se sirve desde el mismo host, y
+           así el enlace no se rompe si cambia la IP o se entra por nombre. -->
+      <a class="cfglink" href="/avisos/" target="_blank" rel="noopener">&#128227; Avisos dejados a socios</a>
       <div class="ip" id="ip"></div>
     </div>
   </div>
@@ -369,6 +376,11 @@
       var cuotaTxt = ev.ult_cuota_paga ? ' · Últ. cuota: ' + esc(fechaCorta(ev.ult_cuota_paga)) : "";
       var avisoHtml = (ev.avisos && ev.avisos.length)
         ? '<div class="caviso">&#128227; ' + ev.avisos.map(esc).join(" &middot; ") + '</div>' : "";
+      // Barreras de auto: cuántas veces entró hoy con ESTA misma habilitación.
+      // Sólo se muestra ahí; en los molinetes peatonales no aporta.
+      var ingresosHtml = (ev.es_barrera && ev.ingresos_hoy)
+        ? '<div class="cingresos">Ingresos hoy con esta habilitación: <strong>' +
+          esc(ev.ingresos_hoy) + '</strong></div>' : "";
       // Foto a la izquierda e identidad a la derecha, dentro de un bloque de alto
       // fijo: así los nombres de dos líneas no empujan a los contratos y la
       // sección arranca siempre a la misma altura en las cuatro columnas.
@@ -379,6 +391,7 @@
             avisoHtml +
           '</div>' +
         '</div>' +
+        ingresosHtml +
         contratosHTML(ev) +
         extra +
         '<div class="clectura">' + lecturaIcono(ev) + lecturaTxt + cuotaTxt + '</div>' +
