@@ -43,7 +43,11 @@ class LoginView(DjangoLoginView):
     template_name = "common/login.html"
     redirect_authenticated_user = True
 
-    def get_success_url(self):
+    def get_default_redirect_url(self):
+        # Solo el destino por defecto: pisar get_success_url() descartaba el
+        # ?next= y mandaba al dashboard a quien venía de una página protegida
+        # (p.ej. /avisos/ desde el monitor). Django ya valida que el next sea
+        # del mismo host, así que no habilita redirecciones a sitios externos.
         return reverse_lazy("common:dashboard")
 
     def get_form(self, form_class=None):
