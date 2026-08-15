@@ -247,7 +247,53 @@ def _tipo_lectura(id_controlador, controladores: dict) -> str:
     return "credencial"
 
 
-def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None) -> dict:
+def _accesos_barrera() -> set[int]:
+    """Ids de acceso que son barreras de auto.
+
+    Se deducen del dato, no de una lista fija: en xSys los accesos de AUTO son
+    justamente los que tienen ``Flag_Ult_Cuota_Paga`` distinto de 0 (son los
+    únicos que gatean por cuota).
+    """
+    from xsys.models import XsysAcceso
+
+    return set(
+        XsysAcceso.objects.exclude(flag_ult_cuota_paga=0)
+        .exclude(flag_ult_cuota_paga=None)
+        .values_list("id_acceso", flat=True)
+    )
+
+
+def _ingresos_hoy_por_habilitacion(eventos, barreras: set[int]) -> dict[tuple, int]:
+    """Cuántas veces ingresó hoy cada socio por barrera CON LA MISMA habilitación.
+
+    La habilitación es lo que xSys dejó escrito en ``Observacion`` (p. ej.
+    "Habilit. por Produc. Comprado CUOTA SOCIAL"), que es el contrato/producto
+    con el que se le abrió. Se cuenta por (socio, habilitación) para que dos
+    contratos distintos lleven cuentas separadas.
+    """
+    claves = {
+        (e.id_cliente, (e.observacion or "").strip())
+        for e in eventos
+        if e.id_cliente and e.id_acceso in barreras
+    }
+    if not claves:
+        return {}
+    hoy = timezone.localdate()
+    socios = {c[0] for c in claves}
+    cuenta: dict[tuple, int] = {}
+    filas = (
+        ExternalAccessLogEntry.objects
+        .filter(id_cliente__in=socios, id_acceso__in=barreras,
+                tipo="E", resultado="S", fecha__date=hoy)
+        .values_list("id_cliente", "observacion")
+    )
+    for cid, obs in filas:
+        clave = (cid, (obs or "").strip())
+        cuenta[clave] = cuenta.get(clave, 0) + 1
+    return {c: cuenta.get(c, 0) for c in claves}
+
+
+def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None) -> dict:
     socio = socios.get(ev.id_cliente)
     tiene_foto = ev.id_cliente in fotos
     # Mensaje original de xSys (motivo de pantalla u observación).
@@ -275,6 +321,12 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         estado = "no"
         mensaje = "Chequear Oficina de Socios"
 
+    # La credencial ya estaba reservada en otro molinete: prevalece sobre
+    # cualquier otro mensaje, porque es el motivo por el que no debe pasar.
+    if ev.conflicto_molinete:
+        estado = "no"
+        mensaje = f"Paso pendiente Molinete: {ev.conflicto_molinete}"
+
     foto_url = f"/api/xsys/socios/{ev.id_cliente}/foto/" if tiene_foto else None
     return {
         "id_es": ev.external_id,
@@ -298,6 +350,11 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         "foto_thumb_url": (foto_url + "?thumb=1") if foto_url else None,
         "avisos": (avisos_por_socio or {}).get(ev.id_cliente) or [],
         "contratos": (contratos_por_socio or {}).get(ev.id_cliente) or [],
+        "conflicto_molinete": ev.conflicto_molinete or "",
+        "es_barrera": bool(barreras and ev.id_acceso in barreras),
+        # Veces que ingresó hoy por barrera con ESTA misma habilitación.
+        "ingresos_hoy": (ingresos_hoy or {}).get(
+            (ev.id_cliente, (ev.observacion or "").strip())),
     }
 
 
@@ -317,6 +374,9 @@ def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avi
         estado, mensaje = "no", "Cuota Vencida"
     else:
         estado, mensaje = "ok", "Acceso Concedido"
+    if ev.conflicto_molinete:
+        estado = "no"
+        mensaje = f"Paso pendiente Molinete: {ev.conflicto_molinete}"
     foto_url = f"/api/xsys/socios/{ev.id_cliente}/foto/" if tiene_foto else None
     return {
         # id_es negativo: no colisiona con los external_id (positivos) de xSys.
@@ -942,6 +1002,44 @@ class MolinetesAutoAPI(_ConfigPuertasAPIView):
             )
             creados += 1
         return Response({"creados": creados})
+
+
+class PantallaAvisoAPI(APIView):
+    """POST /api/xsys/socios/<id_cliente>/aviso/ → deja un aviso desde el monitor.
+
+    La API de avisos de ``access_control`` exige sesión iniciada, y el visor es un
+    kiosco sin login: acá se identifica por el token de pantalla, igual que el
+    resto del monitor. Solo admite los avisos de un toque (texto fijo del
+    servidor), no notas libres — no hay teclado en el molinete.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, id_cliente: int):
+        pantalla = _registrar_pantalla(request)
+        if pantalla is None:
+            return Response({"detail": "Falta el token de pantalla."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        tipo = (request.data.get("tipo") or "").strip()
+        texto = SocioAviso.TEXTOS_PREDEFINIDOS.get(tipo)
+        if not texto:
+            return Response(
+                {"detail": f"Tipo de aviso desconocido: {tipo!r}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Se identifica la pantalla que lo dejó, que es lo único que se sabe del
+        # operador en un kiosco sin login.
+        origen = (pantalla.nombre or (pantalla.door.name if pantalla.door else "") or "monitor")
+        aviso = SocioAviso.objects.create(
+            id_cliente=id_cliente, tipo=tipo, texto=texto,
+            creado_por=f"monitor: {origen}"[:150],
+        )
+        return Response(
+            {"id": aviso.id, "tipo": aviso.tipo, "texto": aviso.texto,
+             "created_at": aviso.created_at.isoformat()},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class SocioDetalleAPI(APIView):

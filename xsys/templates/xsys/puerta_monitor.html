@@ -131,8 +131,17 @@
     .modal__dl dd { margin: 0; font-weight: 600; }
     .modal__contratos strong { font-size: 14px; }
     .modal__acciones { margin-top: 16px; padding-top: 14px; border-top: 1px solid #21262d; }
-    .diagbtn { display: inline-flex; align-items: center; gap: 8px; background: #21262d; color: #58a6ff; border: 1px solid #30363d; border-radius: 10px; padding: 9px 14px; font-size: 14px; font-weight: 600; text-decoration: none; }
-    .diagbtn:hover { background: #2d333b; border-color: #58a6ff; }
+    /* Avisos de un toque. Son pantallas táctiles sin teclado: botones grandes,
+       texto fijo y confirmación en el propio botón. */
+    .avisos__t { font-size: 13px; opacity: .6; margin-bottom: 8px; }
+    .avisobtns { display: flex; flex-wrap: wrap; gap: 8px; }
+    .avisobtn { flex: 1 1 auto; background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 10px; padding: 11px 14px; font-size: 14px; font-weight: 600; cursor: pointer; text-align: center; font-family: inherit; }
+    .avisobtn:hover:not(:disabled) { background: #2d333b; border-color: #58a6ff; color: #58a6ff; }
+    .avisobtn:disabled { cursor: default; opacity: .9; }
+    .avisobtn.hecho { background: rgba(46,160,67,.16); color: #56d364; border-color: #2ea043; }
+    .avisobtn.error { background: rgba(248,81,73,.16); color: #ff7b72; border-color: #f85149; }
+    /* El de la foto aparece solo cuando falta, así que se distingue del resto. */
+    .avisobtn.foto { border-color: #d29922; color: #e3b341; }
     .contrato { display: inline-block; background: #21262d; border: 1px solid #30363d; border-radius: 999px; padding: 4px 12px; margin: 4px 6px 0 0; font-size: 13px; }
     /* Contratos en el modal: acá hay lugar para el detalle completo (todos los
        contratos, con importe del último pago), a diferencia de la tarjeta. */
@@ -218,7 +227,8 @@
             <div id="m-contratos"></div>
           </div>
           <div class="modal__acciones" id="m-acciones">
-            <a class="diagbtn" id="m-diag" href="#" target="_blank" rel="noopener">&#129513; Diagnosticar facial</a>
+            <div class="avisos__t">Dejar aviso al socio</div>
+            <div class="avisobtns" id="m-avisobtns"></div>
           </div>
         </div>
       </div>
@@ -480,14 +490,10 @@
       document.getElementById("m-cat").textContent = ev.categoria || "—";
       document.getElementById("m-cuota").textContent = ev.ult_cuota_paga ? fechaCorta(ev.ult_cuota_paga) : "—";
       document.getElementById("m-fecha").textContent = fechaHora(ev.fecha);
-      // Acceso directo al diagnóstico de facial de ESTE socio (solo si sabemos quién es).
+      // Avisos rápidos para ESTE socio (solo si sabemos quién es).
       var acciones = document.getElementById("m-acciones");
-      if (ev.id_cliente) {
-        acciones.style.display = "";
-        document.getElementById("m-diag").href = "/diag-facial/?modo=socio&q=" + encodeURIComponent(ev.id_cliente);
-      } else {
-        acciones.style.display = "none";
-      }
+      acciones.style.display = ev.id_cliente ? "" : "none";
+      if (ev.id_cliente) renderAvisos(ev);
       document.getElementById("modal").classList.add("open");
       // Los contratos ya vienen en el evento: se pintan sin esperar al fetch.
       document.getElementById("m-contratos").innerHTML =
@@ -581,6 +587,52 @@
         '<div class="col"><div class="col__current"><div class="idle">Elegí la puerta con &#9776;</div></div></div>';
       currentPuerta = null; currentKeys = ["\x00"];
       if (!drawer.classList.contains("open")) { renderPuertas(puertas || [], null); drawer.classList.add("open"); }
+    }
+
+    // Avisos de un toque. El de la foto solo se ofrece cuando el socio no tiene:
+    // es el único accionable en el momento (se le saca ahí mismo).
+    function botonesAviso(ev) {
+      var bs = [];
+      if (!ev.foto_url) bs.push({ tipo: "tomar_foto", txt: "Se indica tomar foto", cls: " foto" });
+      bs.push({ tipo: "deuda", txt: "Se notifica deuda", cls: "" });
+      bs.push({ tipo: "pase_por_socios", txt: "Se indica pasar por oficina de socios", cls: "" });
+      return bs;
+    }
+    function renderAvisos(ev) {
+      var cont = document.getElementById("m-avisobtns");
+      cont.innerHTML = botonesAviso(ev).map(function (b) {
+        var cls = "avisobtn" + b.cls;
+        return '<button type="button" class="' + cls + '" data-cls="' + cls + '"' +
+               ' data-tipo="' + esc(b.tipo) + '" data-txt="' + esc(b.txt) + '">' + esc(b.txt) + '</button>';
+      }).join("");
+      Array.prototype.forEach.call(cont.querySelectorAll(".avisobtn"), function (btn) {
+        btn.addEventListener("click", function () { enviarAviso(btn, ev.id_cliente); });
+      });
+    }
+    function enviarAviso(btn, idCliente) {
+      // El texto sale de data-txt y no de textContent: si el envío falla, el botón
+      // pasa a decir "reintentar" y un segundo intento tomaría ESE texto.
+      var original = btn.getAttribute("data-txt");
+      var base = btn.getAttribute("data-cls");
+      btn.disabled = true;
+      btn.className = base;
+      btn.textContent = "Enviando…";
+      fetch(API + "/socios/" + idCliente + "/aviso/", {
+        method: "POST",
+        headers: Object.assign({ "Content-Type": "application/json" }, hdr()),
+        body: JSON.stringify({ tipo: btn.getAttribute("data-tipo") })
+      })
+        .then(function (r) {
+          if (!r.ok) throw new Error(r.status);
+          btn.className = base + " hecho";
+          btn.textContent = "✓ " + original;
+        })
+        .catch(function () {
+          // Se rehabilita para poder reintentar: el aviso no quedó registrado.
+          btn.className = base + " error";
+          btn.textContent = "Error — reintentar";
+          btn.disabled = false;
+        });
     }
 
     // Mismos contratos que la tarjeta, pero acá entran todos y con el importe del

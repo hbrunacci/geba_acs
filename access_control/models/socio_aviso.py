@@ -13,9 +13,21 @@ class SocioAviso(models.Model):
     """
 
     TIPO_PASE_POR_SOCIOS = "pase_por_socios"
+    TIPO_TOMAR_FOTO = "tomar_foto"
+    TIPO_DEUDA = "deuda"
     TIPO_LIBRE = "libre"
 
-    TEXTO_PASE_POR_SOCIOS = "Notificar que pase por Socios"
+    TEXTO_PASE_POR_SOCIOS = "Se indica pasar por oficina de socios"
+    TEXTO_TOMAR_FOTO = "Se indica tomar foto"
+    TEXTO_DEUDA = "Se notifica deuda"
+
+    # Avisos de un toque: el operador del molinete los deja sin escribir nada, así
+    # que el texto lo fija el servidor y no viaja en el request.
+    TEXTOS_PREDEFINIDOS = {
+        TIPO_PASE_POR_SOCIOS: TEXTO_PASE_POR_SOCIOS,
+        TIPO_TOMAR_FOTO: TEXTO_TOMAR_FOTO,
+        TIPO_DEUDA: TEXTO_DEUDA,
+    }
 
     id_cliente = models.BigIntegerField(db_index=True)
     tipo = models.CharField(max_length=32, default=TIPO_LIBRE)
