@@ -3,6 +3,9 @@ certifi==2026.1.4
 charset-normalizer==3.4.4
 Django>=5.2.1,<5.3
 djangorestframework==3.15.2
+# Solo para tests: parsea el JS del visor de molinetes y verifica que siga en ES5
+# y sin variables sueltas. Ver xsys/tests/test_visor_js.py.
+esprima==4.0.1
 gunicorn==23.0.0
 whitenoise==6.8.2
 idna==3.11
