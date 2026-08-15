@@ -29,6 +29,8 @@ class BiostarAccessEvent(models.Model):
     event_code = models.IntegerField(null=True, blank=True)
     event_name = models.CharField(max_length=120, blank=True, default="")
     permitido = models.BooleanField(default=True)
+    # Ver ExternalAccessLogEntry.conflicto_molinete: mismo significado.
+    conflicto_molinete = models.CharField(max_length=60, blank=True, default="")
     synced_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

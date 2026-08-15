@@ -81,6 +81,14 @@ class Command(BaseCommand):
                             purged = service.purge_old_movements()
                             if purged:
                                 self.stdout.write(f"-{purged} movimientos fuera de ventana")
+                            # Las reservas de paso duran segundos; sin purga la
+                            # tabla sólo crece.
+                            try:
+                                from access_control.services import paso_pendiente as pp
+
+                                pp.purgar()
+                            except Exception:
+                                pass
                             last_purge = time.monotonic()
                         time.sleep(interval)
                 except Exception as exc:  # pragma: no cover - caída de conexión

@@ -74,6 +74,11 @@ def _store_event(event_types: dict, e: dict) -> bool:
     bid = str(e.get("id") or "")
     if not bid:
         return False
+    # Cortar acá si ya lo teníamos: ``ingest_recent`` re-sondea los mismos
+    # eventos cada ciclo, y evaluar la regla de paso pendiente sobre un evento ya
+    # visto volvería a reservarle el molinete al socio cada medio segundo.
+    if BiostarAccessEvent.objects.filter(biostar_id=bid).exists():
+        return False
     # OJO: el server BioStar de esta instancia emite ``server_datetime`` en hora
     # LOCAL rotulada como 'Z' (queda ~3h atrasada); el campo ``datetime`` del
     # evento es la hora real (UTC). Por eso preferimos ``datetime`` para la
@@ -84,10 +89,25 @@ def _store_event(event_types: dict, e: dict) -> bool:
     if fecha is None:
         return False
     dev = e.get("device_id") or {}
+    device_id = _int_or_none(dev.get("id")) or 0
+    id_cliente = _int_or_none((e.get("user_id") or {}).get("user_id"))
+    conflicto = ""
+    try:
+        from access_control.services import paso_pendiente as pp
+
+        if id_cliente:
+            conflicto = pp.evaluar(
+                id_cliente,
+                pp.resolver_molinete(pp.mapa_molinetes(), device_id=device_id),
+                origen="facial",
+            )[:60]
+    except Exception:  # pragma: no cover - nunca romper la ingesta
+        conflicto = ""
     _, created = BiostarAccessEvent.objects.get_or_create(
         biostar_id=bid,
         defaults={
-            "device_id": _int_or_none(dev.get("id")) or 0,
+            "conflicto_molinete": conflicto,
+            "device_id": device_id,
             "device_name": dev.get("name") or "",
             "id_cliente": _int_or_none((e.get("user_id") or {}).get("user_id")),
             "fecha": fecha,
@@ -176,7 +196,9 @@ def ingest_recent(client, event_types: dict, *, limit: int = 300, max_age_days: 
     cutoff = _dj_tz.now() - timedelta(days=max_age_days)
     rows = client.events_search(limit=limit, order_column="id", descending=True)
     nuevos = 0
-    for e in rows:
+    # Se recorren al REVÉS (más viejo primero): vienen por id descendente, y la
+    # regla de paso pendiente necesita verlos en el orden en que ocurrieron.
+    for e in reversed(list(rows)):
         f = parse_server_datetime(e.get("datetime")) or parse_server_datetime(e.get("server_datetime"))
         if f is not None and f < cutoff:
             continue  # evento viejo (id-mina de un reinicio de BioStar): ignorar

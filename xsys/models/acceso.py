@@ -11,7 +11,15 @@ class XsysAcceso(models.Model):
     descripcion = models.CharField(max_length=40, blank=True, default="")
     descripcion_corta = models.CharField(max_length=20, blank=True, default="")
     activo = models.SmallIntegerField(null=True, blank=True, db_index=True)
+    # CD_Accesos.Flag_Ult_Cuota_Paga. Distinto de 0 = acceso de AUTO (barrera):
+    # son los únicos que xSys gatea por cuota. Se espeja para poder distinguir
+    # las barreras en el visor sin consultar MSSQL en cada refresco.
+    flag_ult_cuota_paga = models.SmallIntegerField(null=True, blank=True)
     synced_at = models.DateTimeField(default=timezone.now)
+
+    @property
+    def es_barrera(self) -> bool:
+        return bool(self.flag_ult_cuota_paga)
 
     class Meta:
         db_table = "xsys_acceso"

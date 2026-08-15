@@ -166,6 +166,10 @@ class ExternalAccessLogEntry(models.Model):
     flag_permite_paso = models.CharField(max_length=4, blank=True)
     fecha_paso_permitido = models.DateTimeField(null=True, blank=True)
     id_controlador_paso_permitido = models.BigIntegerField(null=True, blank=True)
+    # Molinete en el que el socio ya tenía un paso pendiente cuando ocurrió este
+    # evento. No vacío = la credencial se usó en otro molinete dentro de la
+    # ventana. Se calcula al ingerir, no al mostrar, porque depende del instante.
+    conflicto_molinete = models.CharField(max_length=60, blank=True, default="")
     synced_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

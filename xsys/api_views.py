@@ -561,11 +561,15 @@ class PuertaEstadoAPI(APIView):
             avisos_por_socio.setdefault(a.id_cliente, []).append(a.texto)
         # Contratos vigentes + último pago de cada uno (una sola query al espejo).
         contratos_por_socio = contratos_svc.resumen_por_socio(cids)
+        # Barreras: se muestra cuántas veces entró hoy con la misma habilitación.
+        barreras = _accesos_barrera()
+        todos_xsys = [e for col in xsys_por_col for e in col]
+        ingresos_hoy = _ingresos_hoy_por_habilitacion(todos_xsys, barreras)
 
         columnas = []
         for cd, xs, fx in zip(cols_def, xsys_por_col, facial_por_col):
             # (fecha, payload) para poder ordenar la mezcla por tiempo (desc).
-            items = [(e.fecha, _evento_payload(e, socios, fotos, motivos, ctrls, avisos_por_socio, contratos_por_socio)) for e in xs]
+            items = [(e.fecha, _evento_payload(e, socios, fotos, motivos, ctrls, avisos_por_socio, contratos_por_socio, barreras, ingresos_hoy)) for e in xs]
             # Los faciales se ubican en la línea de tiempo por su hora de ingesta
             # (real), no por la hora de BioStar (atrasada). Los xSys sí por fecha.
             items += [(e.synced_at, _facial_evento_payload(e, socios, fotos, avisos_por_socio, contratos_por_socio)) for e in fx]

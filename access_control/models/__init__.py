@@ -4,6 +4,7 @@ from .biostart_user import BioStarUser
 from .biostar_device_group import BioStarDeviceGroup
 from .device import BioStarDevice
 from .intelektron_event import IntelektronEvent
+from .paso_pendiente import PasoPendiente
 from .socio_aviso import SocioAviso
 from .models import (
     AccessEvent,
@@ -27,4 +28,5 @@ __all__ = [
     "AnsesVerificationRecord",
     "IntelektronEvent",
     "SocioAviso",
+    "PasoPendiente",
 ]

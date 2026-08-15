@@ -91,7 +91,10 @@ _CDES_MAXLEN = {
     "tipo": 4, "origen": 8, "id_tarjeta": 64, "resultado": 4,
     "observacion": 255, "tipo_registro": 32, "flag_permite_paso": 4,
 }
-_CDES_UPDATE_FIELDS = [attr for _, attr in CDES_COLUMNS if attr != "external_id"] + ["synced_at"]
+_CDES_UPDATE_FIELDS = (
+    [attr for _, attr in CDES_COLUMNS if attr != "external_id"]
+    + ["conflicto_molinete", "synced_at"]
+)
 
 CHUNK = 1000
 
@@ -301,7 +304,8 @@ class XsysSyncService:
     def sync_accesos(self, cursor) -> int:
         """Espejo de CD_Accesos (puertas). Tabla chica: upsert completo."""
         cursor.execute(
-            "SELECT Id_Acceso, Descripcion, Descripcion_Corta, Activo FROM CD_Accesos"
+            "SELECT Id_Acceso, Descripcion, Descripcion_Corta, Activo, "
+            "ISNULL(Flag_Ult_Cuota_Paga,0) FROM CD_Accesos"
         )
         rows = cursor.fetchall()
         now = timezone.now()
@@ -311,6 +315,7 @@ class XsysSyncService:
                 descripcion=(r[1] or "").strip(),
                 descripcion_corta=(r[2] or "").strip(),
                 activo=r[3],
+                flag_ult_cuota_paga=r[4],
                 synced_at=now,
             )
             for r in rows
@@ -320,7 +325,8 @@ class XsysSyncService:
                 objs,
                 update_conflicts=True,
                 unique_fields=["id_acceso"],
-                update_fields=["descripcion", "descripcion_corta", "activo", "synced_at"],
+                update_fields=["descripcion", "descripcion_corta", "activo",
+                               "flag_ult_cuota_paga", "synced_at"],
             )
         return len(objs)
 
@@ -671,6 +677,7 @@ class XsysSyncService:
             if not rows:
                 break
             objs = [ExternalAccessLogEntry(**self._row_to_cdes_kwargs(r)) for r in rows]
+            self._marcar_paso_pendiente(objs)
             with transaction.atomic():
                 ExternalAccessLogEntry.objects.bulk_create(
                     objs,
@@ -683,6 +690,29 @@ class XsysSyncService:
         if total:
             SyncState.advance("cd_es", last_id=max_id, rows=total)
         return total
+
+    def _marcar_paso_pendiente(self, objs) -> None:
+        """Aplica la regla de paso pendiente a los movimientos recién leídos.
+
+        Se hace acá y no al mostrar porque el resultado depende del instante en
+        que llegó el evento: al renderizar el visor ya pasó la ventana. Los
+        eventos se procesan en orden de Id_ES, que es el orden real de xSys.
+
+        Best-effort: si algo falla, el movimiento se guarda igual. Perder la
+        marca es un problema menor; perder el movimiento, no.
+        """
+        try:
+            from access_control.services import paso_pendiente as pp
+
+            mapa = pp.mapa_molinetes()
+            for o in sorted(objs, key=lambda x: x.external_id):
+                if not o.id_cliente:
+                    continue
+                molinete = pp.resolver_molinete(mapa, id_controlador=o.id_controlador)
+                o.conflicto_molinete = pp.evaluar(
+                    o.id_cliente, molinete, origen="credencial")[:60]
+        except Exception as exc:  # pragma: no cover - nunca romper la ingesta
+            logger.warning("paso_pendiente: no se pudo marcar el lote de CD_ES: %s", exc)
 
     def incremental(self, *, limit: int | None = None, full_whitelist: bool = False) -> dict[str, int]:
         stats: dict[str, int] = {"novedades": 0, "socios": 0, "fotos": 0, "whitelist": 0, "movimientos": 0}
