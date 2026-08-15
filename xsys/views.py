@@ -20,7 +20,13 @@ def xsys_puerta_monitor(request):
     Se sirve sin caché: son pantallas de kiosco que quedan abiertas días, y sin
     esto un cambio en el template no llega hasta que alguien las refresca a mano.
     """
-    response = render(request, "xsys/puerta_monitor.html")
+    # La versión se embebe en el HTML para que la pantalla pueda comparar la SUYA
+    # con la del servidor. Comparar sólo respuestas consecutivas no alcanzaba: un
+    # kiosco que ya tenía cargada una versión vieja tomaba la nueva como
+    # referencia inicial y no se recargaba nunca.
+    from xsys.api_views import _version_visor
+
+    response = render(request, "xsys/puerta_monitor.html", {"visor_version": _version_visor()})
     response["Cache-Control"] = "no-store, must-revalidate"
     return response
 

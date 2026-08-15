@@ -46,3 +46,23 @@ class VersionVisorTests(TestCase):
         r = self.client.get("/xsys/puerta/")
         self.assertEqual(r.status_code, 200)
         self.assertIn("no-store", r["Cache-Control"])
+
+    def test_la_pagina_embebe_su_propia_version(self):
+        """La pantalla necesita saber con qué versión se cargó, no solo la del
+        servidor: comparar respuestas consecutivas no detecta a un kiosco que ya
+        venía corriendo un visor viejo."""
+        with self._con_mtime(1_000):
+            r = self.client.get("/xsys/puerta/")
+            esperada = api_views._version_visor()
+        self.assertContains(r, 'var VISOR_VERSION = "%s";' % esperada)
+
+    def test_la_version_embebida_coincide_con_la_del_endpoint(self):
+        from institutions.models import AccessDoor
+        from xsys.models import PantallaPuerta
+
+        door = AccessDoor.objects.create(name="Prueba", is_active=True, xsys_id_acceso=14)
+        p = PantallaPuerta.objects.create(token="tok-version-5678", door=door, ip="1.2.3.4")
+
+        html = self.client.get("/xsys/puerta/").content.decode()
+        estado = self.client.get("/api/xsys/puerta/estado/", HTTP_X_PANTALLA_TOKEN=p.token)
+        self.assertIn('var VISOR_VERSION = "%s";' % estado.data["visor_version"], html)

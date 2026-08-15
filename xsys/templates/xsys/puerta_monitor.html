@@ -726,7 +726,12 @@
     // Estas pantallas son kioscos que quedan abiertos días: si el visor cambió en
     // el servidor, se recargan solas en vez de esperar a que alguien vaya con un
     // teclado. Devuelve true si disparó la recarga (hay que cortar el ciclo).
-    var visorVersion = null;
+    // Versión del template con el que se sirvió ESTA página. Se compara contra la
+    // que informa el servidor: si difieren, el kiosco está corriendo un visor
+    // viejo y se recarga. Tomar como referencia la primera respuesta no servía —
+    // una pantalla ya desactualizada adoptaba la versión nueva y nunca recargaba.
+    var VISOR_VERSION = "{{ visor_version|escapejs }}";
+    var visorVersion = VISOR_VERSION || null;
     function chequearVersion(v) {
       if (!v) return false;
       if (visorVersion === null) { visorVersion = v; return false; }
@@ -812,8 +817,17 @@
           // Un corte de red es normal y se reintenta en el próximo tick. Pero acá
           // caía TAMBIÉN cualquier error de código del bloque de arriba, y el
           // visor se quedaba en blanco sin dejar rastro (así pasó inadvertido que
-          // padStart no existe en el Chrome 49 de Alcorta). Se deja registro.
+          // padStart no existe en el Chrome 49 de Alcorta). Se deja registro y, si
+          // es un error de código, se muestra: en un kiosco nadie abre la consola.
           if (window.console && console.error) console.error("[monitor] poll:", e);
+          // Solo se avisa si NUNCA se llegó a dibujar: con las columnas ya en
+          // pantalla, un corte de red pasajero no tiene que ensuciar la vista.
+          var cols = document.getElementById("columns");
+          if (cols && !cols.querySelector(".col")) {
+            cols.innerHTML = '<div class="col"><div class="col__current"><div class="idle">' +
+              'No se pudo dibujar el visor.<br><small>' + esc(String(e && e.message || e)) +
+              '</small></div></div></div>';
+          }
         });
     }
 
