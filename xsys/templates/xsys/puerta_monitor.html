@@ -386,7 +386,12 @@
         : '<div class="cfoto sinfoto ' + marco + '">&#128100;</div>';
     }
     function currentHTML(ev) {
-      if (!ev) return '<div class="idle">Sin ingresos</div>';
+      // Un día sin ingresos se ve igual que un visor roto. Se dice explícitamente
+      // qué día se está mirando y cómo ir hacia atrás: recién pasada la medianoche
+      // el día en curso está vacío hasta el primer acceso, y eso confunde.
+      if (!ev) return '<div class="idle">Sin ingresos' +
+        (verDia ? ' este día' : ' todavía hoy') +
+        '<div style="font-size:12px;opacity:.6;margin-top:6px">Usá &#9664; para ver días anteriores</div></div>';
       var clase = claseEstado(ev);
 
       // Categoría · N° de socio
@@ -713,9 +718,14 @@
       return true;
     }
 
+    // OJO: todo el visor está escrito en ES5 a propósito (sin arrow functions,
+    // template literals ni let/const) porque corre en navegadores de kiosco
+    // viejos. Usar algo más nuevo —padStart, por ejemplo— lanza una excepción que
+    // corta el script ENTERO, incluido el setInterval del poll, y la pantalla se
+    // queda congelada sin mostrar movimientos. Mantener este archivo en ES5.
+    function dos(n) { return (n < 10 ? "0" : "") + n; }
     function isoDia(d) {
-      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") +
-             "-" + String(d.getDate()).padStart(2, "0");
+      return d.getFullYear() + "-" + dos(d.getMonth() + 1) + "-" + dos(d.getDate());
     }
     function diaDesdeIso(iso) {
       var p = (iso || "").split("-");
@@ -740,15 +750,19 @@
       timerVolver = setTimeout(function () { verDia = null; colState = {}; hist = {}; currentKeys = ["\x00"]; poll(); }, VOLVER_A_HOY_MS);
     }
     function pintarDia(d) {
+      try { pintarDiaInterno(d); } catch (e) { /* la navegación es accesoria: nunca debe frenar el visor */ }
+    }
+    function pintarDiaInterno(d) {
       var nav = document.getElementById("diasnav");
+      if (!nav) return;
       var iso = d.dia || isoDia(new Date());
       ultimoDiaMin = d.dia_min || null;
       var f = diaDesdeIso(iso);
       var dias = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
       document.getElementById("dia-fecha").textContent =
-        String(f.getDate()).padStart(2, "0") + "/" + String(f.getMonth() + 1).padStart(2, "0") + "/" + f.getFullYear();
+        dos(f.getDate()) + "/" + dos(f.getMonth() + 1) + "/" + f.getFullYear();
       document.getElementById("dia-tag").textContent = d.dia_es_hoy ? "Hoy" : dias[f.getDay()];
-      nav.classList.toggle("pasado", !d.dia_es_hoy);
+      if (d.dia_es_hoy) { nav.classList.remove("pasado"); } else { nav.classList.add("pasado"); }
       document.getElementById("dia-prev").disabled = !!(d.dia_min && iso <= d.dia_min);
       document.getElementById("dia-next").disabled = !!d.dia_es_hoy;
       // Si el servidor acotó la fecha (p. ej. se pidió más atrás de la retención),
@@ -756,8 +770,10 @@
       verDia = d.dia_es_hoy ? null : iso;
     }
 
-    document.getElementById("dia-prev").addEventListener("click", function () { moverDia(-1); });
-    document.getElementById("dia-next").addEventListener("click", function () { moverDia(1); });
+    try {
+      document.getElementById("dia-prev").addEventListener("click", function () { moverDia(-1); });
+      document.getElementById("dia-next").addEventListener("click", function () { moverDia(1); });
+    } catch (e) { /* sin flechas se sigue viendo el día en curso */ }
 
     function poll() {
       fetch(API + "/puerta/estado/" + (verDia ? ("?fecha=" + verDia) : ""), { headers: hdr() })
