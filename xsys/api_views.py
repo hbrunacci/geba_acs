@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import hashlib
 from pathlib import Path
 
@@ -215,6 +216,31 @@ def _registrar_pantalla(request) -> PantallaPuerta | None:
 
 # Cuántos ingresos de historial se devuelven por columna (para paginar de a 5).
 HISTORIAL_LEN = 50
+
+# Días que se pueden mirar hacia atrás en el visor, incluido hoy. Coincide con la
+# retención local: CD_ES se espeja sólo la última semana y los eventos faciales
+# se purgan a los 7 días, así que más atrás sólo habría columnas vacías.
+_DIAS_HISTORIAL = 7
+
+
+def _dia_pedido(request) -> tuple[datetime.date, datetime.date, datetime.date]:
+    """(día a mostrar, mínimo permitido, hoy) a partir de ``?fecha=YYYY-MM-DD``.
+
+    Se acota en el servidor —no en la pantalla— para que ningún cliente pueda
+    pedir más atrás de lo que se conserva: CD_ES y los eventos faciales se purgan
+    a los 7 días y más atrás sólo habría columnas vacías. Una fecha ilegible o
+    futura cae en hoy.
+    """
+    hoy = timezone.localdate()
+    minimo = hoy - datetime.timedelta(days=_DIAS_HISTORIAL - 1)
+    pedida = (request.query_params.get("fecha") or "").strip()
+    if not pedida:
+        return hoy, minimo, hoy
+    try:
+        dia = datetime.date.fromisoformat(pedida)
+    except ValueError:
+        return hoy, minimo, hoy
+    return min(max(dia, minimo), hoy), minimo, hoy
 
 
 def _version_visor() -> str:
@@ -506,8 +532,12 @@ class PuertaEstadoAPI(APIView):
 
         cols_def = _columnas_de_puerta(door)
 
-        # El monitor muestra solo los accesos del día en curso (hora local).
-        hoy = timezone.localdate()
+        # Día a mostrar. Por defecto hoy; con ?fecha=YYYY-MM-DD se puede navegar
+        # hacia atrás hasta donde llega la retención local (CD_ES y los eventos
+        # faciales se purgan a los 7 días, así que más atrás sólo habría columnas
+        # vacías). Se acota acá y no en el navegador para que no dependa de lo que
+        # mande la pantalla.
+        dia, minimo, hoy = _dia_pedido(request)
 
         # Por columna: eventos xSys (por controlador) + accesos faciales BioStar
         # (por device). Los faciales son la única fuente con identidad por-equipo.
@@ -517,7 +547,7 @@ class PuertaEstadoAPI(APIView):
             ctrls = cd["controladores"]
             xs = list(
                 ExternalAccessLogEntry.objects
-                .filter(id_controlador__in=ctrls, tipo="E", fecha__date=hoy)
+                .filter(id_controlador__in=ctrls, tipo="E", fecha__date=dia)
                 .order_by("-external_id")[: HISTORIAL_LEN + 1]
             ) if ctrls else []
             devs = cd.get("biostar_devices") or []
@@ -527,7 +557,7 @@ class PuertaEstadoAPI(APIView):
             # que los pasos faciales aparecieran tarde (o cayeran en otro día).
             fx = list(
                 BiostarAccessEvent.objects
-                .filter(device_id__in=devs, id_cliente__isnull=False, synced_at__date=hoy)
+                .filter(device_id__in=devs, id_cliente__isnull=False, synced_at__date=dia)
                 .order_by("-synced_at")[: HISTORIAL_LEN + 1]
             ) if devs else []
             xsys_por_col.append(xs)
@@ -590,6 +620,12 @@ class PuertaEstadoAPI(APIView):
             "puerta": {"id": door.id, "nombre": door.name, "xsys_id_acceso": door.xsys_id_acceso},
             "columnas": columnas,
             "visor_version": _version_visor(),
+            # Navegación por día: la pantalla usa esto para pintar la fecha y
+            # habilitar/deshabilitar las flechas sin conocer la retención.
+            "dia": dia.isoformat(),
+            "dia_es_hoy": dia == hoy,
+            "dia_min": minimo.isoformat(),
+            "dia_max": hoy.isoformat(),
         })
 
 
@@ -634,7 +670,9 @@ class AccesosBuscarAPI(APIView):
         if not socios:
             return Response({"q": q, "resultados": []})
 
-        hoy = timezone.localdate()
+        # El buscador mira el MISMO día que está mostrando el visor: si no, al
+        # navegar a un día pasado la búsqueda devolvería el de hoy.
+        hoy, _minimo, _real = _dia_pedido(request)
         evs = list(
             ExternalAccessLogEntry.objects
             .filter(id_controlador__in=ctrl_a_molinete.keys(), tipo="E",

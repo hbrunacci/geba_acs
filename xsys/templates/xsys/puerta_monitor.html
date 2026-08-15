@@ -20,6 +20,21 @@
     .tbtn svg { width: 20px; height: 20px; }
     @media (max-width: 620px) { .tbtn__txt { display: none; } }
     .reloj { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 18px; opacity: .8; }
+    /* Navegador de día: centrado de verdad en la barra (posición absoluta), para
+       que no se corra según el largo del título o de los botones de los costados. */
+    .diasnav { position: absolute; left: 50%; transform: translateX(-50%);
+               display: flex; align-items: center; gap: 6px; }
+    .dianav__btn { background: none; border: 0; color: #e6edf3; cursor: pointer;
+                   font-size: 15px; padding: 6px 10px; border-radius: 8px; opacity: .85; }
+    .dianav__btn:hover:not(:disabled) { background: rgba(255,255,255,.12); }
+    .dianav__btn:disabled { opacity: .22; cursor: default; }
+    .dianav__centro { display: flex; flex-direction: column; align-items: center; line-height: 1.1; min-width: 132px; }
+    .dianav__fecha { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    /* En un día pasado la pantalla NO es tiempo real: se avisa en ámbar para que
+       nadie lea un histórico como si fuera lo que está pasando ahora. */
+    .dianav__tag { font-size: 11px; letter-spacing: .3px; text-transform: uppercase; opacity: .9; }
+    .diasnav.pasado .dianav__fecha, .diasnav.pasado .dianav__tag { color: #f0b429; }
+    @media (max-width: 700px) { .titulo { display: none; } .dianav__centro { min-width: 108px; } }
 
     .columns { position: fixed; top: 52px; left: 0; right: 0; bottom: 0; display: flex; }
     .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; border-right: 1px solid #21262d; }
@@ -187,6 +202,14 @@
       <span class="tbtn__txt">Diagnóstico</span>
     </a>
     <span class="titulo" id="titulo">Monitor</span>
+    <div class="diasnav" id="diasnav">
+      <button class="dianav__btn" id="dia-prev" title="Día anterior">&#9664;</button>
+      <div class="dianav__centro">
+        <span class="dianav__fecha" id="dia-fecha">—</span>
+        <span class="dianav__tag" id="dia-tag"></span>
+      </div>
+      <button class="dianav__btn" id="dia-next" title="Día siguiente">&#9654;</button>
+    </div>
     <button class="burger" id="buscar" title="Buscar accesos del día" style="margin-left:auto">&#128269;</button>
     <span class="reloj" id="reloj" style="margin-left:14px">--:--:--</span>
   </div>
@@ -550,7 +573,7 @@
 
     function doBuscar(q) {
       buscarRes.innerHTML = '<div class="hempty">Buscando…</div>';
-      fetch(API + "/accesos/buscar/?q=" + encodeURIComponent(q), { headers: hdr() })
+      fetch(API + "/accesos/buscar/?q=" + encodeURIComponent(q) + (verDia ? ("&fecha=" + verDia) : ""), { headers: hdr() })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           // Descarta respuestas viejas si el texto ya cambió.
@@ -690,14 +713,61 @@
       return true;
     }
 
+    function isoDia(d) {
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") +
+             "-" + String(d.getDate()).padStart(2, "0");
+    }
+    function diaDesdeIso(iso) {
+      var p = (iso || "").split("-");
+      return new Date(+p[0], (+p[1] || 1) - 1, +p[2] || 1);
+    }
+    function moverDia(delta) {
+      var base = diaDesdeIso(verDia || isoDia(new Date()));
+      base.setDate(base.getDate() + delta);
+      var hoyIso = isoDia(new Date());
+      var nuevo = isoDia(base);
+      if (nuevo > hoyIso) nuevo = hoyIso;
+      if (ultimoDiaMin && nuevo < ultimoDiaMin) nuevo = ultimoDiaMin;
+      verDia = (nuevo === hoyIso) ? null : nuevo;
+      // El historial y el "último" son de otro día: se descartan para no mezclar.
+      colState = {}; hist = {}; currentKeys = ["\x00"];
+      programarVuelta();
+      poll();
+    }
+    function programarVuelta() {
+      if (timerVolver) clearTimeout(timerVolver);
+      if (!verDia) return;
+      timerVolver = setTimeout(function () { verDia = null; colState = {}; hist = {}; currentKeys = ["\x00"]; poll(); }, VOLVER_A_HOY_MS);
+    }
+    function pintarDia(d) {
+      var nav = document.getElementById("diasnav");
+      var iso = d.dia || isoDia(new Date());
+      ultimoDiaMin = d.dia_min || null;
+      var f = diaDesdeIso(iso);
+      var dias = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+      document.getElementById("dia-fecha").textContent =
+        String(f.getDate()).padStart(2, "0") + "/" + String(f.getMonth() + 1).padStart(2, "0") + "/" + f.getFullYear();
+      document.getElementById("dia-tag").textContent = d.dia_es_hoy ? "Hoy" : dias[f.getDay()];
+      nav.classList.toggle("pasado", !d.dia_es_hoy);
+      document.getElementById("dia-prev").disabled = !!(d.dia_min && iso <= d.dia_min);
+      document.getElementById("dia-next").disabled = !!d.dia_es_hoy;
+      // Si el servidor acotó la fecha (p. ej. se pidió más atrás de la retención),
+      // se sincroniza para que las flechas sigan moviéndose desde donde está.
+      verDia = d.dia_es_hoy ? null : iso;
+    }
+
+    document.getElementById("dia-prev").addEventListener("click", function () { moverDia(-1); });
+    document.getElementById("dia-next").addEventListener("click", function () { moverDia(1); });
+
     function poll() {
-      fetch(API + "/puerta/estado/", { headers: hdr() })
+      fetch(API + "/puerta/estado/" + (verDia ? ("?fecha=" + verDia) : ""), { headers: hdr() })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           document.getElementById("ip").textContent = "IP: " + (d.ip || "") + " · token " + TOKEN.slice(0, 8);
           if (chequearVersion(d.visor_version)) return;
           if (!d.configurada) { mostrarSinConfig(d.puertas); return; }
           document.getElementById("titulo").textContent = d.nombre || "Monitor";
+          pintarDia(d);
           currentPuerta = d.puerta ? d.puerta.id : null;
           currentPuertaDesc = d.puerta ? d.puerta.nombre : "";
           var keys = (d.columnas || []).map(function (c) { return c.key; });
