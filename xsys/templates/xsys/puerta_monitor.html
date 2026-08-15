@@ -301,6 +301,13 @@
     var currentKeys = ["\x00"]; // firma de columnas (centinela para forzar 1er render)
     var currentPuerta = null;
     var currentPuertaDesc = "";
+    // Navegación por día. Faltaban estas declaraciones: asignar una variable no
+    // declarada crea una global al vuelo, pero LEERLA antes lanza ReferenceError,
+    // y poll() lee verDia en su primera línea. Eso tiraba el visor entero.
+    var verDia = null;          // null = hoy; si no, "YYYY-MM-DD" del día que se mira
+    var ultimoDiaMin = null;    // día más viejo que el servidor permite (retención)
+    var timerVolver = null;     // vuelta automática a hoy
+    var VOLVER_A_HOY_MS = 180000;  // 3 min sin tocar las flechas y vuelve a hoy
     var PER_PAGE = 5;
 
     function genToken() {
