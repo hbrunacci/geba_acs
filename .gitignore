@@ -46,3 +46,11 @@ scripts/geba_xsys_2026.sql
 
 # Auto-deploy (scripts/auto_deploy.ps1)
 auto_deploy.lock
+
+# Descargas del navegador de la verificación ANSES: son artefactos de la corrida
+# (88 MB de .crdownload a medio bajar), no código ni datos que haya que versionar.
+descargas_anses/
+
+# Scripts sueltos de diagnóstico en la raíz (pruebas puntuales contra molinetes,
+# escuchas, etc.). Se usan y se tiran; no son parte de la aplicación.
+_*.py
