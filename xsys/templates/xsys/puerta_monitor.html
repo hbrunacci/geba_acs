@@ -276,6 +276,23 @@
 
   <script>
   (function () {
+    // WATCHDOG DE RECUPERACIÓN. Va primero, antes de cualquier cosa que pueda
+    // fallar, y a propósito no depende de nada del resto del archivo.
+    //
+    // El visor se actualiza solo cuando detecta una versión nueva del template,
+    // pero esa comprobación vive DENTRO del poll. Si el script se rompe (pasó con
+    // padStart, que no existe en el Chrome 49 de Alcorta), el poll muere, la
+    // comprobación no corre nunca y la pantalla queda congelada para siempre: el
+    // arreglo se despliega y ella no se entera. Había que ir a refrescarla a mano.
+    //
+    // Con esto, cualquier pantalla que pase MAX_SIN_POLL sin un ciclo exitoso se
+    // recarga sola y toma la versión nueva.
+    var ultimoPollOk = new Date().getTime();
+    var MAX_SIN_POLL = 180000;
+    setInterval(function () {
+      if (new Date().getTime() - ultimoPollOk > MAX_SIN_POLL) { location.reload(true); }
+    }, 30000);
+
     var API = "/api/xsys";
     var drawer = document.getElementById("drawer");
     var colState = {};        // key -> ultimo id_es (panel superior)
@@ -789,6 +806,7 @@
           var keys = (d.columnas || []).map(function (c) { return c.key; });
           if (keys.join("|") !== currentKeys.join("|")) { currentKeys = keys; rebuildSkeleton(d.columnas); }
           (d.columnas || []).forEach(updateColumna);
+          ultimoPollOk = new Date().getTime();   // ciclo completo: el watchdog se calma
         })
         .catch(function (e) {
           // Un corte de red es normal y se reintenta en el próximo tick. Pero acá
