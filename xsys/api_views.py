@@ -273,6 +273,27 @@ def _tipo_lectura(id_controlador, controladores: dict) -> str:
     return "credencial"
 
 
+# Motivos de habilitación que NO dependen de la cuota social: la categoría del
+# socio (205) o el acceso master (202). Los vitalicios +71, olímpicos, honorarios
+# y empleados entran por su categoría y para ellos la cuota social es VOLUNTARIA:
+# pueden deber, pero nunca están "con la cuota vencida". Se toma del motivo con el
+# que xSys los habilita en vez de una lista de categorías, para no quedar
+# desactualizado cuando el club agregue una.
+_MOTIVOS_SIN_CUOTA = {202, 205}
+
+
+def _cuota_no_aplica(cids) -> dict[int, str]:
+    """{id_cliente: detalle} de los socios cuya cuota social es voluntaria."""
+    from xsys.models import XsysWhitelist
+
+    return {
+        w.id_cliente: (w.detalle or w.motivo or "")
+        for w in XsysWhitelist.objects.filter(
+            id_cliente__in=cids, habilitado=True, motivo_code__in=_MOTIVOS_SIN_CUOTA)
+        .only("id_cliente", "motivo", "detalle")
+    }
+
+
 def _accesos_barrera() -> set[int]:
     """Ids de acceso que son barreras de auto.
 
@@ -319,7 +340,7 @@ def _ingresos_hoy_por_habilitacion(eventos, barreras: set[int]) -> dict[tuple, i
     return {c: cuenta.get(c, 0) for c in claves}
 
 
-def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None) -> dict:
+def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None, sin_cuota: dict | None = None) -> dict:
     socio = socios.get(ev.id_cliente)
     tiene_foto = ev.id_cliente in fotos
     # Mensaje original de xSys (motivo de pantalla u observación).
@@ -332,7 +353,10 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
     permitido = ev.resultado == "S"
     # Mensaje + estado deducidos localmente según la cuota.
     #   estado: "ok" (verde) / "no" (rojo) / "anomalia" (amarillo).
-    al_dia = cuota_al_dia(socio.ult_cuota_paga) if socio else False
+    # Para quien entra por su categoría la cuota social es voluntaria: marcarle
+    # "Cuota Vencida" era un falso positivo (su deuda se ve en los contratos).
+    exento = (sin_cuota or {}).get(ev.id_cliente)
+    al_dia = True if exento else (cuota_al_dia(socio.ult_cuota_paga) if socio else False)
     if permitido and not al_dia:
         # Anomalía: xSys dejó pasar pero la cuota está vencida -> alertar al operador.
         estado = "anomalia"
@@ -377,6 +401,8 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         "avisos": (avisos_por_socio or {}).get(ev.id_cliente) or [],
         "contratos": (contratos_por_socio or {}).get(ev.id_cliente) or [],
         "conflicto_molinete": ev.conflicto_molinete or "",
+        # No vacío: la cuota social de este socio es voluntaria (y por qué).
+        "cuota_voluntaria": exento or "",
         "es_barrera": bool(barreras and ev.id_acceso in barreras),
         # Veces que ingresó hoy por barrera con ESTA misma habilitación.
         "ingresos_hoy": (ingresos_hoy or {}).get(
@@ -384,14 +410,15 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
     }
 
 
-def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None) -> dict:
+def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, sin_cuota: dict | None = None) -> dict:
     """Payload de un acceso facial BioStar, con la MISMA forma que _evento_payload
     para poder fusionarlo en la misma columna del visor. La identidad del equipo
     (``facial_equipo``) es el dato que xSys no tiene: viene del log de BioStar."""
     socio = socios.get(ev.id_cliente)
     tiene_foto = ev.id_cliente in fotos
     permitido = bool(ev.permitido)
-    al_dia = cuota_al_dia(socio.ult_cuota_paga) if socio else False
+    exento = (sin_cuota or {}).get(ev.id_cliente)
+    al_dia = True if exento else (cuota_al_dia(socio.ult_cuota_paga) if socio else False)
     if permitido and not al_dia:
         estado, mensaje = "anomalia", "Acceso Concedido · Cuota Vencida"
     elif not permitido:
@@ -592,6 +619,7 @@ class PuertaEstadoAPI(APIView):
         # Contratos vigentes + último pago de cada uno (una sola query al espejo).
         contratos_por_socio = contratos_svc.resumen_por_socio(cids)
         # Barreras: se muestra cuántas veces entró hoy con la misma habilitación.
+        sin_cuota = _cuota_no_aplica(cids)
         barreras = _accesos_barrera()
         todos_xsys = [e for col in xsys_por_col for e in col]
         ingresos_hoy = _ingresos_hoy_por_habilitacion(todos_xsys, barreras)
@@ -599,10 +627,10 @@ class PuertaEstadoAPI(APIView):
         columnas = []
         for cd, xs, fx in zip(cols_def, xsys_por_col, facial_por_col):
             # (fecha, payload) para poder ordenar la mezcla por tiempo (desc).
-            items = [(e.fecha, _evento_payload(e, socios, fotos, motivos, ctrls, avisos_por_socio, contratos_por_socio, barreras, ingresos_hoy)) for e in xs]
+            items = [(e.fecha, _evento_payload(e, socios, fotos, motivos, ctrls, avisos_por_socio, contratos_por_socio, barreras, ingresos_hoy, sin_cuota)) for e in xs]
             # Los faciales se ubican en la línea de tiempo por su hora de ingesta
             # (real), no por la hora de BioStar (atrasada). Los xSys sí por fecha.
-            items += [(e.synced_at, _facial_evento_payload(e, socios, fotos, avisos_por_socio, contratos_por_socio)) for e in fx]
+            items += [(e.synced_at, _facial_evento_payload(e, socios, fotos, avisos_por_socio, contratos_por_socio, sin_cuota)) for e in fx]
             items.sort(key=lambda t: t[0], reverse=True)
             payloads = [p for _, p in items[: HISTORIAL_LEN + 1]]
             columnas.append({

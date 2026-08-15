@@ -411,20 +411,41 @@ class XsysSyncService:
             ORDER BY CP.Item
         ) P
         OUTER APPLY (
-            SELECT TOP 1 CC.Fecha AS UltPagoFecha, -CC.Importe AS UltPagoImporte
+            -- Último pago que cubrió productos DE ESTE contrato, por el importe de
+            -- esos ítems y no por el total del cupón.
+            --
+            -- Antes se imputaba el pago al contrato de ``Cbtes.Id_Contrato``, que es
+            -- UNO por comprobante aunque el comprobante traiga ítems de varios. El
+            -- club emite un "CUPON CUOTA" bajo el contrato de cuota social que
+            -- incluye la cuota en $0 (los vitalicios no la pagan) más las
+            -- comodidades, que sí se cobran: la cuota social se quedaba con el pago
+            -- del ropero y aparecía en verde, y la comodidad quedaba sin acreditar.
+            -- Medido el 15-08-2026: 329 socios con tilde verde en cuota social
+            -- teniendo Ult_Cuota_Paga de años atrás; en los 10 revisados, el ítem de
+            -- cuota social iba en $0 y lo pagado eran roperos/cocheras.
+            SELECT TOP 1 CC.Fecha AS UltPagoFecha, IT.Imp AS UltPagoImporte
             FROM Clientes_CtaCte CC
-            WHERE CC.Id_Cliente = CO.Id_Cliente AND CC.Importe < 0
-              AND CC.Id_Trans_Origen IN (SELECT Id_Trans FROM Cbtes WHERE Id_Contrato = CO.Id_Contrato)
+            CROSS APPLY (
+                SELECT SUM(I.Imp_Final) AS Imp
+                FROM Cbtes_Items I
+                WHERE I.Id_Trans = CC.Id_Trans_Origen
+                  AND I.Id_Producto IN (
+                        SELECT CP2.Id_Producto FROM Contratos_Prod CP2
+                        WHERE CP2.Id_Contrato = CO.Id_Contrato)
+            ) IT
+            WHERE CC.Id_Cliente = CO.Id_Cliente AND CC.Importe < 0 AND IT.Imp > 0
             ORDER BY CC.Fecha DESC
         ) PG
         OUTER APPLY (
-            -- Solo el saldo YA VENCIDO. El club emite la cuota del mes siguiente
-            -- por adelantado (la de septiembre existe desde agosto), así que sumar
-            -- todo el saldo marcaría en rojo hasta al socio que está al día.
-            SELECT SUM(CASE WHEN CC2.Fecha_Vence < GETDATE() THEN CC2.Saldo ELSE 0 END) AS Deuda,
-                   MAX(CC2.Fecha) AS UltCbteFecha
+            -- Deuda hasta el MES EN CURSO. El club emite por adelantado (la cuota de
+            -- septiembre existe desde agosto) y eso NO es deuda: se corta en el
+            -- primer día del mes que viene. Se filtra por el período del cargo y no
+            -- por su vencimiento, para no ocultar lo del mes en curso que vence más
+            -- adelante en el mismo mes.
+            SELECT SUM(CC2.Saldo) AS Deuda, MAX(CC2.Fecha) AS UltCbteFecha
             FROM Clientes_CtaCte CC2
             WHERE CC2.Id_Cliente = CO.Id_Cliente AND CC2.Importe > 0
+              AND CC2.Fecha < DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()) + 1, 0)
               AND CC2.Id_Trans IN (SELECT Id_Trans FROM Cbtes WHERE Id_Contrato = CO.Id_Contrato)
         ) DE
         WHERE CO.Activo = 1

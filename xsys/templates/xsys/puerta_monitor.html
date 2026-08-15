@@ -425,7 +425,11 @@
       var extra = '<div class="cextra">' + partes.join(" · ") + '</div>';
       // Lectura · Última cuota paga
       var lecturaTxt = (ev.lectura === "facial" ? "Facial" : "Credencial");
-      var cuotaTxt = ev.ult_cuota_paga ? ' · Últ. cuota: ' + esc(fechaCorta(ev.ult_cuota_paga)) : "";
+      // Para quien entra por su categoría la cuota social es voluntaria: mostrar
+      // la fecha de la última cuota induce a pensar que está en falta.
+      var cuotaTxt = ev.cuota_voluntaria
+        ? ' · Cuota social voluntaria'
+        : (ev.ult_cuota_paga ? ' · Últ. cuota: ' + esc(fechaCorta(ev.ult_cuota_paga)) : "");
       var avisoHtml = (ev.avisos && ev.avisos.length)
         ? '<div class="caviso">&#128227; ' + ev.avisos.map(esc).join(" &middot; ") + '</div>' : "";
       // Barreras de auto: cuántas veces entró hoy con ESTA misma habilitación.
@@ -553,7 +557,9 @@
       document.getElementById("m-facial").style.display = fac ? "" : "none";
       document.getElementById("m-facial").textContent = fac || "—";
       document.getElementById("m-cat").textContent = ev.categoria || "—";
-      document.getElementById("m-cuota").textContent = ev.ult_cuota_paga ? fechaCorta(ev.ult_cuota_paga) : "—";
+      document.getElementById("m-cuota").textContent = ev.cuota_voluntaria
+        ? ("Voluntaria (" + ev.cuota_voluntaria + ")")
+        : (ev.ult_cuota_paga ? fechaCorta(ev.ult_cuota_paga) : "—");
       document.getElementById("m-fecha").textContent = fechaHora(ev.fecha);
       // Avisos rápidos para ESTE socio (solo si sabemos quién es).
       var acciones = document.getElementById("m-acciones");
@@ -569,7 +575,7 @@
         .then(function (d) {
           if (d.doc_nro) document.getElementById("m-dni").textContent = d.doc_nro;
           if (d.categoria) document.getElementById("m-cat").textContent = d.categoria;
-          if (d.ult_cuota_paga) document.getElementById("m-cuota").textContent = fechaCorta(d.ult_cuota_paga);
+          if (d.ult_cuota_paga && !ev.cuota_voluntaria) document.getElementById("m-cuota").textContent = fechaCorta(d.ult_cuota_paga);
           // Los contratos NO se tocan acá: ya los pintó contratosModalHTML con el
           // detalle de pagos. Este endpoint solo completa DNI / categoría / cuota.
         })

@@ -146,6 +146,12 @@ class Command(BaseCommand):
 
             n = service.sync_socios_by_ids(cursor, cambiados, only_active=False)
             self.stdout.write(f"  espejo actualizado: {n}")
+            # Los contratos también: hasta ahora sólo se refrescaban para socios
+            # con novedad, así que un pago no movía ni el "último pago" ni la
+            # deuda que muestra la tarjeta. Es el mismo hueco que tenían la
+            # whitelist y la cuota.
+            nc = service.sync_contratos_by_ids(cursor, cambiados)
+            self.stdout.write(f"  contratos actualizados: {nc}")
             self._recalcular(cursor, cambiados)
         finally:
             try:
