@@ -43,6 +43,13 @@ services:
       - gunicorn
       - acs.wsgi:application
       - --bind=0.0.0.0:8000
+      # Workers con HILOS: con los sync de antes, cada request bloqueaba un worker
+      # entero. Los 8 visores sondeando 2 veces por segundo consumían casi los 3,
+      # y las fotos —que van por la misma API— quedaban esperando y no se
+      # mostraban. 3x4 = 12 pedidos en paralelo, que es lo que corresponde para
+      # carga de I/O contra Postgres.
+      - --worker-class=gthread
+      - --threads=4
       - --workers=3
       - --timeout=120
       - --reload

@@ -10,7 +10,7 @@ from xsys.services.sync import SOCIO_COLUMNS, XsysSyncService
 
 
 def _socio_row(id_cliente=944426, apellido="SIMOUR ", cred="BCB30514  "):
-    # 16 valores en el orden de SOCIO_COLUMNS
+    # Un valor por columna de SOCIO_COLUMNS, en su orden.
     values = {
         "Id_Cliente": id_cliente,
         "Doc_Nro": 31850936,
@@ -22,6 +22,7 @@ def _socio_row(id_cliente=944426, apellido="SIMOUR ", cred="BCB30514  "):
         "Email": "  g@x.com ",
         "Activo": 1,
         "Tipo_Persona": "F",
+        "Id_Tipo_Cli": 1003,
         "Credencial_Nro": cred,
         "Ult_Cuota_Paga": datetime(2026, 8, 1, 0, 0, 0),
         "Id_Estado_Cliente": 1,
@@ -74,6 +75,9 @@ class SocioMappingTests(TestCase):
         self.assertEqual(kwargs["credencial_nro"], "BCB30514")
         self.assertEqual(kwargs["email"], "g@x.com")
         self.assertTrue(timezone.is_aware(kwargs["fecha_nac"]))  # naive -> aware
+        # El id de categoría se espeja aparte de la descripción: hay reglas que
+        # dependen de él (quién no paga cuota) y la descripción la renombran.
+        self.assertEqual(kwargs["id_tipo_cli"], 1003)
 
     def test_upsert_socios_crea_y_actualiza(self):
         svc = XsysSyncService()

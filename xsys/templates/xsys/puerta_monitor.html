@@ -161,6 +161,17 @@
     .avisobtn.error { background: rgba(248,81,73,.16); color: #ff7b72; border-color: #f85149; }
     /* El de la foto aparece solo cuando falta, así que se distingue del resto. */
     .avisobtn.foto { border-color: #d29922; color: #e3b341; }
+    /* Ya se le dejó hoy: queda visible pero inerte, para que el operador sepa
+       que el aviso está dado y no lo busque en otra pantalla. */
+    .avisobtn.hoy { background: #1b2027; color: #6e7681; border-color: #30363d; border-style: dashed; }
+    /* Últimos avisos: contexto de lo que ya se le dijo, no un historial. */
+    .avisohist { margin-top: 14px; }
+    .avisohist__t { font-size: 13px; opacity: .6; margin-bottom: 6px; }
+    .avisohist__li { display: flex; gap: 10px; align-items: baseline; font-size: 13px; padding: 5px 0; border-top: 1px solid #21262d; }
+    .avisohist__f { flex: 0 0 auto; opacity: .55; font-variant-numeric: tabular-nums; }
+    .avisohist__x { flex: 1 1 auto; font-weight: 600; }
+    .avisohist__q { flex: 0 0 auto; opacity: .45; font-size: 12px; }
+    .avisohist__li.eshoy .avisohist__f { color: #e3b341; opacity: .9; }
     .contrato { display: inline-block; background: #21262d; border: 1px solid #30363d; border-radius: 999px; padding: 4px 12px; margin: 4px 6px 0 0; font-size: 13px; }
     /* Contratos en el modal: acá hay lugar para el detalle completo (todos los
        contratos, con importe del último pago), a diferencia de la tarjeta. */
@@ -259,6 +270,7 @@
           <div class="modal__acciones" id="m-acciones">
             <div class="avisos__t">Dejar aviso al socio</div>
             <div class="avisobtns" id="m-avisobtns"></div>
+            <div class="avisohist" id="m-avisohist"></div>
           </div>
         </div>
       </div>
@@ -561,10 +573,13 @@
         ? ("Voluntaria (" + ev.cuota_voluntaria + ")")
         : (ev.ult_cuota_paga ? fechaCorta(ev.ult_cuota_paga) : "—");
       document.getElementById("m-fecha").textContent = fechaHora(ev.fecha);
-      // Avisos rápidos para ESTE socio (solo si sabemos quién es).
+      // Avisos rápidos para ESTE socio (solo si sabemos quién es). Se parte de
+      // vacío: lo ya dado llega con el detalle, unas décimas después.
       var acciones = document.getElementById("m-acciones");
       acciones.style.display = ev.id_cliente ? "" : "none";
-      if (ev.id_cliente) renderAvisos(ev);
+      avisosHoy = [];
+      avisosUltimos = [];
+      if (ev.id_cliente) { renderAvisos(ev); document.getElementById("m-avisohist").innerHTML = ""; }
       document.getElementById("modal").classList.add("open");
       // Los contratos ya vienen en el evento: se pintan sin esperar al fetch.
       document.getElementById("m-contratos").innerHTML =
@@ -578,6 +593,7 @@
           if (d.ult_cuota_paga && !ev.cuota_voluntaria) document.getElementById("m-cuota").textContent = fechaCorta(d.ult_cuota_paga);
           // Los contratos NO se tocan acá: ya los pintó contratosModalHTML con el
           // detalle de pagos. Este endpoint solo completa DNI / categoría / cuota.
+          aplicarAvisos(d, ev);
         })
         .catch(function () { /* el resto del modal ya está pintado */ });
     }
@@ -669,16 +685,63 @@
       bs.push({ tipo: "pase_por_socios", txt: "Se indica pasar por oficina de socios", cls: "" });
       return bs;
     }
+    // Avisos ya dados: llegan con el detalle del socio, después de pintar el
+    // modal. Se guardan acá para poder repintar los botones cuando lleguen.
+    var avisosHoy = [];      // tipos que ya se le dejaron HOY
+    var avisosUltimos = [];  // los últimos 3, para mostrarlos debajo
+    function esDeHoy(iso) {
+      try {
+        var d = new Date(iso), h = new Date();
+        return d.getFullYear() === h.getFullYear() && d.getMonth() === h.getMonth() && d.getDate() === h.getDate();
+      } catch (e) { return false; }
+    }
     function renderAvisos(ev) {
       var cont = document.getElementById("m-avisobtns");
       cont.innerHTML = botonesAviso(ev).map(function (b) {
+        var yaHoy = avisosHoy.indexOf(b.tipo) !== -1;
         var cls = "avisobtn" + b.cls;
-        return '<button type="button" class="' + cls + '" data-cls="' + cls + '"' +
-               ' data-tipo="' + esc(b.tipo) + '" data-txt="' + esc(b.txt) + '">' + esc(b.txt) + '</button>';
+        return '<button type="button" class="' + cls + (yaHoy ? " hoy" : "") + '" data-cls="' + cls + '"' +
+               ' data-tipo="' + esc(b.tipo) + '" data-txt="' + esc(b.txt) + '"' +
+               (yaHoy ? " disabled" : "") + '>' +
+               (yaHoy ? "&#10003; Ya avisado hoy &middot; " + esc(b.txt) : esc(b.txt)) + '</button>';
       }).join("");
       Array.prototype.forEach.call(cont.querySelectorAll(".avisobtn"), function (btn) {
         btn.addEventListener("click", function () { enviarAviso(btn, ev.id_cliente); });
       });
+    }
+    function renderAvisoHist() {
+      var cont = document.getElementById("m-avisohist");
+      if (!avisosUltimos.length) {
+        cont.innerHTML = '<div class="avisohist__t">Sin avisos previos</div>';
+        return;
+      }
+      cont.innerHTML = '<div class="avisohist__t">Últimos avisos</div>' +
+        avisosUltimos.map(function (a) {
+          var hoyCls = esDeHoy(a.created_at) ? " eshoy" : "";
+          var cuando = esDeHoy(a.created_at) ? ("Hoy " + hora(a.created_at)) : fechaHora(a.created_at);
+          return '<div class="avisohist__li' + hoyCls + '">' +
+                 '<span class="avisohist__f">' + esc(cuando) + '</span>' +
+                 '<span class="avisohist__x">' + esc(a.texto) + '</span>' +
+                 '<span class="avisohist__q">' + esc(a.creado_por || "") + '</span></div>';
+        }).join("");
+    }
+    // El servidor manda la verdad (avisos + tipos de hoy) tanto en el detalle
+    // como en la respuesta de un alta: se repinta desde ahí y no se lleva cuenta
+    // aparte en el navegador.
+    function aplicarAvisos(d, ev) {
+      avisosUltimos = d.avisos || [];
+      avisosHoy = d.avisos_hoy || [];
+      renderAvisoHist();
+      if (ev && ev.id_cliente) renderAvisos(ev);
+    }
+    // Después de dejar un aviso sólo se repinta la lista: los botones ya los
+    // dejó como corresponde el propio handler del click, y repintarlos borraría
+    // el "✓" de confirmación que el operador necesita ver.
+    function aplicarAvisosDesde(d) {
+      if (!d) return;
+      if (d.avisos) avisosUltimos = d.avisos;
+      if (d.avisos_hoy) avisosHoy = d.avisos_hoy;
+      renderAvisoHist();
     }
     function enviarAviso(btn, idCliente) {
       // El texto sale de data-txt y no de textContent: si el envío falla, el botón
@@ -694,9 +757,20 @@
         body: JSON.stringify({ tipo: btn.getAttribute("data-tipo") })
       })
         .then(function (r) {
-          if (!r.ok) throw new Error(r.status);
-          btn.className = base + " hecho";
-          btn.textContent = "✓ " + original;
+          return r.json().catch(function () { return {}; }).then(function (d) {
+            // 409 = otra pantalla ya lo dejó hoy. No es un error a reintentar:
+            // el aviso está dado, así que el botón queda como tal.
+            if (r.status === 409) {
+              btn.className = base + " hoy";
+              btn.textContent = "✓ Ya avisado hoy · " + original;
+              aplicarAvisosDesde(d);
+              return;
+            }
+            if (!r.ok) throw new Error(r.status);
+            btn.className = base + " hecho";
+            btn.textContent = "✓ " + original;
+            aplicarAvisosDesde(d);
+          });
         })
         .catch(function () {
           // Se rehabilita para poder reintentar: el aviso no quedó registrado.

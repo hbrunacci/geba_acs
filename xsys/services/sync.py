@@ -48,6 +48,7 @@ SOCIO_COLUMNS: tuple[tuple[str, str], ...] = (
     ("Email", "email"),
     ("Activo", "activo"),
     ("Tipo_Persona", "tipo_persona"),
+    ("Id_Tipo_Cli", "id_tipo_cli"),
     ("Credencial_Nro", "credencial_nro"),
     ("Ult_Cuota_Paga", "ult_cuota_paga"),
     ("Id_Estado_Cliente", "id_estado_cliente"),

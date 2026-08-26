@@ -166,7 +166,26 @@ class SocioFotoAPI(APIView):
         nro = request.query_params.get("nro")
         thumb = request.query_params.get("thumb") in ("1", "true", "yes")
         qs = XsysSocioFoto.objects.filter(id_cliente=id_cliente)
-        foto = qs.filter(nro=nro).first() if nro else qs.order_by("nro").first()
+
+        # Primero SOLO los metadatos, sin traer el blob: una pantalla muestra una
+        # y otra vez las mismas caras, así que la enorme mayoría de los pedidos se
+        # puede resolver con un 304. Antes se leía la imagen entera de la base en
+        # cada request y las fotos competían con los polls del visor por los
+        # mismos workers; cuando no llegaban, la tarjeta quedaba sin cara.
+        meta = (qs.filter(nro=nro) if nro else qs.order_by("nro")).values(
+            "id", "sha256", "synced_at").first()
+        if meta is None:
+            return HttpResponse(status=status.HTTP_404_NOT_FOUND)
+
+        marca = meta["sha256"] or (meta["synced_at"].isoformat() if meta["synced_at"] else "0")
+        etag = '"%s-%s-%s"' % (meta["id"], marca[:16], "t" if thumb else "f")
+        if request.headers.get("If-None-Match") == etag:
+            resp = HttpResponse(status=304)
+            resp["ETag"] = etag
+            resp["Cache-Control"] = "private, max-age=86400"
+            return resp
+
+        foto = XsysSocioFoto.objects.filter(pk=meta["id"]).first()
         if foto is None or not foto.imagen:
             return HttpResponse(status=status.HTTP_404_NOT_FOUND)
 
@@ -185,7 +204,10 @@ class SocioFotoAPI(APIView):
             data = bytes(foto.imagen)  # fallback: imagen completa
 
         response = HttpResponse(data, content_type=_content_type(data))
-        response["Cache-Control"] = "private, max-age=300"
+        # Un día de caché, pero con ETag: la foto de un socio no cambia salvo que
+        # la reemplacen, y ahí cambia el sha256 y con él el ETag.
+        response["Cache-Control"] = "private, max-age=86400"
+        response["ETag"] = etag
         response["Content-Length"] = str(len(data))
         return response
 
@@ -200,17 +222,34 @@ def _pantalla_token(request) -> str:
     return (request.META.get("HTTP_X_PANTALLA_TOKEN", "") or "").strip()[:64]
 
 
+# Cada cuánto se anota que una pantalla sigue viva. El visor sondea 2 veces por
+# segundo: escribir en cada poll eran 3 queries y un UPDATE por request, o sea
+# ~16 escrituras por segundo sobre la misma tabla con 8 pantallas, sólo para
+# refrescar un "last_seen" que nadie mira al segundo.
+_LATIDO_PANTALLA_SEG = 30
+
+
 def _registrar_pantalla(request) -> PantallaPuerta | None:
     """Upsert de la pantalla por token; None si no vino token."""
     token = _pantalla_token(request)
     if not token:
         return None
-    ua = (request.META.get("HTTP_USER_AGENT", "") or "")[:255]
-    pantalla, _ = PantallaPuerta.objects.get_or_create(token=token)
-    PantallaPuerta.objects.filter(pk=pantalla.pk).update(
-        last_seen=timezone.now(), user_agent=ua, ip=_client_ip(request)
+    pantalla, creada = PantallaPuerta.objects.get_or_create(token=token)
+    ahora = timezone.now()
+    vencido = (
+        creada
+        or pantalla.last_seen is None
+        or (ahora - pantalla.last_seen).total_seconds() >= _LATIDO_PANTALLA_SEG
     )
-    pantalla.refresh_from_db()
+    if vencido:
+        ua = (request.META.get("HTTP_USER_AGENT", "") or "")[:255]
+        ip = _client_ip(request)
+        PantallaPuerta.objects.filter(pk=pantalla.pk).update(
+            last_seen=ahora, user_agent=ua, ip=ip
+        )
+        # Se actualiza en memoria en vez de releer: ``get_or_create`` ya trajo la
+        # fila completa y el ``refresh_from_db`` era una tercera query por poll.
+        pantalla.last_seen, pantalla.user_agent, pantalla.ip = ahora, ua, ip
     return pantalla
 
 
@@ -279,19 +318,56 @@ def _tipo_lectura(id_controlador, controladores: dict) -> str:
 # pueden deber, pero nunca están "con la cuota vencida". Se toma del motivo con el
 # que xSys los habilita en vez de una lista de categorías, para no quedar
 # desactualizado cuando el club agregue una.
-_MOTIVOS_SIN_CUOTA = {202, 205}
+_MOTIVOS_SIN_CUOTA = {202, 204, 205}
+
+# Categorías (Clientes.Id_Tipo_Cli) que directamente NO tienen cuota social que
+# pagar: concesionarios, alumnos y docentes del instituto, profesores,
+# proveedores, visitas y no socios. A ellos "Cuota Vencida" es siempre un falso
+# positivo, entren o no: su habilitación sale del contrato o del producto, no de
+# la cuota. Va por id y no por descripción porque el id es lo que usa xSys en
+# CD_Accesos_Cli_Tipos y la descripción la renombran.
+#
+# NO están acá a propósito: EMPLEADO (1006), que sí registra cuota en el 99% de
+# los casos y además ya queda exento por el motivo 205, e INVITADOS (1018) y
+# BICICLETA (1134), que son otro tipo de caso.
+_CATEGORIAS_SIN_CUOTA = {
+    1015,  # CONCESIONARIO
+    1103,  # NO SOCIO
+    1113,  # VISITA
+    1127,  # ALUMNO IGSM
+    1131,  # PROFESORES
+    1132,  # PROVEEDORES
+    1135,  # DOCENTE IGSM
+}
 
 
-def _cuota_no_aplica(cids) -> dict[int, str]:
-    """{id_cliente: detalle} de los socios cuya cuota social es voluntaria."""
+def _cuota_no_aplica(cids, socios: dict | None = None) -> dict[int, str]:
+    """{id_cliente: detalle} de los socios cuya cuota social es voluntaria.
+
+    Dos caminos, porque cubren casos distintos:
+
+    - Por **motivo** de habilitación (master, contrato, categoría): sólo aplica a
+      quien la whitelist tiene como habilitado.
+    - Por **categoría**: aplica también al rechazado. Un concesionario sin
+      contrato vigente no tiene fila habilitada, así que sin esto caía en el
+      ``else`` genérico y el visor lo marcaba "Cuota Vencida" — una cuota que no
+      existe. El motivo real del rechazo lo pone xSys.
+    """
     from xsys.models import XsysWhitelist
 
-    return {
+    exentos = {
         w.id_cliente: (w.detalle or w.motivo or "")
         for w in XsysWhitelist.objects.filter(
             id_cliente__in=cids, habilitado=True, motivo_code__in=_MOTIVOS_SIN_CUOTA)
         .only("id_cliente", "motivo", "detalle")
     }
+    for cid, socio in (socios or {}).items():
+        if socio is not None and socio.id_tipo_cli in _CATEGORIAS_SIN_CUOTA:
+            exentos.setdefault(cid, socio.categoria or "sin cuota social")
+    return exentos
+
+
+_BARRERAS_CACHE: tuple[float, set[int]] = (0.0, set())
 
 
 def _accesos_barrera() -> set[int]:
@@ -301,13 +377,23 @@ def _accesos_barrera() -> set[int]:
     justamente los que tienen ``Flag_Ult_Cuota_Paga`` distinto de 0 (son los
     únicos que gatean por cuota).
     """
+    global _BARRERAS_CACHE
+    import time as _t
+
     from xsys.models import XsysAcceso
 
-    return set(
+    # Se cachea 5 minutos: son 27 filas que no cambian nunca, y el visor pedía
+    # esta lista 16 veces por segundo entre todas las pantallas.
+    ahora = _t.monotonic()
+    if _BARRERAS_CACHE[1] and (ahora - _BARRERAS_CACHE[0]) < 300:
+        return _BARRERAS_CACHE[1]
+    valor = set(
         XsysAcceso.objects.exclude(flag_ult_cuota_paga=0)
         .exclude(flag_ult_cuota_paga=None)
         .values_list("id_acceso", flat=True)
     )
+    _BARRERAS_CACHE = (ahora, valor)
+    return valor
 
 
 def _ingresos_hoy_por_habilitacion(eventos, barreras: set[int]) -> dict[tuple, int]:
@@ -369,7 +455,10 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         mensaje = "Acceso Concedido"
     else:
         estado = "no"
-        mensaje = "Chequear Oficina de Socios"
+        # Al que no paga cuota, el genérico no le dice nada al de la puerta: el
+        # motivo de xSys ("contrato vencido", "no cumple ninguna condición") sí.
+        mensaje = (mensaje_original if exento and mensaje_original
+                   else "Chequear Oficina de Socios")
 
     # La credencial ya estaba reservada en otro molinete: prevalece sobre
     # cualquier otro mensaje, porque es el motivo por el que no debe pasar.
@@ -534,6 +623,35 @@ def _columnas_de_puerta(door: AccessDoor) -> list[dict]:
     return cols
 
 
+def _firma_estado(cols_def, dia) -> str:
+    """Firma barata del estado de una puerta para un día.
+
+    Cambia cuando entra un movimiento nuevo (por cualquiera de las dos fuentes),
+    cuando se deja un aviso a un socio o cuando cambia el visor. Incluye además
+    una ventana de 30 s para que los datos que no dependen de un evento —deuda,
+    cuota, contratos— no queden congelados indefinidamente en pantalla.
+    """
+    import time as _t
+
+    from django.db.models import Max
+
+    ctrls = [c for cd in cols_def for c in cd["controladores"]]
+    devs = [d for cd in cols_def for d in (cd.get("biostar_devices") or [])]
+
+    max_cdes = (
+        ExternalAccessLogEntry.objects.filter(id_controlador__in=ctrls, tipo="E", fecha__date=dia)
+        .aggregate(m=Max("external_id"))["m"] if ctrls else None
+    )
+    max_bio = (
+        BiostarAccessEvent.objects.filter(device_id__in=devs, synced_at__date=dia)
+        .aggregate(m=Max("id"))["m"] if devs else None
+    )
+    max_aviso = SocioAviso.objects.aggregate(m=Max("id"))["m"]
+    ventana = int(_t.time() // 30)
+    return '"%s-%s-%s-%s-%s-%s"' % (
+        _version_visor(), dia.isoformat(), max_cdes or 0, max_bio or 0, max_aviso or 0, ventana)
+
+
 class PuertaEstadoAPI(APIView):
     """GET /api/xsys/puerta/estado/ → estado por columna (una por molinete de la puerta).
 
@@ -565,6 +683,19 @@ class PuertaEstadoAPI(APIView):
         # vacías). Se acota acá y no en el navegador para que no dependa de lo que
         # mande la pantalla.
         dia, minimo, hoy = _dia_pedido(request)
+
+        # --- Respuesta condicional -------------------------------------------
+        # Las pantallas sondean 2 veces por segundo y casi siempre no pasó nada:
+        # armar la respuesta entera (21 queries) para devolver lo mismo era lo que
+        # saturaba los workers y dejaba a las fotos sin atender. Se calcula una
+        # firma barata (2 agregados) y, si no cambió, se contesta 304: el
+        # navegador reusa el cuerpo que ya tiene y el visor ni se entera.
+        firma = _firma_estado(cols_def, dia)
+        if request.headers.get("If-None-Match") == firma:
+            resp = Response(status=status.HTTP_304_NOT_MODIFIED)
+            resp["ETag"] = firma
+            resp["Cache-Control"] = "no-cache"
+            return resp
 
         # Por columna: eventos xSys (por controlador) + accesos faciales BioStar
         # (por device). Los faciales son la única fuente con identidad por-equipo.
@@ -619,10 +750,15 @@ class PuertaEstadoAPI(APIView):
         # Contratos vigentes + último pago de cada uno (una sola query al espejo).
         contratos_por_socio = contratos_svc.resumen_por_socio(cids)
         # Barreras: se muestra cuántas veces entró hoy con la misma habilitación.
-        sin_cuota = _cuota_no_aplica(cids)
+        sin_cuota = _cuota_no_aplica(cids, socios)
         barreras = _accesos_barrera()
         todos_xsys = [e for col in xsys_por_col for e in col]
-        ingresos_hoy = _ingresos_hoy_por_habilitacion(todos_xsys, barreras)
+        # Sólo se calcula si esta puerta realmente tiene accesos de barrera: en
+        # los molinetes peatonales (la mayoría) era una query por poll para nada.
+        ingresos_hoy = (
+            _ingresos_hoy_por_habilitacion(todos_xsys, barreras)
+            if any(e.id_acceso in barreras for e in todos_xsys) else {}
+        )
 
         columnas = []
         for cd, xs, fx in zip(cols_def, xsys_por_col, facial_por_col):
@@ -641,7 +777,7 @@ class PuertaEstadoAPI(APIView):
                 "ultimo": payloads[0] if payloads else None,
                 "historial": payloads[1:],
             })
-        return Response({
+        respuesta = Response({
             "configurada": True,
             "ip": pantalla.ip,
             "nombre": pantalla.nombre or door.name,
@@ -655,6 +791,9 @@ class PuertaEstadoAPI(APIView):
             "dia_min": minimo.isoformat(),
             "dia_max": hoy.isoformat(),
         })
+        respuesta["ETag"] = firma
+        respuesta["Cache-Control"] = "no-cache"   # revalidar siempre, pero barato
+        return respuesta
 
 
 class AccesosBuscarAPI(APIView):
@@ -1074,6 +1213,38 @@ class MolinetesAutoAPI(_ConfigPuertasAPIView):
         return Response({"creados": creados})
 
 
+# Cuántos avisos previos se muestran en el modal del visor. Son pantallas chicas
+# y el operador necesita saber si ya se le dijo algo, no el historial completo
+# (ese está en /avisos/).
+AVISOS_EN_MODAL = 3
+
+
+def _avisos_recientes(id_cliente: int, limite: int = AVISOS_EN_MODAL) -> list[dict]:
+    return [
+        {
+            "tipo": a.tipo,
+            "texto": a.texto,
+            "creado_por": a.creado_por,
+            "created_at": a.created_at.isoformat(),
+        }
+        for a in SocioAviso.objects.filter(id_cliente=id_cliente)
+        .order_by("-created_at")[:limite]
+    ]
+
+
+def _tipos_avisados_hoy(id_cliente: int) -> list[str]:
+    """Tipos de aviso que este socio ya recibió HOY.
+
+    El día es el del club (``TIME_ZONE`` es Buenos Aires y ``USE_TZ`` está en
+    True, así que ``localdate`` no arrastra el UTC del contenedor).
+    """
+    return list(
+        SocioAviso.objects.filter(id_cliente=id_cliente, created_at__date=timezone.localdate())
+        .values_list("tipo", flat=True)
+        .distinct()
+    )
+
+
 class PantallaAvisoAPI(APIView):
     """POST /api/xsys/socios/<id_cliente>/aviso/ → deja un aviso desde el monitor.
 
@@ -1098,6 +1269,19 @@ class PantallaAvisoAPI(APIView):
                 {"detail": f"Tipo de aviso desconocido: {tipo!r}."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # Un aviso por tipo y por día: el socio pasa varias veces y por varios
+        # molinetes, y sin esto juntaba el mismo aviso repetido. Se valida acá y
+        # no sólo en el botón porque hay una pantalla por puerta: dos operadores
+        # pueden estar mirando al mismo socio a la vez.
+        if SocioAviso.objects.filter(
+            id_cliente=id_cliente, tipo=tipo, created_at__date=timezone.localdate()
+        ).exists():
+            return Response(
+                {"detail": "Ya se le dejó este aviso hoy.", "code": "duplicado_hoy",
+                 "avisos": _avisos_recientes(id_cliente),
+                 "avisos_hoy": _tipos_avisados_hoy(id_cliente)},
+                status=status.HTTP_409_CONFLICT,
+            )
         # Se identifica la pantalla que lo dejó, que es lo único que se sabe del
         # operador en un kiosco sin login.
         origen = (pantalla.nombre or (pantalla.door.name if pantalla.door else "") or "monitor")
@@ -1107,7 +1291,9 @@ class PantallaAvisoAPI(APIView):
         )
         return Response(
             {"id": aviso.id, "tipo": aviso.tipo, "texto": aviso.texto,
-             "created_at": aviso.created_at.isoformat()},
+             "created_at": aviso.created_at.isoformat(),
+             "avisos": _avisos_recientes(id_cliente),
+             "avisos_hoy": _tipos_avisados_hoy(id_cliente)},
             status=status.HTTP_201_CREATED,
         )
 
@@ -1142,4 +1328,6 @@ class SocioDetalleAPI(APIView):
             "ult_cuota_paga": (socio.ult_cuota_paga.isoformat() if socio and socio.ult_cuota_paga else None),
             "foto_url": f"/api/xsys/socios/{id_cliente}/foto/" if tiene_foto else None,
             "contratos": contratos,
+            "avisos": _avisos_recientes(id_cliente),
+            "avisos_hoy": _tipos_avisados_hoy(id_cliente),
         })

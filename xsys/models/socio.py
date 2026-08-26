@@ -18,6 +18,10 @@ class XsysSocio(models.Model):
     activo = models.SmallIntegerField(null=True, blank=True, db_index=True)
     tipo_persona = models.CharField(max_length=1, blank=True, default="")
     categoria = models.CharField(max_length=100, blank=True, default="")
+    # Id de la categoría (Clientes.Id_Tipo_Cli). Se espeja además de la
+    # descripción porque hay reglas que dependen de la categoría (p.ej. quiénes
+    # no pagan cuota social) y el id es estable: la descripción la renombran.
+    id_tipo_cli = models.IntegerField(null=True, blank=True, db_index=True)
     credencial_nro = models.CharField(max_length=30, blank=True, default="", db_index=True)
     ult_cuota_paga = models.DateTimeField(null=True, blank=True)
     id_estado_cliente = models.SmallIntegerField(null=True, blank=True)
