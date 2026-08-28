@@ -727,8 +727,14 @@ class XsysSyncService:
             from access_control.services import paso_pendiente as pp
 
             mapa = pp.mapa_molinetes()
+            # Los pasos por facial ya los registra BioStar con su equipo real;
+            # el evento que xSys emite por el controlador puente es el MISMO
+            # cruce y hay que saltearlo, o los dos chocan entre sí.
+            puentes = pp.controladores_puente()
             for o in sorted(objs, key=lambda x: x.external_id):
                 if not o.id_cliente:
+                    continue
+                if o.id_controlador in puentes:
                     continue
                 molinete = pp.resolver_molinete(mapa, id_controlador=o.id_controlador)
                 o.conflicto_molinete = pp.evaluar(

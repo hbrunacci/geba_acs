@@ -73,6 +73,34 @@ def antipassback_minutos() -> int:
         return ANTIPASSBACK_MINUTOS_DEFAULT
 
 
+# ------------------------------------------------------- puentes de BioStar
+# Tipos de controlador de xSys que NO son un molinete físico sino el puente por
+# el que un facial le avisa a xSys que alguien pasó ('F' facial, 'W' su variante).
+_TIPOS_PUENTE = ("F", "W")
+
+
+def controladores_puente() -> set[int]:
+    """Controladores de xSys que sólo replican pasos de los faciales.
+
+    Un cruce por facial se registra DOS veces: lo manda BioStar (con su equipo) y
+    lo manda xSys por este controlador. Son el mismo cruce, así que el de xSys no
+    puede generar paso pendiente propio: si lo hiciera, chocaría contra el del
+    facial y marcaría conflicto a todo el mundo.
+
+    Y no alcanza con mapearlos a una columna: medido sobre 3 días, los CINCO
+    equipos faciales del club reportan por el MISMO controlador (68, "Sup BioStar
+    API Alcorta"), así que no hay columna a la que asignarlo sin mentir en las
+    otras cuatro. Se los excluye de la regla, que es lo exacto: el paso ya quedó
+    registrado por el lado del facial, con su equipo real.
+    """
+    from xsys.models import XsysControlador
+
+    return set(
+        XsysControlador.objects.filter(tipo_cont__in=_TIPOS_PUENTE)
+        .values_list("id_controlador", flat=True)
+    )
+
+
 # --------------------------------------------------------------- molinetes
 def mapa_molinetes() -> dict[str, dict]:
     """Índice ``origen -> molinete`` para ubicar en qué columna cae un evento.
