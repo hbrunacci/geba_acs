@@ -43,6 +43,18 @@ $principal = New-ScheduledTaskPrincipal `
     -LogonType S4U `
     -RunLevel Highest
 
+# Sin esto el script mentía: Register-ScheduledTask devuelve el "Acceso denegado"
+# como error NO terminante de CIM, así que $ErrorActionPreference = 'Stop' no lo
+# frena y se imprimía "Tarea registrada" con la tarea sin registrar. Se avisa
+# antes de intentar, y se comprueba después contra el Programador de tareas.
+$identidad = [Security.Principal.WindowsIdentity]::GetCurrent()
+$esAdmin = (New-Object Security.Principal.WindowsPrincipal($identidad)).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $esAdmin) {
+    throw ("Hay que correr esto en una PowerShell COMO ADMINISTRADOR: registrar " +
+           "una tarea S4U lo exige. Usuario actual: " + $identidad.Name)
+}
+
 Register-ScheduledTask `
     -TaskName $TaskName `
     -Action $action `
@@ -51,6 +63,10 @@ Register-ScheduledTask `
     -Principal $principal `
     -Description "Cada $IntervalMinutes min chequea que el visor responda en el puerto 80; si no, lo levanta con docker compose y avisa por mail." `
     -Force | Out-Null
+
+if (-not (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)) {
+    throw "Register-ScheduledTask no dejó la tarea '$TaskName' creada. Revisar el error de arriba."
+}
 
 Write-Host "Tarea '$TaskName' registrada. Corre cada $IntervalMinutes minutos."
 Write-Host "Ver estado:   Get-ScheduledTask -TaskName '$TaskName' | Get-ScheduledTaskInfo"
