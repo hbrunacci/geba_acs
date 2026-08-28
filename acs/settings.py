@@ -240,6 +240,10 @@ MSSQL_XSYS = {
     "WHITELIST_BATCH_PAUSE": _get_float_env("MSSQL_XSYS_WHITELIST_BATCH_PAUSE", 0.15),
 }
 
-# Días de vencimiento de la cuota (gracia). El estatuto bloquea al acumular 2
-# cuotas impagas; este es el período de gracia dentro del mes (ej: 1 al 10 → 10).
-XSYS_CUOTA_DIAS_VENCIMIENTO = _get_int_env("XSYS_CUOTA_DIAS_VENCIMIENTO", 10)
+# Gracia de la cuota para el visor. Tiene que coincidir con Dias_Gracia y
+# Meses_Gracia de CD_Accesos en los accesos que exigen cuota, porque
+# xsys/services/cuota.py replica la fórmula de CF_SCA_ValidarUltCuotaPaga: fin
+# del mes pagado (+ meses) + días. Hoy los cuatro accesos de auto/Noble están en
+# 0 meses y 40 días.
+XSYS_CUOTA_DIAS_GRACIA = _get_int_env("XSYS_CUOTA_DIAS_GRACIA", 40)
+XSYS_CUOTA_MESES_GRACIA = _get_int_env("XSYS_CUOTA_MESES_GRACIA", 0)

@@ -77,6 +77,9 @@
           </li>
           {% endif %}
           {% if nav_can_puertas %}
+          <li class="nav__item{% if current_url == 'xsys_diagnostico' %} nav__item--active{% endif %}">
+            <a href="{% url 'xsys_diagnostico' %}">¿Por qué no entra?</a>
+          </li>
           <li class="nav__item{% if current_url == 'xsys_molinetes_config' %} nav__item--active{% endif %}">
             <a href="{% url 'xsys_molinetes_config' %}">Molinetes por puerta</a>
           </li>

@@ -5,6 +5,7 @@ from xsys.api_views import (
     AccesosBuscarAPI,
     BiostarDevicesCatalogAPI,
     ControladoresXsysAPI,
+    DiagnosticoAccesoAPI,
     MolineteConfigDetailAPI,
     MolinetesAutoAPI,
     MolinetesConfigAPI,
@@ -24,6 +25,7 @@ from xsys.api_views import (
 
 urlpatterns = [
     path("xsys/acceso/", AccesoResolverAPI.as_view(), name="xsys_acceso_api"),
+    path("xsys/diagnostico/", DiagnosticoAccesoAPI.as_view(), name="xsys_diagnostico_api"),
     path("xsys/puertas/", PuertasListAPI.as_view(), name="xsys_puertas_api"),
     path("xsys/puerta/estado/", PuertaEstadoAPI.as_view(), name="xsys_puerta_estado_api"),
     path("xsys/accesos/buscar/", AccesosBuscarAPI.as_view(), name="xsys_accesos_buscar_api"),

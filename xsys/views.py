@@ -32,6 +32,16 @@ def xsys_puerta_monitor(request):
 
 
 @puertas_requerido
+def xsys_diagnostico(request):
+    """"¿Por qué no entra?": el diagnóstico completo de una persona.
+
+    Va con el rol de puertas, no sólo admin, porque el que necesita la respuesta
+    es el que tiene la fila esperando.
+    """
+    return render(request, "xsys/diagnostico.html")
+
+
+@puertas_requerido
 def xsys_molinetes_config(request):
     """Administración de molinetes (columnas) por puerta."""
     return render(request, "xsys/molinetes_config.html")

@@ -132,6 +132,141 @@ class PuertaMonitorTests(TestCase):
         self.assertTrue(ev["cuota_al_dia"])
         self.assertEqual(ev["mensaje"], "Chequear Oficina de Socios")
 
+    # ----------------------------------------------------- cochera en barrera --
+
+    def _ev_barrera(self, id_es, observacion, id_acceso=18):
+        XsysAcceso.objects.get_or_create(
+            id_acceso=id_acceso,
+            defaults={"descripcion": "San Martin Auto", "activo": 1, "flag_ult_cuota_paga": 2},
+        )
+        XsysControlador.objects.get_or_create(
+            id_controlador=67, defaults={"id_acceso": id_acceso, "descripcion": "Barrera",
+                                         "tipo_cont": "K", "activo": 1})
+        DoorController.objects.get_or_create(door=self.door, id_controlador=67, defaults={"orden": 9})
+        return ExternalAccessLogEntry.objects.create(
+            external_id=id_es, tipo="E", id_cliente=944426, fecha=timezone.now(),
+            resultado="S", id_acceso=id_acceso, id_controlador=67,
+            observacion=observacion,
+        )
+
+    def test_barrera_muestra_la_cochera(self):
+        """En una barrera el producto que habilita ES la cochera: el de la puerta
+        necesita verla. Caso real: SROUR entra con la del titular."""
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        self._ev_barrera(9400, "Habilit. por Produc. Comprado por Titular COCHERA OMBUES VIP Nro.17")
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        ev = next(c for c in d["columnas"] if 67 in c["controladores"])["ultimo"]
+        self.assertTrue(ev["es_barrera"])
+        self.assertEqual(ev["cochera"], "COCHERA OMBUES VIP Nro.17")
+
+    def test_barrera_cochera_propia(self):
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        self._ev_barrera(9401, "Habilit. por Produc. Comprado COCHERA MENSUAL NOBLE Nro. 83")
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        ev = next(c for c in d["columnas"] if 67 in c["controladores"])["ultimo"]
+        self.assertEqual(ev["cochera"], "COCHERA MENSUAL NOBLE Nro. 83")
+        # El número, separado: es lo que se muestra primero y grande.
+        self.assertEqual(ev["cochera_nro"], "83")
+        self.assertEqual(ev["cochera_nombre"], "MENSUAL NOBLE")
+
+    def test_barrera_sin_producto_no_inventa_cochera(self):
+        """Entró por otra vía (master, contrato): no hay cochera que mostrar."""
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        self._ev_barrera(9402, "Acceso Master___")
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        ev = next(c for c in d["columnas"] if 67 in c["controladores"])["ultimo"]
+        self.assertEqual(ev["cochera"], "")
+
+    def test_molinete_peatonal_no_muestra_cochera(self):
+        """Ahí el producto es CUOTA SOCIAL y no aporta nada."""
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        ExternalAccessLogEntry.objects.create(
+            external_id=9403, tipo="E", id_cliente=944426, fecha=timezone.now(),
+            resultado="S", id_acceso=14, id_controlador=59,
+            observacion="Habilit. por Produc. Comprado CUOTA SOCIAL",
+        )
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        ev = next(c for c in d["columnas"] if 59 in c["controladores"])["ultimo"]
+        self.assertFalse(ev["es_barrera"])
+        self.assertEqual(ev["cochera"], "")
+
+    def test_partes_de_cochera(self):
+        """Los nombres reales del maestro de productos: el separador es
+        irregular ("Nro.17", "Nro. 83"), hay puntos finales de más y un "Bis"."""
+        from xsys.api_views import partes_cochera
+        casos = {
+            "COCHERA OMBUES VIP Nro.17": ("17", "OMBUES VIP"),
+            "COCHERA MENSUAL NOBLE Nro. 83": ("83", "MENSUAL NOBLE"),
+            "COCHERA NOBLE VIP Nro.1.": ("1", "NOBLE VIP"),
+            "COCHERA MENSUAL CALLE INTER Nro. 112.": ("112", "MENSUAL CALLE INTER"),
+            "COCHERA OMBUES VIP Nro.14 Bis": ("14 Bis", "OMBUES VIP"),
+            "COCHERA MENSUAL CALLE INTER PRUEBAS Nro. 0": ("0", "MENSUAL CALLE INTER PRUEBAS"),
+            # Sin "Nro." no se inventa número: queda todo como nombre.
+            "COCHERA ESPECIAL": ("", "ESPECIAL"),
+            "": ("", ""),
+        }
+        for texto, esperado in casos.items():
+            with self.subTest(texto=texto):
+                self.assertEqual(partes_cochera(texto), esperado)
+
+    # ------------------------------------------- lecturas sin persona detrás --
+
+    def _ev_anonimo(self, id_es, id_controlador, id_tarjeta, observacion, motivo=None):
+        """Evento con Id_Cliente = 0: xSys no reconoció lo que se leyó."""
+        return ExternalAccessLogEntry.objects.create(
+            external_id=id_es, tipo="E", id_cliente=0, fecha=timezone.now(),
+            resultado="E", id_acceso=14, id_controlador=id_controlador,
+            id_cd_motivo=motivo, observacion=observacion, id_tarjeta=id_tarjeta,
+        )
+
+    def test_documento_no_registrado(self):
+        """Caso real: alguien teclea un DNI que no está cargado en xSys.
+
+        Antes decía "Cuota Vencida" — una cuota que no existe, de una persona que
+        tampoco — y le tapaba al operador el motivo verdadero.
+        """
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        self._ev_anonimo(9300, 59, "47382733", "La Persona es inválida")
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        ev = next(c for c in d["columnas"] if 59 in c["controladores"])["ultimo"]
+        self.assertEqual(ev["mensaje"], "Documento no registrado: 47382733")
+        self.assertEqual(ev["estado"], "no")
+        self.assertEqual(ev["nombre"], "")
+
+    def test_credencial_no_registrada(self):
+        """Una tarjeta (hexadecimal) no se anuncia como documento."""
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        self._ev_anonimo(9301, 59, "0F01B649", "La Persona es inválida")
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        ev = next(c for c in d["columnas"] if 59 in c["controladores"])["ultimo"]
+        self.assertEqual(ev["mensaje"], "Credencial no registrada: 0F01B649")
+
+    def test_lectura_sin_tag(self):
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        self._ev_anonimo(9302, 59, "", "La Persona es inválida")
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        ev = next(c for c in d["columnas"] if 59 in c["controladores"])["ultimo"]
+        self.assertEqual(ev["mensaje"], "Lectura no reconocida")
+
+    def test_socio_que_xsys_conoce_pero_falta_en_el_espejo(self):
+        """Distinto del anterior: acá xSys SÍ identificó a la persona (un socio
+        dado de baja, que el espejo no replica). Su motivo es exacto y se respeta,
+        no se lo reemplaza por "no registrado".
+
+        El id es inexistente a propósito: con uno real, el visor dispara la
+        búsqueda en segundo plano contra xSys y esa escritura queda FUERA de la
+        transacción del test, ensuciando la base para los que corren después.
+        """
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        ExternalAccessLogEntry.objects.create(
+            external_id=9303, tipo="E", id_cliente=999999001, fecha=timezone.now(),
+            resultado="E", id_acceso=14, id_controlador=59,
+            observacion="PERSONA DESACT. CAMPITELLI FERNANDEZ ANA", id_tarjeta="00000000",
+        )
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        ev = next(c for c in d["columnas"] if 59 in c["controladores"])["ultimo"]
+        self.assertEqual(ev["mensaje"], "PERSONA DESACT. CAMPITELLI FERNANDEZ ANA")
+
     def test_estado_molinete_agrupa_controladores(self):
         # Columna "Molinete 1" agrupa el molinete 59 + su facial 90
         DoorTurnstileGroup.objects.create(door=self.door, nombre="Molinete 1", id_controladores=[59, 90], orden=0)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import logging
+import re
 from pathlib import Path
 
 from django.http import HttpResponse
@@ -36,6 +38,9 @@ from xsys.services import contratos as contratos_svc
 from xsys.services import foto_fetch
 from xsys.services.access import resolver_acceso, resolver_socio
 from xsys.services.cuota import cuota_al_dia
+from xsys.services.diagnostico import diagnosticar
+
+logger = logging.getLogger(__name__)
 
 
 def _client_ip(request) -> str:
@@ -327,11 +332,11 @@ _MOTIVOS_SIN_CUOTA = {202, 204, 205}
 # la cuota. Va por id y no por descripción porque el id es lo que usa xSys en
 # CD_Accesos_Cli_Tipos y la descripción la renombran.
 #
-# NO están acá a propósito: EMPLEADO (1006), que sí registra cuota en el 99% de
-# los casos y además ya queda exento por el motivo 205, e INVITADOS (1018) y
-# BICICLETA (1134), que son otro tipo de caso.
+# NO está acá a propósito: EMPLEADO (1006), que sí registra cuota en el 99% de
+# los casos y además ya queda exento por el motivo 205.
 _CATEGORIAS_SIN_CUOTA = {
     1015,  # CONCESIONARIO
+    1018,  # INVITADOS
     1103,  # NO SOCIO
     1113,  # VISITA
     1127,  # ALUMNO IGSM
@@ -426,6 +431,73 @@ def _ingresos_hoy_por_habilitacion(eventos, barreras: set[int]) -> dict[tuple, i
     return {c: cuenta.get(c, 0) for c in claves}
 
 
+# Prefijos con que xSys arma la observación cuando habilita por producto. Lo que
+# viene después es el nombre del producto y, en las barreras, ese producto ES la
+# cochera ("COCHERA OMBUES VIP Nro.17"). El más largo va primero: "por Titular"
+# empieza igual que el otro y si no, nunca matchearía.
+_PREFIJOS_PRODUCTO = (
+    "Habilit. por Produc. Comprado por Titular ",
+    "Habilit. por Produc. Comprado ",
+)
+
+
+# "Nro.17", "Nro. 83", "Nro.14 Bis": el separador es igual de irregular en todo
+# el maestro de productos, así que se parte por ahí en vez de confiar en el
+# formato.
+_RE_COCHERA_NRO = re.compile(r"\bNro\.?\s*", re.IGNORECASE)
+
+
+def partes_cochera(descripcion: str) -> tuple[str, str]:
+    """('17', 'OMBUES VIP') a partir de 'COCHERA OMBUES VIP Nro.17'.
+
+    El número es EL dato: es lo que el de la barrera necesita para saber a dónde
+    mandar el auto, y en la descripción completa queda al final y perdido entre
+    palabras que se repiten en todas ("COCHERA", "MENSUAL", "Nro."). Se devuelve
+    separado para poder mostrarlo primero y grande.
+    """
+    txt = (descripcion or "").strip()
+    if not txt:
+        return "", ""
+    partes = _RE_COCHERA_NRO.split(txt, 1)
+    nombre = partes[0].strip()
+    # El punto final es ruido de carga: "Nro.1." y "Nro. 112." existen así.
+    numero = partes[1].strip().rstrip(".").strip() if len(partes) > 1 else ""
+    if nombre.upper().startswith("COCHERA "):
+        nombre = nombre[len("COCHERA "):].strip()
+    return numero, nombre
+
+
+def _cochera_de(ev) -> str:
+    """Cochera con la que entró, sacada de la observación de xSys.
+
+    No se puede usar ``mensaje_original``: ese prefiere el texto de pantalla del
+    motivo, que es genérico ("Habilit. por Produc. Comprado") y justamente pierde
+    el nombre del producto. La observación cruda sí lo trae.
+    """
+    obs = (ev.observacion or "").strip()
+    for prefijo in _PREFIJOS_PRODUCTO:
+        if obs.startswith(prefijo):
+            return obs[len(prefijo):].strip()
+    return ""
+
+
+def _mensaje_no_registrado(id_tarjeta: str) -> str:
+    """Mensaje para la lectura que no corresponde a ninguna persona.
+
+    xSys dice "La Persona es inválida", que al de la puerta no le sirve: suena a
+    que la persona está mal y en realidad lo que pasa es que ese documento o esa
+    credencial no están cargados. Se distingue por la forma de lo leído —los
+    documentos son numéricos y las credenciales, hexadecimales— y se muestra el
+    número para que el operador pueda decírselo a quien está enfrente.
+    """
+    tag = (id_tarjeta or "").strip()
+    if not tag:
+        return "Lectura no reconocida"
+    if tag.isdigit():
+        return f"Documento no registrado: {tag}"
+    return f"Credencial no registrada: {tag}"
+
+
 def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None, sin_cuota: dict | None = None) -> dict:
     socio = socios.get(ev.id_cliente)
     tiene_foto = ev.id_cliente in fotos
@@ -442,7 +514,19 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
     # Para quien entra por su categoría la cuota social es voluntaria: marcarle
     # "Cuota Vencida" era un falso positivo (su deuda se ve en los contratos).
     exento = (sin_cuota or {}).get(ev.id_cliente)
-    al_dia = True if exento else (cuota_al_dia(socio.ult_cuota_paga) if socio else False)
+    # Sin socio no hay cuota que juzgar, y hay DOS motivos distintos para que
+    # falte, que no significan lo mismo:
+    #   - id_cliente = 0: xSys no reconoció lo que se leyó. No existe esa
+    #     persona; lo que corresponde es decir que el documento/credencial no
+    #     está registrado.
+    #   - id_cliente > 0 pero no está en el espejo: xSys sí la conoce (p. ej. un
+    #     socio dado de baja, que el espejo no replica). Ahí el motivo de xSys
+    #     —"PERSONA DESACT. ..."— es exacto y se muestra tal cual.
+    # En los dos casos "Cuota Vencida" es inventarle un motivo que no existe.
+    no_registrado = not ev.id_cliente
+    sin_identificar = socio is None
+    al_dia = (True if (exento or sin_identificar)
+              else cuota_al_dia(socio.ult_cuota_paga))
     if permitido and not al_dia:
         # Anomalía: xSys dejó pasar pero la cuota está vencida -> alertar al operador.
         estado = "anomalia"
@@ -457,8 +541,12 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         estado = "no"
         # Al que no paga cuota, el genérico no le dice nada al de la puerta: el
         # motivo de xSys ("contrato vencido", "no cumple ninguna condición") sí.
-        mensaje = (mensaje_original if exento and mensaje_original
-                   else "Chequear Oficina de Socios")
+        if no_registrado:
+            mensaje = _mensaje_no_registrado(ev.id_tarjeta)
+        elif (exento or sin_identificar) and mensaje_original:
+            mensaje = mensaje_original
+        else:
+            mensaje = "Chequear Oficina de Socios"
 
     # La credencial ya estaba reservada en otro molinete: prevalece sobre
     # cualquier otro mensaje, porque es el motivo por el que no debe pasar.
@@ -467,6 +555,8 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         mensaje = f"Paso pendiente Molinete: {ev.conflicto_molinete}"
 
     foto_url = f"/api/xsys/socios/{ev.id_cliente}/foto/" if tiene_foto else None
+    cochera = _cochera_de(ev) if (barreras and ev.id_acceso in barreras) else ""
+    cochera_nro, cochera_nombre = partes_cochera(cochera)
     return {
         "id_es": ev.external_id,
         "fecha": ev.fecha.isoformat() if ev.fecha else None,
@@ -493,6 +583,13 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         # No vacío: la cuota social de este socio es voluntaria (y por qué).
         "cuota_voluntaria": exento or "",
         "es_barrera": bool(barreras and ev.id_acceso in barreras),
+        # En una barrera el producto que habilita es la cochera. Se manda sólo
+        # ahí: en un molinete peatonal el producto es "CUOTA SOCIAL" y no aporta.
+        # El número va aparte porque es el dato que se mira: la descripción
+        # completa lo esconde al final.
+        "cochera": cochera,
+        "cochera_nro": cochera_nro,
+        "cochera_nombre": cochera_nombre,
         # Veces que ingresó hoy por barrera con ESTA misma habilitación.
         "ingresos_hoy": (ingresos_hoy or {}).get(
             (ev.id_cliente, (ev.observacion or "").strip())),
@@ -507,9 +604,19 @@ def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avi
     tiene_foto = ev.id_cliente in fotos
     permitido = bool(ev.permitido)
     exento = (sin_cuota or {}).get(ev.id_cliente)
-    al_dia = True if exento else (cuota_al_dia(socio.ult_cuota_paga) if socio else False)
+    # Igual que en los eventos de xSys: sin socio identificado no hay cuota que
+    # juzgar. Acá pasa con los AUTH_FAILED_TIMEOUT, que el equipo registra sin
+    # usuario porque no llegó a reconocer a nadie.
+    sin_identificar = socio is None
+    al_dia = (True if (exento or sin_identificar)
+              else cuota_al_dia(socio.ult_cuota_paga))
     if permitido and not al_dia:
         estado, mensaje = "anomalia", "Acceso Concedido · Cuota Vencida"
+    elif not permitido and sin_identificar:
+        # El equipo no llegó a reconocer a nadie (AUTH_FAILED_TIMEOUT): no negó a
+        # una persona, no la vio. "Acceso Denegado" hacía pensar que el socio
+        # estaba mal cuando lo que falla es la lectura del rostro.
+        estado, mensaje = "no", "Rostro no reconocido"
     elif not permitido:
         estado, mensaje = "no", "Acceso Denegado"
     elif not al_dia:
@@ -1331,3 +1438,32 @@ class SocioDetalleAPI(APIView):
             "avisos": _avisos_recientes(id_cliente),
             "avisos_hoy": _tipos_avisados_hoy(id_cliente),
         })
+
+
+class DiagnosticoAccesoAPI(APIView):
+    """GET /api/xsys/diagnostico/?doc=… | ?id_cliente=…
+
+    Por qué esta persona entra o no entra, con el detalle que hace falta para
+    resolverlo sin abrir xSys. Consulta EN VIVO, así que exige login: muestra
+    deuda y comprobantes, y además cada llamada pega contra el SQL del club.
+    """
+
+    permission_classes = [PuedeConfigPuertas]
+
+    def get(self, request):
+        doc = (request.query_params.get("doc") or "").strip()
+        raw_id = (request.query_params.get("id_cliente") or "").strip()
+        id_cliente = int(raw_id) if raw_id.isdigit() else None
+        if not doc and not id_cliente:
+            return Response(
+                {"detail": "Indicá un documento (doc) o un número de socio (id_cliente)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            return Response(diagnosticar(doc=doc or None, id_cliente=id_cliente))
+        except Exception as exc:  # la VPN o el SQL de xSys pueden no responder
+            logger.warning("diagnostico: falló la consulta (doc=%r id=%r): %s", doc, id_cliente, exc)
+            return Response(
+                {"detail": f"No se pudo consultar xSys: {exc}"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )

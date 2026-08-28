@@ -90,6 +90,29 @@
     .hbody { min-width: 0; flex: 1; }
     .hname { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .hsub { font-size: 11px; opacity: .6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* Categoría: se lee de un golpe sin competir con el nombre ni con el mensaje. */
+    .hcat { font-size: 11px; font-weight: 700; letter-spacing: .04em; color: #8b949e; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* Sin categoría no es un caso normal: se marca en ámbar para que se note. */
+    .hcat.vacia { color: #d29922; font-style: italic; }
+    /* Cochera: sólo aparece en las barreras, donde el producto que habilita ES
+       la cochera. El NÚMERO es lo que se lee de lejos, así que va grande y con
+       fondo; el nombre queda de apoyo. Misma pieza en las tres vistas. */
+    .coch__ico { opacity: .8; margin-right: 5px; }
+    .coch__nro { font-weight: 800; font-variant-numeric: tabular-nums; background: rgba(88,166,255,.18);
+                 border: 1px solid #58a6ff; border-radius: 6px; padding: 0 7px; margin-right: 6px; color: #cbe6ff; }
+    .coch__nom { opacity: .75; font-weight: 600; }
+    .hcoch { font-size: 12px; color: #79c0ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; }
+    .hcoch .coch__nro { font-size: 15px; }
+    .hcoch .coch__nom { font-size: 11px; }
+    /* En la tarjeta grande el número tiene que leerse desde lejos. */
+    .ccoch { display: flex; align-items: center; margin-top: 5px; color: #79c0ff; max-width: 100%; }
+    .ccoch .coch__nro { font-size: clamp(18px, 2.2vw, 34px); padding: 0 10px; }
+    .ccoch .coch__nom { font-size: clamp(10px, 1vw, 14px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* En el modal hay lugar de sobra. */
+    .mcoch__t { font-size: 13px; opacity: .6; margin: 14px 0 6px; }
+    .mcoch { display: flex; align-items: center; color: #79c0ff; }
+    .mcoch .coch__nro { font-size: 30px; padding: 2px 12px; }
+    .mcoch .coch__nom { font-size: 15px; }
     .hmsg { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .85; }
     .hmsg.ok { color: #56d364; } .hmsg.no { color: #ff7b72; } .hmsg.warn { color: #e3b341; }
     .htime { font-size: 11px; opacity: .5; flex: 0 0 auto; text-align: right; line-height: 1.3; }
@@ -263,6 +286,7 @@
             <dt>Última cuota paga</dt><dd id="m-cuota">—</dd>
             <dt>Fecha / hora</dt><dd id="m-fecha">—</dd>
           </dl>
+          <div id="m-cochera"></div>
           <div class="modal__contratos">
             <strong>Contratos adquiridos</strong>
             <div id="m-contratos"></div>
@@ -341,7 +365,17 @@
         return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
       });
     }
-    function hora(iso) { try { return new Date(iso).toLocaleTimeString("es-AR"); } catch (e) { return ""; } }
+    // Hora SIEMPRE en 24 h. No se usa toLocaleTimeString porque el formato sale
+    // del locale del equipo y en los kioscos aparecía "8:02:51 p. m."; acá el
+    // operador compara contra el reloj del molinete y necesita 20:02:51.
+    // Sin padStart: no existe en Chrome 49, que es el piso del parque.
+    function dosDig(n) { return (n < 10 ? "0" : "") + n; }
+    function hora(iso) {
+      try {
+        var d = new Date(iso);
+        return dosDig(d.getHours()) + ":" + dosDig(d.getMinutes()) + ":" + dosDig(d.getSeconds());
+      } catch (e) { return ""; }
+    }
     function fechaCorta(iso) { try { return new Date(iso).toLocaleDateString("es-AR"); } catch (e) { return ""; } }
 
     document.getElementById("burger").addEventListener("click", abrirDrawer);
@@ -421,6 +455,18 @@
         ? '<img class="cfoto ' + marco + '" src="' + esc(ev.foto_url) + '" alt="" onerror="this.outerHTML=\'<div class=&quot;cfoto sinfoto ' + marco + '&quot;>&#128100;</div>\'">'
         : '<div class="cfoto sinfoto ' + marco + '">&#128100;</div>';
     }
+    // Cochera: el NÚMERO adelante y grande, que es lo que mira el de la barrera;
+    // el nombre atrás y en chico. La palabra "Nro." no se muestra: ocupa lugar y
+    // no dice nada. Se usa la misma pieza en la tarjeta, el historial y el modal.
+    function cocheraHTML(ev, clase) {
+      if (!ev || !ev.cochera) return "";
+      var nro = ev.cochera_nro || "";
+      var nombre = ev.cochera_nombre || ev.cochera;
+      return '<div class="' + clase + '" title="' + esc(ev.cochera) + '">' +
+             '<span class="coch__ico">&#128663;</span>' +
+             (nro ? '<span class="coch__nro">' + esc(nro) + '</span>' : "") +
+             '<span class="coch__nom">' + esc(nombre) + '</span></div>';
+    }
     function currentHTML(ev) {
       // Un día sin ingresos se ve igual que un visor roto. Se dice explícitamente
       // qué día se está mirando y cómo ir hacia atrás: recién pasada la medianoche
@@ -456,6 +502,7 @@
           '<div class="cinfo">' +
             '<div class="cname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
             '<div class="cmsg ' + clase + '">' + esc(ev.mensaje || (ev.permitido ? "Permitido" : "Denegado")) + '</div>' +
+            cocheraHTML(ev, "ccoch") +
             avisoHtml +
           '</div>' +
         '</div>' +
@@ -473,9 +520,16 @@
           : '<div class="hthumb"></div>';
         var clase = claseEstado(ev);
         var sub = 'N° ' + esc(ev.id_cliente || "—") + (ev.doc_nro ? ' · DNI ' + esc(ev.doc_nro) : "");
+        // Categoría en su propia línea: el operador necesita saber de un vistazo
+        // si el que pasó es socio, invitado o empleado, porque de eso depende qué
+        // hacer cuando algo no cierra. Vacía se muestra igual, no se omite: que
+        // falte el dato ES el dato.
+        var cat = (ev.categoria || "").trim();
         return '<div class="hrow" data-ides="' + esc(ev.id_es) + '">' + thumb + lecturaIcono(ev) +
           '<div class="hbody"><div class="hname">' + ((ev.avisos && ev.avisos.length) ? '<span class="haviso" title="' + esc(ev.avisos.join(" · ")) + '">&#128227;</span> ' : "") + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
           '<div class="hsub">' + sub + '</div>' +
+          '<div class="hcat' + (cat ? '' : ' vacia') + '">' + esc(cat || "SIN CATEGORÍA") + '</div>' +
+          cocheraHTML(ev, "hcoch") +
           '<div class="hmsg ' + clase + '">' + esc(ev.mensaje || "") + '</div></div>' +
           '<div class="htime">' + esc(fechaCorta(ev.fecha)) + '<br>' + esc(hora(ev.fecha)) + '</div></div>';
       }).join("");
@@ -581,6 +635,12 @@
       avisosUltimos = [];
       if (ev.id_cliente) { renderAvisos(ev); document.getElementById("m-avisohist").innerHTML = ""; }
       document.getElementById("modal").classList.add("open");
+      // La cochera sale del propio evento y no de los contratos: al delegado (el
+      // que entra con la del titular) la cochera NO le figura entre sus contratos,
+      // así que el modal quedaba sin el dato justo en el caso que hay que mirar.
+      document.getElementById("m-cochera").innerHTML = ev.cochera
+        ? '<div class="mcoch__t">Cochera con la que ingresó</div>' + cocheraHTML(ev, "mcoch")
+        : "";
       // Los contratos ya vienen en el evento: se pintan sin esperar al fetch.
       document.getElementById("m-contratos").innerHTML =
         ev.id_cliente ? contratosModalHTML(ev) : '<span class="modal__vacio">Sin socio</span>';

@@ -1,0 +1,324 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}¿Por qué no entra?{% endblock page_title %}
+
+{% block header_title %}¿Por qué no entra?{% endblock header_title %}
+
+{% block header_subtitle %}
+  Diagnóstico en vivo contra xSys: identidad, accesos, cuota y comprobantes, en un solo lugar.
+{% endblock header_subtitle %}
+
+{% block content %}
+<section class="card mb-3">
+  <div class="card__body">
+    <form id="dx-form" class="d-flex flex-wrap gap-2 align-items-end">
+      <div>
+        <label class="form-label" for="dx-tipo">Buscar por</label>
+        <select id="dx-tipo" class="form-select form-select-sm">
+          <option value="doc">Documento</option>
+          <option value="id_cliente">Nº de socio</option>
+        </select>
+      </div>
+      <div class="flex-grow-1" style="min-width: 220px">
+        <label class="form-label" for="dx-valor">Valor</label>
+        <input id="dx-valor" class="form-control form-control-sm" type="text"
+               placeholder="Ej: 25436475" autofocus autocomplete="off" />
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Diagnosticar</button>
+    </form>
+    <div id="dx-msg" class="alert d-none mt-3" role="alert"></div>
+  </div>
+</section>
+
+<div id="dx-out" class="d-none">
+  <section class="card mb-3">
+    <div class="card__body">
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+        <h4 id="dx-nombre" class="mb-0"></h4>
+        <span id="dx-activo" class="badge"></span>
+        <span id="dx-cat" class="badge text-bg-secondary"></span>
+      </div>
+      <div id="dx-sub" class="text-muted small mb-3"></div>
+      <p id="dx-conclusion" class="fs-5 mb-0"></p>
+    </div>
+  </section>
+
+  <div id="dx-alertas" class="mb-3"></div>
+
+  <section id="dx-candidatos-box" class="card mb-3 d-none">
+    <div class="card__body">
+      <h6 class="text-uppercase text-muted small">Otros registros con el mismo documento</h6>
+      <div id="dx-candidatos" class="list-group list-group-flush"></div>
+    </div>
+  </section>
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <section class="card h-100">
+        <div class="card__body">
+          <h6 class="text-uppercase text-muted small">Accesos</h6>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead><tr class="text-muted small"><th>Puerta</th><th>Estado</th><th>Motivo</th></tr></thead>
+              <tbody id="dx-accesos"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="col-lg-6">
+      <section class="card h-100">
+        <div class="card__body">
+          <h6 class="text-uppercase text-muted small">
+            Comprobantes que habilitan el facial <span id="dx-acc-wl" class="text-muted"></span>
+          </h6>
+          <p class="text-muted small">
+            La cuenta corriente muestra sólo lo impago. Acá están todos, y cuál sirve para la puerta.
+          </p>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead><tr class="text-muted small">
+                <th>Período</th><th>Comprobante</th><th>Importe</th><th>Estado</th><th>Sirve</th>
+              </tr></thead>
+              <tbody id="dx-comprobantes"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-0">
+    <div class="col-lg-6">
+      <section class="card h-100">
+        <div class="card__body">
+          <h6 class="text-uppercase text-muted small">Contratos</h6>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead><tr class="text-muted small"><th>Tipo</th><th>Desde / hasta</th><th>Estado</th></tr></thead>
+              <tbody id="dx-contratos"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="col-lg-6">
+      <section class="card h-100">
+        <div class="card__body">
+          <h6 class="text-uppercase text-muted small">Últimas pasadas</h6>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead><tr class="text-muted small"><th>Fecha</th><th>Dónde</th><th>Resultado</th></tr></thead>
+              <tbody id="dx-pasadas"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="card mt-3">
+    <div class="card__body">
+      <h6 class="text-uppercase text-muted small">Estado en nuestros sistemas</h6>
+      <dl class="row mb-0 small">
+        <dt class="col-sm-3">Lista blanca</dt><dd class="col-sm-9" id="dx-wl">—</dd>
+        <dt class="col-sm-3">Equipo facial</dt><dd class="col-sm-9" id="dx-bs">—</dd>
+        <dt class="col-sm-3">Espejo local</dt><dd class="col-sm-9" id="dx-espejo">—</dd>
+      </dl>
+    </div>
+  </section>
+</div>
+{% endblock content %}
+
+{% block extra_js %}
+<script>
+(function () {
+  "use strict";
+  var form = document.getElementById("dx-form");
+  var msg = document.getElementById("dx-msg");
+  var out = document.getElementById("dx-out");
+
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function showMsg(text, kind) {
+    msg.className = "alert mt-3 alert-" + (kind || "info");
+    msg.textContent = text;
+  }
+  function hideMsg() { msg.className = "alert d-none mt-3"; }
+
+  // Las fechas del diagnóstico vienen como "AAAA-MM-DD" (sin hora): se dan
+  // vuelta a mano, porque new Date("2026-05-20") las interpreta en UTC y en
+  // UTC-3 muestra el día anterior.
+  function fdia(v) {
+    if (!v) return "—";
+    var p = String(v).substring(0, 10).split("-");
+    return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : v;
+  }
+  function fhora(v) {
+    if (!v) return "—";
+    var d = new Date(v);
+    if (isNaN(d.getTime())) return v;
+    function dd(n) { return (n < 10 ? "0" : "") + n; }
+    return dd(d.getDate()) + "/" + dd(d.getMonth() + 1) + " " +
+           dd(d.getHours()) + ":" + dd(d.getMinutes());
+  }
+  function plata(n) {
+    if (n == null) return "—";
+    return "$" + Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function set(id, html) { document.getElementById(id).innerHTML = html; }
+
+  function pinta(d) {
+    if (!d.encontrado) {
+      out.classList.add("d-none");
+      showMsg(d.conclusion || "No se encontró a esa persona.", "warning");
+      return;
+    }
+    hideMsg();
+    var s = d.socio;
+
+    document.getElementById("dx-nombre").textContent = s.nombre;
+    var act = document.getElementById("dx-activo");
+    act.textContent = s.activo ? "Activo" : "Inactivo";
+    act.className = "badge " + (s.activo ? "text-bg-success" : "text-bg-dark");
+    document.getElementById("dx-cat").textContent = s.categoria || "SIN CATEGORÍA";
+    document.getElementById("dx-sub").innerHTML =
+      "Nº socio " + esc(s.id_cliente) + " · DNI " + esc(s.doc_nro || "—") +
+      " · <span title=\"Este campo se carga a mano en xSys: no sale de los pagos\">" +
+      "Últ. cuota paga (campo manual): " + esc(fdia(s.ult_cuota_paga)) + "</span>";
+    document.getElementById("dx-conclusion").textContent = d.conclusion;
+    document.getElementById("dx-acc-wl").textContent = "(acceso " + d.acceso_faciales + ")";
+
+    // ------------------------------------------------------------- alertas
+    var clases = { danger: "alert-danger", warning: "alert-warning", info: "alert-secondary" };
+    set("dx-alertas", (d.alertas || []).map(function (a) {
+      return '<div class="alert ' + (clases[a.nivel] || "alert-secondary") + ' py-2 mb-2">' +
+             '<strong>' + esc(a.titulo) + '</strong><br>' +
+             '<span class="small">' + esc(a.detalle) + '</span></div>';
+    }).join(""));
+
+    // --------------------------------------------------------- candidatos
+    var otros = (d.candidatos || []).filter(function (c) { return c.id_cliente !== s.id_cliente; });
+    document.getElementById("dx-candidatos-box").classList.toggle("d-none", otros.length === 0);
+    set("dx-candidatos", otros.map(function (c) {
+      return '<button type="button" class="list-group-item list-group-item-action py-1 small" ' +
+             'data-id="' + esc(c.id_cliente) + '">#' + esc(c.id_cliente) + " · " +
+             esc(c.categoria || "sin categoría") + " · " +
+             (c.activo ? '<span class="text-success">activo</span>'
+                       : '<span class="text-muted">baja ' + esc(fdia(c.fecha_baja)) + "</span>") +
+             "</button>";
+    }).join(""));
+
+    // ------------------------------------------------------------ accesos
+    set("dx-accesos", (d.accesos || []).map(function (a) {
+      var b = a.habilitado
+        ? '<span class="badge text-bg-success">Entra</span>'
+        : '<span class="badge text-bg-danger">No entra</span>';
+      var cuota = a.controla_cuota === 2 ? ' <span class="badge text-bg-light text-dark">exige cuota</span>' : "";
+      return "<tr><td>" + esc(a.descripcion) + " <span class='text-muted small'>#" + esc(a.id_acceso) +
+             "</span></td><td>" + b + cuota + "</td><td class='small'>" + esc(a.motivo) +
+             (a.detalle ? ' <span class="text-muted">(' + esc(a.detalle) + ")</span>" : "") + "</td></tr>";
+    }).join(""));
+
+    // ------------------------------------------------------ comprobantes
+    var comps = d.comprobantes || [];
+    set("dx-comprobantes", comps.length === 0
+      ? '<tr><td colspan="5" class="text-muted small">No tiene comprobantes de los productos que habilitan este acceso.</td></tr>'
+      : comps.map(function (c) {
+          var ok = c.habilita
+            ? '<span class="badge text-bg-success">Sí</span>'
+            : '<span class="badge text-bg-danger" title="' + esc(c.porque_no) + '">No</span>';
+          var pend = c.estado_id === 1 && c.importe
+            ? '<span class="text-danger fw-semibold">' + esc(c.estado) + "</span>"
+            : esc(c.estado);
+          return "<tr><td>" + esc(fdia(c.periodo)) + "</td><td class='small'>" + esc(c.tipo) +
+                 " " + esc(c.comprobante_nro || "") + "<br><span class='text-muted'>" + esc(c.producto) +
+                 (c.vale_hasta ? " · vale hasta " + esc(fdia(c.vale_hasta)) : "") +
+                 "</span></td><td class='text-end'>" + esc(plata(c.importe)) + "</td><td class='small'>" +
+                 pend + "</td><td>" + ok +
+                 (c.porque_no ? "<br><span class='text-muted small'>" + esc(c.porque_no) + "</span>" : "") +
+                 "</td></tr>";
+        }).join(""));
+
+    // --------------------------------------------------------- contratos
+    set("dx-contratos", (d.contratos || []).length === 0
+      ? '<tr><td colspan="3" class="text-muted small">Sin contratos.</td></tr>'
+      : d.contratos.map(function (c) {
+          var e = c.dado_de_baja_pero_habilita
+            ? '<span class="badge text-bg-warning" title="Dado de baja, pero xSys valida sólo por fechas">De baja · igual habilita</span>'
+            : (c.habilita_por_fecha ? '<span class="badge text-bg-success">Vigente</span>'
+                                    : '<span class="badge text-bg-secondary">Fuera de fecha</span>');
+          return "<tr><td class='small'>" + esc(c.tipo) + " <span class='text-muted'>#" + esc(c.id_contrato) +
+                 "</span></td><td class='small'>" + esc(fdia(c.desde)) + " → " +
+                 (c.hasta ? esc(fdia(c.hasta)) : "sin fin") + "</td><td>" + e + "</td></tr>";
+        }).join(""));
+
+    // ----------------------------------------------------------- pasadas
+    var pas = (d.pasadas || []).map(function (p) {
+      return { fecha: p.fecha, donde: p.acceso + (p.controlador ? " · " + p.controlador : ""),
+               ok: p.permitido, motivo: p.motivo, facial: false };
+    }).concat(((d.local || {}).eventos_faciales || []).map(function (e) {
+      return { fecha: e.fecha, donde: e.equipo, ok: e.permitido, motivo: e.evento, facial: true };
+    }));
+    pas.sort(function (a, b) { return (b.fecha || "") > (a.fecha || "") ? 1 : -1; });
+    set("dx-pasadas", pas.length === 0
+      ? '<tr><td colspan="3" class="text-muted small">Sin pasadas registradas.</td></tr>'
+      : pas.slice(0, 20).map(function (p) {
+          return "<tr><td class='small'>" + esc(fhora(p.fecha)) + "</td><td class='small'>" +
+                 (p.facial ? "👤 " : "") + esc(p.donde) + "</td><td class='small'>" +
+                 (p.ok ? '<span class="text-success">Pasó</span>'
+                       : '<span class="text-danger">Rechazado</span>') +
+                 "<br><span class='text-muted'>" + esc(p.motivo || "") + "</span></td></tr>";
+        }).join(""));
+
+    // ---------------------------------------------------- estado interno
+    var L = d.local || {};
+    document.getElementById("dx-wl").textContent = L.whitelist
+      ? (L.whitelist.habilitado ? "Habilitado" : "No habilitado") +
+        " · " + (L.whitelist.motivo || "") + (L.whitelist.detalle ? " (" + L.whitelist.detalle + ")" : "") +
+        " · calculada " + fhora(L.whitelist.fecha_calculo)
+      : "Sin cálculo (este socio nunca fue evaluado).";
+    document.getElementById("dx-bs").textContent = L.biostar
+      ? (L.biostar.permite_paso ? "Enrolado y habilitado" : "Enrolado, con el acceso cerrado en el equipo")
+      : "No está enrolado en el facial.";
+    document.getElementById("dx-espejo").textContent = L.espejo
+      ? L.espejo.categoria + " · sincronizado " + fhora(L.espejo.synced_at)
+      : "No está en el espejo local.";
+
+    out.classList.remove("d-none");
+  }
+
+  function consultar(tipo, valor) {
+    showMsg("Consultando xSys…", "info");
+    var url = "/api/xsys/diagnostico/?" + encodeURIComponent(tipo) + "=" + encodeURIComponent(valor);
+    fetch(url, { credentials: "same-origin", headers: { "Accept": "application/json" } })
+      .then(function (r) {
+        return r.json().then(function (body) {
+          if (!r.ok) { throw new Error(body.detail || "Error " + r.status); }
+          return body;
+        });
+      })
+      .then(pinta)
+      .catch(function (e) {
+        out.classList.add("d-none");
+        showMsg(e.message || "Error inesperado.", "danger");
+      });
+  }
+
+  document.getElementById("dx-candidatos").addEventListener("click", function (ev) {
+    var b = ev.target.closest ? ev.target.closest("[data-id]") : null;
+    if (b) { consultar("id_cliente", b.getAttribute("data-id")); }
+  });
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var valor = document.getElementById("dx-valor").value.trim();
+    if (!valor) { showMsg("Ingresá un documento o un número de socio.", "warning"); return; }
+    consultar(document.getElementById("dx-tipo").value, valor);
+  });
+})();
+</script>
+{% endblock extra_js %}
