@@ -54,3 +54,6 @@ descargas_anses/
 # Scripts sueltos de diagnóstico en la raíz (pruebas puntuales contra molinetes,
 # escuchas, etc.). Se usan y se tiran; no son parte de la aplicación.
 _*.py
+
+# Estado del watchdog: lo escribe el script en cada corrida, no es codigo
+web_watchdog.state
