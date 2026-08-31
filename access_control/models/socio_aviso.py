@@ -15,11 +15,16 @@ class SocioAviso(models.Model):
     TIPO_PASE_POR_SOCIOS = "pase_por_socios"
     TIPO_TOMAR_FOTO = "tomar_foto"
     TIPO_DEUDA = "deuda"
+    TIPO_DATOS_A_ACTUALIZAR = "datos_a_actualizar"
     TIPO_LIBRE = "libre"
 
     TEXTO_PASE_POR_SOCIOS = "Se indica pasar por oficina de socios"
     TEXTO_TOMAR_FOTO = "Se indica tomar foto"
     TEXTO_DEUDA = "Se notifica deuda"
+    # Lo deja el sistema, no un operador: el socio figura dado de baja por un
+    # proceso que la oficina de Socios todavía no validó, y hasta entonces se lo
+    # deja pasar. El aviso es para que alguien lo llame y lo resuelva.
+    TEXTO_DATOS_A_ACTUALIZAR = "Figura dado de baja por error: debe actualizar sus datos en oficina de socios"
 
     # Avisos de un toque: el operador del molinete los deja sin escribir nada, así
     # que el texto lo fija el servidor y no viaja en el request.
@@ -27,6 +32,7 @@ class SocioAviso(models.Model):
         TIPO_PASE_POR_SOCIOS: TEXTO_PASE_POR_SOCIOS,
         TIPO_TOMAR_FOTO: TEXTO_TOMAR_FOTO,
         TIPO_DEUDA: TEXTO_DEUDA,
+        TIPO_DATOS_A_ACTUALIZAR: TEXTO_DATOS_A_ACTUALIZAR,
     }
 
     id_cliente = models.BigIntegerField(db_index=True)

@@ -21,6 +21,7 @@ from access_control.models.models import ExternalAccessLogEntry
 from xsys.models import (
     SyncState,
     XsysAcceso,
+    XsysBajaRevision,
     XsysContrato,
     XsysControlador,
     XsysMotivo,
@@ -124,6 +125,24 @@ def _chunked(seq: Sequence[Any], size: int = CHUNK) -> Iterator[Sequence[Any]]:
         yield seq[i : i + size]
 
 
+def _where_socios(cursor) -> str:
+    """Qué socios se espejan: los activos, más los que tienen la baja en revisión.
+
+    El espejo replica sólo ``Activo = 1``, y a los de la tanda del 28/08/2026 el
+    proceso los dejó en 0. Sin esta excepción, una carga completa los borraría
+    del espejo justo cuando están pasando: el visor los mostraría sin nombre ni
+    foto, que es lo contrario de lo que necesita el que atiende la puerta.
+
+    Si ``CD_Clientes_Baja_Revision`` no existe (entorno donde la excepción no se
+    aplicó), se vuelve al filtro de siempre.
+    """
+    cursor.execute("SELECT OBJECT_ID('dbo.CD_Clientes_Baja_Revision')")
+    if cursor.fetchone()[0] is None:
+        return "C.Activo = 1"
+    return ("(C.Activo = 1 OR C.Id_Cliente IN "
+            "(SELECT Id_Cliente FROM CD_Clientes_Baja_Revision WHERE ISNULL(Activo,1) = 1))")
+
+
 class XsysSyncService:
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = get_config(config)
@@ -192,7 +211,7 @@ class XsysSyncService:
     # -------------------------------------------------------------- streams
     def sync_socios_all(self, cursor) -> int:
         # Solo socios activos (Activo=1); filtro server-side.
-        cursor.execute(f"SELECT {_SOCIO_SELECT} FROM {_SOCIO_FROM} WHERE C.Activo = 1")
+        cursor.execute(f"SELECT {_SOCIO_SELECT} FROM {_SOCIO_FROM} WHERE {_where_socios(cursor)}")
         total = 0
         while True:
             rows = cursor.fetchmany(self.batch_size)
@@ -206,7 +225,7 @@ class XsysSyncService:
         # ``only_active=False`` permite traer socios inactivos (para resolver el
         # nombre en el visor de un socio que no está en el espejo local, que por
         # defecto solo espeja activos).
-        activo_sql = "C.Activo = 1 AND " if only_active else ""
+        activo_sql = f"{_where_socios(cursor)} AND " if only_active else ""
         total = 0
         for chunk in _chunked(list(ids)):
             placeholders = ",".join("?" for _ in chunk)
@@ -363,6 +382,49 @@ class XsysSyncService:
                 unique_fields=["id_controlador"],
                 update_fields=["id_acceso", "descripcion", "tipo", "tipo_cont", "activo", "ip", "synced_at"],
             )
+        return len(objs)
+
+    def sync_bajas_revision(self, cursor) -> int:
+        """Espejo de CD_Clientes_Baja_Revision (socios con la baja en duda).
+
+        Tabla chica y de vida corta: existe mientras la oficina de Socios revisa
+        la tanda del 28/08/2026. Si todavía no está creada en xSys —porque este
+        código llegó a un entorno donde la excepción no se aplicó— no es un
+        error: se devuelve 0 y sigue.
+        """
+        cursor.execute("SELECT OBJECT_ID('dbo.CD_Clientes_Baja_Revision')")
+        if cursor.fetchone()[0] is None:
+            return 0
+        cursor.execute(
+            "SELECT Id_Cliente, Origen, Activo, Fecha_Baja_Orig, Motivo_Orig, Observacion "
+            "FROM CD_Clientes_Baja_Revision"
+        )
+        rows = cursor.fetchall()
+        now = timezone.now()
+        objs = [
+            XsysBajaRevision(
+                id_cliente=r[0],
+                origen=(r[1] or "").strip()[:60],
+                en_revision=bool(r[2]),
+                fecha_baja_orig=_aware(r[3]) if r[3] else None,
+                motivo_orig=r[4],
+                observacion=(r[5] or "").strip()[:200],
+                synced_at=now,
+            )
+            for r in rows
+        ]
+        if objs:
+            XsysBajaRevision.objects.bulk_create(
+                objs,
+                update_conflicts=True,
+                unique_fields=["id_cliente"],
+                update_fields=["origen", "en_revision", "fecha_baja_orig",
+                               "motivo_orig", "observacion", "synced_at"],
+            )
+        # Los que xSys ya no lista dejaron de ser excepción: se borran para que
+        # el visor no siga marcándolos.
+        vivos = {o.id_cliente for o in objs}
+        XsysBajaRevision.objects.exclude(id_cliente__in=vivos).delete()
         return len(objs)
 
     def sync_motivos(self, cursor) -> int:
@@ -616,6 +678,7 @@ class XsysSyncService:
             stats["accesos"] = self.sync_accesos(cursor)
             stats["controladores"] = self.sync_controladores(cursor)
             stats["motivos"] = self.sync_motivos(cursor)
+            stats["bajas_revision"] = self.sync_bajas_revision(cursor)
             stats["socios"] = self.sync_socios_all(cursor)
             stats["contratos"] = self.sync_contratos_all(cursor)
 
@@ -700,6 +763,7 @@ class XsysSyncService:
                 break
             objs = [ExternalAccessLogEntry(**self._row_to_cdes_kwargs(r)) for r in rows]
             self._marcar_paso_pendiente(objs)
+            self._avisar_baja_en_revision(objs)
             with transaction.atomic():
                 ExternalAccessLogEntry.objects.bulk_create(
                     objs,
@@ -712,6 +776,53 @@ class XsysSyncService:
         if total:
             SyncState.advance("cd_es", last_id=max_id, rows=total)
         return total
+
+    def _avisar_baja_en_revision(self, objs) -> None:
+        """Deja el aviso en el legajo del socio que pasó con la baja en revisión.
+
+        Estos socios entran porque xSys saltea el rechazo por persona inactiva
+        mientras la oficina de Socios revisa la tanda del 28/08/2026. Que pasen
+        no alcanza: alguien tiene que llamarlos para corregirles la ficha, y si
+        el aviso dependiera de que el de la puerta se acuerde de dejarlo, no
+        quedaría registro. Se deja UNO por socio por día, para que la lista de
+        pendientes sea la gente a contactar y no una repetición de pasadas.
+
+        Best-effort: si falla, el movimiento se guarda igual.
+        """
+        try:
+            from access_control.models import SocioAviso
+
+            ids = {o.id_cliente for o in objs if o.id_cliente}
+            if not ids:
+                return
+            en_revision = set(
+                XsysBajaRevision.objects
+                .filter(id_cliente__in=ids, en_revision=True)
+                .values_list("id_cliente", flat=True)
+            )
+            if not en_revision:
+                return
+            hoy = timezone.localdate()
+            ya_avisados = set(
+                SocioAviso.objects
+                .filter(id_cliente__in=en_revision,
+                        tipo=SocioAviso.TIPO_DATOS_A_ACTUALIZAR,
+                        created_at__date=hoy)
+                .values_list("id_cliente", flat=True)
+            )
+            nuevos = [
+                SocioAviso(
+                    id_cliente=cid,
+                    tipo=SocioAviso.TIPO_DATOS_A_ACTUALIZAR,
+                    texto=SocioAviso.TEXTO_DATOS_A_ACTUALIZAR,
+                    creado_por="sistema",
+                )
+                for cid in sorted(en_revision - ya_avisados)
+            ]
+            if nuevos:
+                SocioAviso.objects.bulk_create(nuevos)
+        except Exception as exc:  # pragma: no cover - nunca romper la ingesta
+            logger.warning("baja_en_revision: no se pudo dejar el aviso: %s", exc)
 
     def _marcar_paso_pendiente(self, objs) -> None:
         """Aplica la regla de paso pendiente a los movimientos recién leídos.
@@ -752,6 +863,7 @@ class XsysSyncService:
             stats["accesos"] = self.sync_accesos(cursor)
             stats["controladores"] = self.sync_controladores(cursor)
             stats["motivos"] = self.sync_motivos(cursor)
+            stats["bajas_revision"] = self.sync_bajas_revision(cursor)
             rows = self.read_novedades(cursor, last_id, limit=limit)
             stats["novedades"] = len(rows)
             if rows:

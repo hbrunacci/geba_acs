@@ -66,6 +66,9 @@
     .cmsg.no { background: rgba(248,81,73,.16); color: #ff7b72; border: 1px solid #f85149; }
     .cmsg.warn { background: rgba(210,153,34,.18); color: #e3b341; border: 1px solid #d29922; }
     .caviso { font-weight: 700; font-size: clamp(11px, 1.05vw, 16px); padding: 4px 12px; border-radius: 8px; max-width: 100%; align-self: flex-start; background: rgba(88,166,255,.18); color: #79c0ff; border: 1px solid #58a6ff; }
+    /* Ámbar, como el estado "anomalía": la persona pasa, pero hay algo que
+       corregir. No es rojo porque no es un rechazo. */
+    .crevision { font-weight: 700; font-size: clamp(11px, 1.05vw, 16px); padding: 4px 12px; border-radius: 8px; max-width: 100%; align-self: flex-start; background: rgba(210,153,34,.18); color: #d29922; border: 1px solid #d29922; }
     /* Contratos vigentes del socio + estado de pago de cada uno. */
     .cctr { margin-top: 7px; width: 100%; display: flex; flex-direction: column; gap: 3px; }
     .cctr__t { font-size: clamp(9px, .8vw, 12px); letter-spacing: .08em; color: #6e7681; text-transform: uppercase; border-top: 1px solid #21262d; padding-top: 5px; }
@@ -490,6 +493,12 @@
         : (ev.ult_cuota_paga ? ' · Últ. cuota: ' + esc(fechaCorta(ev.ult_cuota_paga)) : "");
       var avisoHtml = (ev.avisos && ev.avisos.length)
         ? '<div class="caviso">&#128227; ' + ev.avisos.map(esc).join(" &middot; ") + '</div>' : "";
+      // Figura dado de baja por el proceso masivo del 28/08/2026, sin revisar.
+      // Pasa igual (xSys ya lo deja), pero el de la puerta tiene que mandarlo a
+      // Socios: es la única forma de que le corrijan la ficha.
+      var revisionHtml = ev.baja_en_revision
+        ? '<div class="crevision">&#9888; Ficha con la baja mal cargada — indicarle que pase por oficina de socios</div>'
+        : "";
       // Barreras de auto: cuántas veces entró hoy con ESTA misma habilitación.
       // Sólo se muestra ahí; en los molinetes peatonales no aporta.
       var ingresosHtml = (ev.es_barrera && ev.ingresos_hoy)
@@ -503,6 +512,7 @@
             '<div class="cname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
             '<div class="cmsg ' + clase + '">' + esc(ev.mensaje || (ev.permitido ? "Permitido" : "Denegado")) + '</div>' +
             cocheraHTML(ev, "ccoch") +
+            revisionHtml +
             avisoHtml +
           '</div>' +
         '</div>' +
