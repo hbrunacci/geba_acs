@@ -326,6 +326,14 @@ def _tipo_lectura(id_controlador, controladores: dict) -> str:
 # desactualizado cuando el club agregue una.
 _MOTIVOS_SIN_CUOTA = {202, 204, 205}
 
+# Rechazos por el QR dinámico de la app: inválido (114), vencido (115) o ya usado
+# (116). El motivo es técnico y exacto, y no dice nada de la cuota. Desde que xSys
+# identifica al socio en el rechazo por QR vencido (31/08/2026) hay que separarlos
+# a mano: si no, al que sólo tardó en pasar el código el visor le contestaría
+# "Cuota Vencida" o "Chequear Oficina de Socios" y lo mandaría a hacer un trámite
+# que no necesita.
+_MOTIVOS_QR = {114, 115, 116}
+
 # Categorías (Clientes.Id_Tipo_Cli) que directamente NO tienen cuota social que
 # pagar: concesionarios, alumnos y docentes del instituto, profesores,
 # proveedores, visitas y no socios. A ellos "Cuota Vencida" es siempre un falso
@@ -546,7 +554,14 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
     sin_identificar = socio is None
     al_dia = (True if (exento or sin_identificar)
               else cuota_al_dia(socio.ult_cuota_paga))
-    if permitido and not al_dia:
+    # El rechazo por QR manda sobre la cuota: el socio puede estar impecable y
+    # aun así no entrar porque el código de la app se le venció. El texto exacto
+    # ("QR vencido: generá uno nuevo en la app y pasalo enseguida") lo pone xSys.
+    rechazo_qr = (not permitido) and ev.id_cd_motivo in _MOTIVOS_QR
+    if rechazo_qr:
+        estado = "no"
+        mensaje = mensaje_original or "QR vencido: generá uno nuevo en la app"
+    elif permitido and not al_dia:
         # Anomalía: xSys dejó pasar pero la cuota está vencida -> alertar al operador.
         estado = "anomalia"
         mensaje = "Acceso Concedido · Cuota Vencida"

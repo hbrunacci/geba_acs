@@ -132,6 +132,60 @@ class PuertaMonitorTests(TestCase):
         self.assertTrue(ev["cuota_al_dia"])
         self.assertEqual(ev["mensaje"], "Chequear Oficina de Socios")
 
+    # --------------------------------------------------------- QR de la app --
+    # xSys rechaza con motivo 115 cuando el código de la app se venció (ventana
+    # de 5 min). Desde el 31/08/2026 ese rechazo viene con el socio identificado,
+    # así que sin esta rama el visor le contestaría por la cuota a alguien que
+    # sólo tardó en llegar al lector.
+
+    def _motivo_qr(self):
+        XsysMotivo.objects.create(
+            id_cd_motivo=115, descripcion="QR Vencido",
+            descripcion_pantalla="QR vencido: generá uno nuevo en la app y pasalo enseguida")
+
+    def _ultimo_qr(self, id_es):
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        self._ev(id_es, 59, resultado="E", motivo=115)
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        return next(c for c in d["columnas"] if 59 in c["controladores"])["ultimo"]
+
+    def test_qr_vencido_muestra_el_motivo_y_no_la_oficina(self):
+        self._motivo_qr()
+        ev = self._ultimo_qr(9300)
+        self.assertTrue(ev["cuota_al_dia"])
+        self.assertEqual(ev["estado"], "no")
+        self.assertIn("QR vencido", ev["mensaje"])
+        self.assertNotIn("Oficina", ev["mensaje"])
+
+    def test_qr_vencido_manda_sobre_la_cuota_vencida(self):
+        """Que deba la cuota no cambia por qué no entró: se le venció el QR."""
+        from datetime import datetime as _dt
+        from django.utils import timezone as _tz
+        XsysSocio.objects.filter(pk=944426).update(ult_cuota_paga=_tz.make_aware(_dt(2025, 1, 1)))
+        self._motivo_qr()
+        ev = self._ultimo_qr(9301)
+        self.assertFalse(ev["cuota_al_dia"])
+        self.assertIn("QR vencido", ev["mensaje"])
+        self.assertNotEqual(ev["mensaje"], "Cuota Vencida")
+
+    def test_sin_texto_de_xsys_igual_explica_el_qr(self):
+        """Si no llegó ni el motivo espejado ni la observación, no se calla."""
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        ev = self._ev(9302, 59, resultado="E", motivo=115)
+        ExternalAccessLogEntry.objects.filter(pk=ev.pk).update(observacion="")
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        ultimo = next(c for c in d["columnas"] if 59 in c["controladores"])["ultimo"]
+        self.assertIn("QR vencido", ultimo["mensaje"])
+
+    def test_un_acceso_concedido_no_lo_toca(self):
+        self._motivo_qr()
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        self._ev(9303, 59, resultado="S", motivo=115)
+        d = _get(self.client, "/api/xsys/puerta/estado/").json()
+        ev = next(c for c in d["columnas"] if 59 in c["controladores"])["ultimo"]
+        self.assertEqual(ev["estado"], "ok")
+        self.assertEqual(ev["mensaje"], "Acceso Concedido")
+
     # ----------------------------------------------------- cochera en barrera --
 
     def _ev_barrera(self, id_es, observacion, id_acceso=18):
