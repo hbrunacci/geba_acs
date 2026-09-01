@@ -74,13 +74,40 @@ GO
      IX_CDES_PorTipoCont          110 MB           0 seeks
 
    Pendiente de decidir (no se hizo):
-   - IX_CDES_PorTipoCont (0 seeks) e IX_CDES_CD_Motivos (5 seeks) son 228 MB
-     por casi nada, pero 33 dias no cubren un cierre anual.
    - IX_CDES_PorCli es prefijo estricto de IX_CDES_PorCli_Cubierto: se pueden
      consolidar, pero implica reconstruir 583 MB y va a ventana.
-   - Quedan 4.543 indices hipoteticos en otras 39 tablas (Cbtes 1.006,
-     Clientes 1.000, Cbtes_Items 565...) y 352 estadisticas _dta_stat huerfanas.
+   - Quedan 352 estadisticas _dta_stat huerfanas en 33 tablas.
 ----------------------------------------------------------------------------- */
+
+
+/* -----------------------------------------------------------------------------
+   3) Segunda pasada: los dos indices reales de CD_ES que casi no se leian, y
+      los hipoteticos del resto de la base.
+
+   Borrados de CD_ES (los CREATE quedaron en
+   scripts/xsys_indices_borrados_CD_ES_2026-09-01.sql para poder reponerlos):
+
+     IX_CDES_PorTipoCont   110 MB   0 seeks, 9 scans, 110.002 updates
+     IX_CDES_CD_Motivos    118 MB   5 seeks, 0 scans, 110.002 updates
+
+   CD_ES paso de 3.517 MB a 3.291 MB y de 8 indices a 6. La consulta por
+   Id_CD_Motivo pasa a resolverse por fecha: 34 ms para contar una semana, que
+   es lo que corresponde a un camino que se uso 5 veces en 33 dias. Si algun
+   reporte anual lo necesita, se repone con el CREATE guardado.
+
+   Y se borraron los 4.543 indices hipoteticos que quedaban en las otras 39
+   tablas (Cbtes 1.006, Clientes 1.000, Cbtes_Items 565...). Se comprobo antes
+   que ninguno tuviera paginas asignadas. Los nombres quedaron en
+   scripts/xsys_indices_hipoteticos_base_2026-09-01.txt
+
+   La base quedo con 1.441 indices reales en 437 tablas y CERO hipoteticos.
+----------------------------------------------------------------------------- */
+
+DROP INDEX [IX_CDES_PorTipoCont] ON dbo.CD_ES
+GO
+DROP INDEX [IX_CDES_CD_Motivos] ON dbo.CD_ES
+GO
+/* DROP INDEX [<nombre>] ON [<esquema>].[<tabla>]  -- x4543, ver el .txt      */
 
 /* DROP INDEX [<nombre>] ON dbo.CD_ES   -- x153, ver el .txt                   */
 
