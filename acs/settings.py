@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "institutions.apps.InstitutionsConfig",
     "access_control.apps.AccessControlConfig",
     "xsys.apps.XsysConfig",
+    "concesionarios.apps.ConcesionariosConfig",
 ]
 
 MIDDLEWARE = [
@@ -148,6 +149,14 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Adjuntos de la documentación con vencimiento (ART, seguros, aptos médicos).
+# MEDIA_URL está definida por convención pero NO se rutea a propósito: son
+# escaneos de DNI y certificados, y se descargan por una vista con permiso
+# (concesionarios.api_views.DocumentoArchivoAPI), nunca por una URL adivinable.
+# El directorio cae en el bind mount del proyecto, así que sobrevive al deploy.
+MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_URL = "/media/"
 
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},

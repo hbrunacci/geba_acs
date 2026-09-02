@@ -1,0 +1,300 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Empresas y documentos{% endblock %}
+{% block header_title %}Empresas concesionarias y tipos de documento{% endblock %}
+{% block header_subtitle %}Las empresas que agrupan a los concesionarios, y qué papeles se les exigen.{% endblock %}
+
+{% block header_actions %}
+<a class="btn btn-outline-secondary" href="{% url 'concesionarios_listado' %}">Concesionarios</a>
+<a class="btn btn-outline-secondary" href="{% url 'concesionarios_horarios' %}">Horarios</a>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .celda-chica { font-size:.8rem; color:#6c757d; }
+  .pill { font-size:.75rem; padding:.15rem .5rem; border-radius:999px; }
+  .pill--bloquea { background:#842029; color:#fff; }
+  .pill--archivo { background:#e2e3e5; color:#41464b; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <section class="card shadow-sm border-0 col-12 col-xl-6">
+    <header class="card__header"><h2 class="card__title">Empresas</h2></header>
+    <div class="card__body">
+      <form id="form-empresa" class="row g-2 mb-3">
+        <input type="hidden" id="e-id">
+        <div class="col-12 col-md-6">
+          <label class="form-label mb-1" for="e-nombre">Nombre</label>
+          <input class="form-control" id="e-nombre" required placeholder="Buffet San Martín">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label mb-1" for="e-cuit">CUIT</label>
+          <input class="form-control" id="e-cuit" placeholder="30-12345678-9">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label mb-1" for="e-rubro">Rubro</label>
+          <input class="form-control" id="e-rubro" placeholder="Gastronomía">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label mb-1" for="e-contacto">Contacto</label>
+          <input class="form-control" id="e-contacto" placeholder="Nombre y apellido">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label mb-1" for="e-email">Email</label>
+          <input class="form-control" id="e-email" type="email">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label mb-1" for="e-tel">Teléfono</label>
+          <input class="form-control" id="e-tel">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label mb-1" for="e-horario">Horario de la empresa</label>
+          <select class="form-select" id="e-horario"><option value="">Sin restricción horaria</option></select>
+          <div class="form-text">Rige para toda la gente de la empresa, salvo que la persona tenga uno propio.</div>
+        </div>
+        <div class="col-12 col-md-6 d-flex align-items-end gap-2">
+          <div class="form-check me-auto">
+            <input class="form-check-input" type="checkbox" id="e-activa" checked>
+            <label class="form-check-label" for="e-activa">Activa</label>
+          </div>
+          <button class="btn btn-primary" type="submit">Guardar</button>
+          <button class="btn btn-outline-secondary" type="button" id="e-cancelar" hidden>Cancelar</button>
+        </div>
+        <div class="col-12"><span id="e-msg" class="small"></span></div>
+      </form>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Empresa</th><th>CUIT</th><th>Horario</th><th>Gente</th><th>Activa</th><th></th></tr></thead>
+          <tbody id="tabla-empresas"><tr><td colspan="6" class="text-muted">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card shadow-sm border-0 col-12 col-xl-6">
+    <header class="card__header"><h2 class="card__title">Tipos de documento</h2></header>
+    <div class="card__body">
+      <p class="celda-chica">
+        Valen para cualquier persona del control de acceso, no sólo para concesionarios.
+        Los marcados como <em>habilita el ingreso</em> son los que, vencidos, dejan a la
+        persona en condición de no entrar.
+      </p>
+      <form id="form-tipo" class="row g-2 mb-3">
+        <input type="hidden" id="t-id">
+        <div class="col-6 col-md-3">
+          <label class="form-label mb-1" for="t-codigo">Código</label>
+          <input class="form-control" id="t-codigo" required placeholder="art">
+        </div>
+        <div class="col-6 col-md-4">
+          <label class="form-label mb-1" for="t-nombre">Nombre</label>
+          <input class="form-control" id="t-nombre" required placeholder="ART">
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label mb-1" for="t-aviso">Aviso (días)</label>
+          <input class="form-control" id="t-aviso" type="number" min="0" value="30">
+        </div>
+        <div class="col-6 col-md-3 d-flex align-items-end">
+          <button class="btn btn-primary w-100" type="submit">Guardar</button>
+        </div>
+        <div class="col-12 d-flex gap-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="t-vence" checked>
+            <label class="form-check-label" for="t-vence">Requiere vencimiento</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="t-bloquea">
+            <label class="form-check-label" for="t-bloquea">Habilita el ingreso (vencido, no debería entrar)</label>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary ms-auto" type="button" id="t-cancelar" hidden>Cancelar</button>
+        </div>
+        <div class="col-12"><span id="t-msg" class="small"></span></div>
+      </form>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Nombre</th><th>Código</th><th>Vence</th><th>Aviso</th><th>Efecto</th><th></th></tr></thead>
+          <tbody id="tabla-tipos"><tr><td colspan="6" class="text-muted">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const csrf = () => (document.cookie.split(';').map(v => v.trim())
+      .find(v => v.startsWith('csrftoken=')) || '').split('=')[1] || '';
+  const esc = (v) => (v === null || v === undefined) ? '' : String(v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  async function api(url, opciones) {
+    opciones = opciones || {};
+    const cab = { 'X-CSRFToken': csrf() };
+    if (opciones.body) cab['Content-Type'] = 'application/json';
+    const r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opciones,
+      { headers: Object.assign(cab, opciones.headers || {}) }));
+    if (r.status === 204) return null;
+    const texto = await r.text();
+    let datos = null;
+    try { datos = texto ? JSON.parse(texto) : null; } catch (e) { datos = { detail: texto }; }
+    if (!r.ok) {
+      throw new Error(datos && datos.detail ? datos.detail :
+        Object.keys(datos || {}).map(k => k + ': ' + [].concat(datos[k]).join(' ')).join(' · '));
+    }
+    return datos;
+  }
+
+  let empresas = [], horarios = [], tipos = [];
+
+  // ------------------------------------------------------------- empresas --
+  async function cargarEmpresas() {
+    const d = await api('/api/concesionarios/empresas/');
+    empresas = d.results;
+    if (!empresas.length) {
+      $('tabla-empresas').innerHTML = '<tr><td colspan="6" class="text-muted">Todavía no hay empresas.</td></tr>';
+      return;
+    }
+    $('tabla-empresas').innerHTML = empresas.map(e =>
+      '<tr>' +
+        '<td><strong>' + esc(e.nombre) + '</strong>' +
+          (e.rubro ? '<br><span class="celda-chica">' + esc(e.rubro) + '</span>' : '') + '</td>' +
+        '<td class="celda-chica">' + esc(e.cuit) + '</td>' +
+        '<td class="celda-chica">' + esc(e.horario_nombre || '—') + '</td>' +
+        '<td>' + e.cantidad + '</td>' +
+        '<td>' + (e.activa ? 'Sí' : 'No') + '</td>' +
+        '<td class="text-end">' +
+          '<button class="btn btn-sm btn-outline-secondary" data-editar-e="' + e.id + '">Editar</button> ' +
+          '<button class="btn btn-sm btn-outline-danger" data-borrar-e="' + e.id + '">Borrar</button>' +
+        '</td></tr>').join('');
+    Array.prototype.forEach.call($('tabla-empresas').querySelectorAll('[data-editar-e]'),
+      b => b.addEventListener('click', () => editarEmpresa(parseInt(b.dataset.editarE, 10))));
+    Array.prototype.forEach.call($('tabla-empresas').querySelectorAll('[data-borrar-e]'),
+      b => b.addEventListener('click', () => borrarEmpresa(parseInt(b.dataset.borrarE, 10))));
+  }
+
+  function editarEmpresa(id) {
+    const e = empresas.find(x => x.id === id);
+    if (!e) return;
+    $('e-id').value = e.id; $('e-nombre').value = e.nombre; $('e-cuit').value = e.cuit || '';
+    $('e-rubro').value = e.rubro || ''; $('e-contacto').value = e.contacto_nombre || '';
+    $('e-email').value = e.contacto_email || ''; $('e-tel').value = e.contacto_telefono || '';
+    $('e-horario').value = e.horario || ''; $('e-activa').checked = e.activa;
+    $('e-cancelar').hidden = false;
+    $('e-msg').className = 'small text-muted'; $('e-msg').textContent = 'Editando «' + e.nombre + '».';
+  }
+
+  function limpiarEmpresa() {
+    $('form-empresa').reset(); $('e-id').value = ''; $('e-activa').checked = true;
+    $('e-cancelar').hidden = true; $('e-msg').textContent = '';
+  }
+
+  async function borrarEmpresa(id) {
+    const e = empresas.find(x => x.id === id);
+    if (e && e.cantidad) {
+      alert('Tiene ' + e.cantidad + ' concesionario(s) asignados. Desactivala o movelos primero.');
+      return;
+    }
+    if (!confirm('¿Borrar la empresa?')) return;
+    try { await api('/api/concesionarios/empresas/' + id + '/', { method: 'DELETE' }); cargarEmpresas(); }
+    catch (err) { $('e-msg').className = 'small text-danger'; $('e-msg').textContent = err.message; }
+  }
+
+  $('form-empresa').addEventListener('submit', async function (ev) {
+    ev.preventDefault();
+    const cuerpo = {
+      nombre: $('e-nombre').value.trim(), cuit: $('e-cuit').value.trim(),
+      rubro: $('e-rubro').value.trim(), contacto_nombre: $('e-contacto').value.trim(),
+      contacto_email: $('e-email').value.trim(), contacto_telefono: $('e-tel').value.trim(),
+      horario: $('e-horario').value ? parseInt($('e-horario').value, 10) : null,
+      activa: $('e-activa').checked,
+    };
+    const id = $('e-id').value;
+    try {
+      await api('/api/concesionarios/empresas/' + (id ? id + '/' : ''),
+        { method: id ? 'PUT' : 'POST', body: JSON.stringify(cuerpo) });
+      limpiarEmpresa(); cargarEmpresas();
+    } catch (err) { $('e-msg').className = 'small text-danger'; $('e-msg').textContent = err.message; }
+  });
+  $('e-cancelar').addEventListener('click', limpiarEmpresa);
+
+  // ---------------------------------------------------- tipos de documento --
+  async function cargarTipos() {
+    const d = await api('/api/concesionarios/tipos-documento/');
+    tipos = d.results;
+    if (!tipos.length) {
+      $('tabla-tipos').innerHTML = '<tr><td colspan="6" class="text-muted">Todavía no hay tipos de documento.</td></tr>';
+      return;
+    }
+    $('tabla-tipos').innerHTML = tipos.map(t =>
+      '<tr>' +
+        '<td>' + esc(t.nombre) + '</td>' +
+        '<td class="celda-chica">' + esc(t.codigo) + '</td>' +
+        '<td>' + (t.requiere_vencimiento ? 'Sí' : 'No') + '</td>' +
+        '<td class="celda-chica">' + t.dias_aviso + ' días</td>' +
+        '<td>' + (t.bloquea_acceso
+            ? '<span class="pill pill--bloquea">habilita el ingreso</span>'
+            : '<span class="pill pill--archivo">sólo archivo</span>') + '</td>' +
+        '<td class="text-end">' +
+          '<button class="btn btn-sm btn-outline-secondary" data-editar-t="' + t.id + '">Editar</button> ' +
+          '<button class="btn btn-sm btn-outline-danger" data-borrar-t="' + t.id + '">Borrar</button>' +
+        '</td></tr>').join('');
+    Array.prototype.forEach.call($('tabla-tipos').querySelectorAll('[data-editar-t]'),
+      b => b.addEventListener('click', () => editarTipo(parseInt(b.dataset.editarT, 10))));
+    Array.prototype.forEach.call($('tabla-tipos').querySelectorAll('[data-borrar-t]'),
+      b => b.addEventListener('click', () => borrarTipo(parseInt(b.dataset.borrarT, 10))));
+  }
+
+  function editarTipo(id) {
+    const t = tipos.find(x => x.id === id);
+    if (!t) return;
+    $('t-id').value = t.id; $('t-codigo').value = t.codigo; $('t-nombre').value = t.nombre;
+    $('t-aviso').value = t.dias_aviso; $('t-vence').checked = t.requiere_vencimiento;
+    $('t-bloquea').checked = t.bloquea_acceso; $('t-cancelar').hidden = false;
+    $('t-msg').className = 'small text-muted'; $('t-msg').textContent = 'Editando «' + t.nombre + '».';
+  }
+
+  function limpiarTipo() {
+    $('form-tipo').reset(); $('t-id').value = ''; $('t-vence').checked = true;
+    $('t-aviso').value = 30; $('t-cancelar').hidden = true; $('t-msg').textContent = '';
+  }
+
+  async function borrarTipo(id) {
+    if (!confirm('¿Borrar el tipo de documento? No se puede si ya hay documentos cargados con él.')) return;
+    try { await api('/api/concesionarios/tipos-documento/' + id + '/', { method: 'DELETE' }); cargarTipos(); }
+    catch (err) { $('t-msg').className = 'small text-danger'; $('t-msg').textContent = err.message; }
+  }
+
+  $('form-tipo').addEventListener('submit', async function (ev) {
+    ev.preventDefault();
+    const cuerpo = {
+      codigo: $('t-codigo').value.trim(), nombre: $('t-nombre').value.trim(),
+      requiere_vencimiento: $('t-vence').checked, bloquea_acceso: $('t-bloquea').checked,
+      dias_aviso: parseInt($('t-aviso').value, 10) || 0,
+    };
+    const id = $('t-id').value;
+    try {
+      await api('/api/concesionarios/tipos-documento/' + (id ? id + '/' : ''),
+        { method: id ? 'PUT' : 'POST', body: JSON.stringify(cuerpo) });
+      limpiarTipo(); cargarTipos();
+    } catch (err) { $('t-msg').className = 'small text-danger'; $('t-msg').textContent = err.message; }
+  });
+  $('t-cancelar').addEventListener('click', limpiarTipo);
+
+  // ---------------------------------------------------------------- inicio --
+  (async function () {
+    const h = await api('/api/concesionarios/horarios/');
+    horarios = h.results;
+    $('e-horario').innerHTML = '<option value="">Sin restricción horaria</option>' +
+      horarios.filter(x => x.activo).map(x => '<option value="' + x.id + '">' + esc(x.nombre) + '</option>').join('');
+    cargarEmpresas(); cargarTipos();
+  })();
+})();
+</script>
+{% endblock %}

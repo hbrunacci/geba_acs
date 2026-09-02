@@ -1,0 +1,252 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Horarios de ingreso{% endblock %}
+{% block header_title %}Horarios de ingreso{% endblock %}
+{% block header_subtitle %}Una recurrencia con nombre —"Lun a Vie 9 a 18"— que después se asigna a una persona o a una empresa entera.{% endblock %}
+
+{% block header_actions %}
+<a class="btn btn-outline-secondary" href="{% url 'concesionarios_listado' %}">Concesionarios</a>
+<a class="btn btn-outline-secondary" href="{% url 'concesionarios_empresas' %}">Empresas y documentos</a>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .franja { font-size: .8rem; background:#eef2f7; border-radius:.4rem; padding:.15rem .5rem; display:inline-block; margin:.1rem; }
+  .dias-check { display:flex; gap:.75rem; flex-wrap:wrap; }
+  .celda-chica { font-size:.8rem; color:#6c757d; }
+  .probador { background:#f8f9fa; border-radius:.5rem; padding:.75rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <section class="card shadow-sm border-0 col-12 col-xl-5">
+    <header class="card__header"><h2 class="card__title">Nuevo horario</h2></header>
+    <div class="card__body">
+      <form id="form-horario" class="row g-2">
+        <input type="hidden" name="id" id="h-id">
+        <div class="col-12">
+          <label class="form-label mb-1" for="h-nombre">Nombre</label>
+          <input class="form-control" id="h-nombre" name="nombre" required
+                 placeholder="Lun a Vie 9 18">
+          <div class="form-text">Así lo van a ver al asignarlo. Ponele el nombre con el que lo pide la gente.</div>
+        </div>
+        <div class="col-12">
+          <label class="form-label mb-1" for="h-desc">Descripción</label>
+          <input class="form-control" id="h-desc" name="descripcion" placeholder="Turno de comercios">
+        </div>
+        <div class="col-12">
+          <label class="form-label mb-1">Días</label>
+          <div class="dias-check" id="h-dias"></div>
+        </div>
+        <div class="col-6">
+          <label class="form-label mb-1" for="h-desde">Desde</label>
+          <input type="time" class="form-control" id="h-desde" value="09:00" required>
+        </div>
+        <div class="col-6">
+          <label class="form-label mb-1" for="h-hasta">Hasta</label>
+          <input type="time" class="form-control" id="h-hasta" value="18:00" required>
+        </div>
+        <div class="col-12">
+          <div class="form-text">
+            Si la hora de fin es menor que la de inicio, la franja cruza la medianoche:
+            22:00 a 06:00 es de ese día a las 22 hasta las 6 del día siguiente.
+          </div>
+        </div>
+        <div class="col-12 d-flex gap-2 align-items-center">
+          <button class="btn btn-primary" type="submit">Guardar</button>
+          <button class="btn btn-outline-secondary" type="button" id="h-cancelar" hidden>Cancelar edición</button>
+          <span id="h-msg" class="small"></span>
+        </div>
+      </form>
+
+      <hr>
+      <h6 class="mb-2">Probar un horario</h6>
+      <div class="probador row g-2 align-items-end">
+        <div class="col-12 col-sm-5">
+          <label class="form-label mb-1" for="p-horario">Horario</label>
+          <select class="form-select form-select-sm" id="p-horario"></select>
+        </div>
+        <div class="col-6 col-sm-3">
+          <label class="form-label mb-1" for="p-dia">Día</label>
+          <select class="form-select form-select-sm" id="p-dia"></select>
+        </div>
+        <div class="col-6 col-sm-2">
+          <label class="form-label mb-1" for="p-hora">Hora</label>
+          <input type="time" class="form-control form-control-sm" id="p-hora" value="10:00">
+        </div>
+        <div class="col-12 col-sm-2">
+          <div id="p-resultado" class="fw-semibold">—</div>
+        </div>
+      </div>
+      <p class="celda-chica mb-0 mt-2">
+        La prueba se resuelve en el navegador con las mismas franjas que guarda el servidor.
+      </p>
+    </div>
+  </section>
+
+  <section class="card shadow-sm border-0 col-12 col-xl-7">
+    <header class="card__header"><h2 class="card__title">Horarios definidos</h2></header>
+    <div class="card__body table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Nombre</th><th>Franjas</th><th>Asignado a</th><th>Activo</th><th></th></tr></thead>
+        <tbody id="tabla-horarios"><tr><td colspan="5" class="text-muted">Cargando…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const csrf = () => (document.cookie.split(';').map(v => v.trim())
+      .find(v => v.startsWith('csrftoken=')) || '').split('=')[1] || '';
+  const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  const esc = (v) => (v === null || v === undefined) ? '' : String(v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  async function api(url, opciones) {
+    opciones = opciones || {};
+    const cab = { 'X-CSRFToken': csrf() };
+    if (opciones.body) cab['Content-Type'] = 'application/json';
+    const r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opciones,
+      { headers: Object.assign(cab, opciones.headers || {}) }));
+    if (r.status === 204) return null;
+    const texto = await r.text();
+    let datos = null;
+    try { datos = texto ? JSON.parse(texto) : null; } catch (e) { datos = { detail: texto }; }
+    if (!r.ok) {
+      throw new Error(datos && datos.detail ? datos.detail :
+        Object.keys(datos || {}).map(k => k + ': ' + [].concat(datos[k]).join(' ')).join(' · '));
+    }
+    return datos;
+  }
+
+  let horarios = [];
+
+  $('h-dias').innerHTML = DIAS.map((d, i) =>
+    '<div class="form-check"><input class="form-check-input" type="checkbox" value="' + i +
+    '" id="dia-' + i + '"' + (i < 5 ? ' checked' : '') + '>' +
+    '<label class="form-check-label" for="dia-' + i + '">' + d + '</label></div>').join('');
+  $('p-dia').innerHTML = DIAS.map((d, i) => '<option value="' + i + '">' + d + '</option>').join('');
+
+  function diasElegidos() {
+    return DIAS.map((_, i) => i).filter(i => $('dia-' + i).checked);
+  }
+
+  async function cargar() {
+    const d = await api('/api/concesionarios/horarios/');
+    horarios = d.results;
+    $('p-horario').innerHTML = horarios.map(h => '<option value="' + h.id + '">' + esc(h.nombre) + '</option>').join('');
+    if (!horarios.length) {
+      $('tabla-horarios').innerHTML = '<tr><td colspan="5" class="text-muted">Todavía no hay horarios. Creá el primero.</td></tr>';
+      probar(); return;
+    }
+    $('tabla-horarios').innerHTML = horarios.map(function (h) {
+      const franjas = h.franjas.map(f => '<span class="franja">' + DIAS[f.dia_semana].slice(0, 3) + ' ' +
+        f.hora_desde.slice(0, 5) + '–' + f.hora_hasta.slice(0, 5) + '</span>').join('');
+      return '<tr>' +
+        '<td><strong>' + esc(h.nombre) + '</strong>' +
+          (h.descripcion ? '<br><span class="celda-chica">' + esc(h.descripcion) + '</span>' : '') + '</td>' +
+        '<td>' + (franjas || '<span class="text-danger celda-chica">sin franjas: no habilita nada</span>') + '</td>' +
+        '<td class="celda-chica">' + h.en_uso + '</td>' +
+        '<td>' + (h.activo ? 'Sí' : 'No') + '</td>' +
+        '<td class="text-end">' +
+          '<button class="btn btn-sm btn-outline-secondary" data-editar="' + h.id + '">Editar</button> ' +
+          '<button class="btn btn-sm btn-outline-danger" data-borrar="' + h.id + '">Borrar</button>' +
+        '</td></tr>';
+    }).join('');
+    Array.prototype.forEach.call($('tabla-horarios').querySelectorAll('[data-editar]'),
+      b => b.addEventListener('click', () => editar(parseInt(b.dataset.editar, 10))));
+    Array.prototype.forEach.call($('tabla-horarios').querySelectorAll('[data-borrar]'),
+      b => b.addEventListener('click', () => borrar(parseInt(b.dataset.borrar, 10))));
+    probar();
+  }
+
+  function editar(id) {
+    const h = horarios.find(x => x.id === id);
+    if (!h) return;
+    $('h-id').value = h.id;
+    $('h-nombre').value = h.nombre;
+    $('h-desc').value = h.descripcion || '';
+    DIAS.forEach((_, i) => { $('dia-' + i).checked = false; });
+    h.franjas.forEach(f => { $('dia-' + f.dia_semana).checked = true; });
+    if (h.franjas.length) {
+      $('h-desde').value = h.franjas[0].hora_desde.slice(0, 5);
+      $('h-hasta').value = h.franjas[0].hora_hasta.slice(0, 5);
+    }
+    $('h-cancelar').hidden = false;
+    $('h-msg').textContent = 'Editando «' + h.nombre + '». Guardar reemplaza sus franjas.';
+    $('h-msg').className = 'small text-muted';
+  }
+
+  function limpiar() {
+    $('form-horario').reset();
+    $('h-id').value = '';
+    DIAS.forEach((_, i) => { $('dia-' + i).checked = i < 5; });
+    $('h-desde').value = '09:00'; $('h-hasta').value = '18:00';
+    $('h-cancelar').hidden = true;
+    $('h-msg').textContent = '';
+  }
+
+  async function borrar(id) {
+    const h = horarios.find(x => x.id === id);
+    if (h && h.en_uso && !confirm('Está asignado a ' + h.en_uso + ' registro(s). Al borrarlo quedan sin horario. ¿Seguir?')) return;
+    if (!h || !h.en_uso) { if (!confirm('¿Borrar el horario?')) return; }
+    try { await api('/api/concesionarios/horarios/' + id + '/', { method: 'DELETE' }); cargar(); }
+    catch (e) { $('h-msg').className = 'small text-danger'; $('h-msg').textContent = e.message; }
+  }
+
+  $('form-horario').addEventListener('submit', async function (ev) {
+    ev.preventDefault();
+    const dias = diasElegidos();
+    if (!dias.length) {
+      $('h-msg').className = 'small text-danger';
+      $('h-msg').textContent = 'Elegí al menos un día: un horario sin franjas no habilita nada.';
+      return;
+    }
+    const cuerpo = {
+      nombre: $('h-nombre').value.trim(),
+      descripcion: $('h-desc').value.trim(),
+      dias: dias,
+      hora_desde: $('h-desde').value,
+      hora_hasta: $('h-hasta').value,
+    };
+    const id = $('h-id').value;
+    try {
+      await api('/api/concesionarios/horarios/' + (id ? id + '/' : ''),
+        { method: id ? 'PUT' : 'POST', body: JSON.stringify(cuerpo) });
+      limpiar();
+      cargar();
+    } catch (e) {
+      $('h-msg').className = 'small text-danger'; $('h-msg').textContent = e.message;
+    }
+  });
+  $('h-cancelar').addEventListener('click', limpiar);
+
+  // -- probador: misma regla que HorarioAcceso.permite() en el servidor ------
+  function cubre(f, dia, hora) {
+    const desde = f.hora_desde.slice(0, 5), hasta = f.hora_hasta.slice(0, 5);
+    if (desde < hasta) return f.dia_semana === dia && hora >= desde && hora < hasta;
+    if (f.dia_semana === dia && hora >= desde) return true;
+    return (f.dia_semana + 1) % 7 === dia && hora < hasta;
+  }
+
+  function probar() {
+    const h = horarios.find(x => String(x.id) === $('p-horario').value);
+    const el = $('p-resultado');
+    if (!h) { el.textContent = '—'; el.className = 'fw-semibold text-muted'; return; }
+    const dia = parseInt($('p-dia').value, 10);
+    const ok = h.activo && h.franjas.some(f => cubre(f, dia, $('p-hora').value));
+    el.textContent = ok ? 'Puede entrar' : 'No puede';
+    el.className = 'fw-semibold ' + (ok ? 'text-success' : 'text-danger');
+  }
+  ['p-horario', 'p-dia', 'p-hora'].forEach(id => $(id).addEventListener('change', probar));
+
+  cargar();
+})();
+</script>
+{% endblock %}

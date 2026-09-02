@@ -1,0 +1,491 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Concesionarios{% endblock %}
+{% block header_title %}Concesionarios{% endblock %}
+{% block header_subtitle %}Personas por empresa, con su documentación y su horario de ingreso.{% endblock %}
+
+{% block header_actions %}
+<a class="btn btn-outline-secondary" href="{% url 'concesionarios_empresas' %}">Empresas y documentos</a>
+<a class="btn btn-outline-secondary" href="{% url 'concesionarios_horarios' %}">Horarios</a>
+<button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#alta-modal">Agregar concesionario</button>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .pill { font-size: .75rem; padding: .15rem .5rem; border-radius: 999px; white-space: nowrap; }
+  .pill--vencido    { background:#f8d7da; color:#842029; }
+  .pill--por_vencer { background:#fff3cd; color:#664d03; }
+  .pill--vigente    { background:#d1e7dd; color:#0f5132; }
+  .pill--nada       { background:#e2e3e5; color:#41464b; }
+  .pill--bloquea    { background:#842029; color:#fff; }
+  .tabla-conc td, .tabla-conc th { vertical-align: middle; }
+  .tabla-conc tbody tr { cursor: pointer; }
+  .celda-chica { font-size: .8rem; color: #6c757d; }
+  .resumen-cifras { display:flex; gap:1.5rem; flex-wrap:wrap; }
+  .resumen-cifras div { min-width: 7rem; }
+  .resumen-cifras strong { display:block; font-size:1.4rem; line-height:1.1; }
+</style>
+{% endblock %}
+
+{% block filter_panel %}
+<form id="filtros" class="row g-2 align-items-end">
+  <div class="col-12 col-md-3">
+    <label class="form-label mb-1" for="f-empresa">Empresa</label>
+    <select class="form-select" id="f-empresa" name="empresa"><option value="">Todas</option></select>
+  </div>
+  <div class="col-6 col-md-2">
+    <label class="form-label mb-1" for="f-doc">DNI</label>
+    <input class="form-control" id="f-doc" name="doc" inputmode="numeric" placeholder="21465281">
+  </div>
+  <div class="col-6 col-md-3">
+    <label class="form-label mb-1" for="f-apellido">Apellido o nombre</label>
+    <input class="form-control" id="f-apellido" name="apellido" placeholder="Pérez">
+  </div>
+  <div class="col-12 col-md-4 d-flex gap-3 align-items-center pt-2">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="f-activos" checked>
+      <label class="form-check-label" for="f-activos">Sólo activos</label>
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="f-problemas">
+      <label class="form-check-label" for="f-problemas">Con documentos vencidos o por vencer</label>
+    </div>
+    <button class="btn btn-primary ms-auto" type="submit">Filtrar</button>
+  </div>
+</form>
+{% endblock %}
+
+{% block content %}
+<section class="card shadow-sm border-0 mb-3">
+  <div class="card__body">
+    <div class="resumen-cifras" id="resumen">
+      <div><strong id="r-total">–</strong><span class="celda-chica">concesionarios</span></div>
+      <div><strong id="r-vencidos" class="text-danger">–</strong><span class="celda-chica">con documento vencido</span></div>
+      <div><strong id="r-porvencer" class="text-warning">–</strong><span class="celda-chica">por vencer</span></div>
+      <div><strong id="r-bloqueados" class="text-danger">–</strong><span class="celda-chica">no deberían ingresar</span></div>
+      <div><strong id="r-sindocs">–</strong><span class="celda-chica">sin documentación</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="card shadow-sm border-0">
+  <header class="card__header d-flex justify-content-between align-items-center">
+    <h2 class="card__title">Listado</h2>
+    <span class="celda-chica" id="orden-nota">Ordenado por urgencia del vencimiento</span>
+  </header>
+  <div class="card__body table-responsive">
+    <table class="table table-hover table-sm align-middle tabla-conc">
+      <thead>
+        <tr>
+          <th>Apellido y nombre</th>
+          <th>DNI</th>
+          <th>Legajo</th>
+          <th>Nac.</th>
+          <th>Categoría</th>
+          <th>Empresa</th>
+          <th>Cargo</th>
+          <th>Horario</th>
+          <th>Vencimiento más próximo</th>
+        </tr>
+      </thead>
+      <tbody id="tabla"><tr><td colspan="9" class="text-muted">Cargando…</td></tr></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_modals %}
+<div class="modal fade" id="detalle-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="detalle-titulo">Concesionario</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body" id="detalle-cuerpo"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="alta-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Agregar concesionario</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">
+          Buscá a la persona en el espejo de xSys. Aparecen los socios con categoría
+          CONCESIONARIO que todavía no están cargados acá.
+        </p>
+        <div class="input-group mb-2">
+          <input class="form-control" id="alta-busqueda" placeholder="Apellido, DNI o legajo">
+          <button class="btn btn-outline-secondary" type="button" id="alta-buscar">Buscar</button>
+        </div>
+        <div class="table-responsive" style="max-height: 16rem">
+          <table class="table table-sm table-hover">
+            <thead><tr><th>Apellido y nombre</th><th>DNI</th><th>Legajo</th><th></th></tr></thead>
+            <tbody id="alta-resultados"><tr><td colspan="4" class="text-muted">Buscá para empezar.</td></tr></tbody>
+          </table>
+        </div>
+        <hr>
+        <form id="alta-form" class="row g-2">
+          <input type="hidden" name="id_cliente" id="alta-id-cliente">
+          <div class="col-12"><div class="alert alert-secondary py-2 mb-1" id="alta-elegido">Ninguna persona seleccionada.</div></div>
+          <div class="col-12 col-md-5">
+            <label class="form-label mb-1" for="alta-empresa">Empresa</label>
+            <select class="form-select" id="alta-empresa" name="empresa" required></select>
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label mb-1" for="alta-cargo">Cargo</label>
+            <input class="form-control" id="alta-cargo" name="cargo" placeholder="Mozo, cajero…">
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label mb-1" for="alta-horario">Horario</label>
+            <select class="form-select" id="alta-horario" name="horario"><option value="">El de la empresa</option></select>
+          </div>
+          <div class="col-12 d-flex justify-content-end gap-2 mt-2">
+            <span class="text-danger me-auto" id="alta-msg"></span>
+            <button class="btn btn-primary" type="submit">Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const csrf = () => (document.cookie.split(';').map(v => v.trim())
+      .find(v => v.startsWith('csrftoken=')) || '').split('=')[1] || '';
+
+  async function api(url, opciones) {
+    opciones = opciones || {};
+    const cab = { 'X-CSRFToken': csrf() };
+    if (opciones.body && !(opciones.body instanceof FormData)) cab['Content-Type'] = 'application/json';
+    const r = await fetch(url, Object.assign({ credentials: 'same-origin' }, opciones,
+      { headers: Object.assign(cab, opciones.headers || {}) }));
+    if (r.status === 204) return null;
+    const texto = await r.text();
+    let datos = null;
+    try { datos = texto ? JSON.parse(texto) : null; } catch (e) { datos = { detail: texto }; }
+    if (!r.ok) throw new Error(mensajeDeError(datos));
+    return datos;
+  }
+
+  function mensajeDeError(datos) {
+    if (!datos) return 'Error inesperado';
+    if (typeof datos === 'string') return datos;
+    if (datos.detail) return datos.detail;
+    return Object.keys(datos).map(k => k + ': ' + [].concat(datos[k]).join(' ')).join(' · ');
+  }
+
+  const esc = (v) => (v === null || v === undefined) ? '' : String(v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const fecha = (f) => f ? f.split('-').reverse().join('/') : '';
+
+  const ETIQUETA = { vencido: 'Vencido', por_vencer: 'Por vencer', vigente: 'Vigente',
+                     sin_vencimiento: 'Sin vencimiento' };
+
+  function pillVencimiento(docs) {
+    if (!docs.total) return '<span class="pill pill--nada">Sin documentación</span>';
+    const p = docs.proximo;
+    if (!p) return '<span class="pill pill--vigente">Al día</span>';
+    const dias = p.dias;
+    const cola = p.estado === 'vencido'
+      ? 'hace ' + Math.abs(dias) + ' día' + (Math.abs(dias) === 1 ? '' : 's')
+      : 'en ' + dias + ' día' + (dias === 1 ? '' : 's');
+    return '<span class="pill pill--' + p.estado + '">' + ETIQUETA[p.estado] + '</span> ' +
+      '<span class="celda-chica">' + esc(p.tipo) + ' · ' + fecha(p.fecha_vencimiento) + ' (' + cola + ')</span>' +
+      (docs.bloqueado ? ' <span class="pill pill--bloquea">No debería ingresar</span>' : '');
+  }
+
+  // ------------------------------------------------------------- listado ---
+  let empresas = [], horarios = [];
+
+  function parametros() {
+    const p = new URLSearchParams();
+    if ($('f-empresa').value) p.set('empresa', $('f-empresa').value);
+    if ($('f-doc').value.trim()) p.set('doc', $('f-doc').value.trim());
+    if ($('f-apellido').value.trim()) p.set('apellido', $('f-apellido').value.trim());
+    if ($('f-activos').checked) p.set('solo_activos', '1');
+    if ($('f-problemas').checked) p.set('con_problemas', '1');
+    return p.toString();
+  }
+
+  async function cargarListado() {
+    $('tabla').innerHTML = '<tr><td colspan="9" class="text-muted">Cargando…</td></tr>';
+    try {
+      const d = await api('/api/concesionarios/?' + parametros());
+      $('r-total').textContent = d.count;
+      $('r-vencidos').textContent = d.resumen.con_vencidos;
+      $('r-porvencer').textContent = d.resumen.por_vencer;
+      $('r-bloqueados').textContent = d.resumen.bloqueados;
+      $('r-sindocs').textContent = d.resumen.sin_documentos;
+      if (!d.results.length) {
+        $('tabla').innerHTML = '<tr><td colspan="9" class="text-muted">No hay concesionarios con esos filtros.</td></tr>';
+        return;
+      }
+      $('tabla').innerHTML = d.results.map(function (f) {
+        const p = f.persona;
+        const h = f.horario;
+        return '<tr data-id="' + f.id + '">' +
+          '<td>' + esc(p.nombre_completo) + (f.activo ? '' : ' <span class="pill pill--nada">baja</span>') + '</td>' +
+          '<td>' + esc(p.doc_nro || '') + '</td>' +
+          '<td class="celda-chica">' + esc(p.id_cliente) + '</td>' +
+          '<td class="celda-chica">' + fecha(p.fecha_nac) + '</td>' +
+          '<td class="celda-chica">' + esc(p.categoria) + '</td>' +
+          '<td>' + esc(f.empresa.nombre) + '</td>' +
+          '<td class="celda-chica">' + esc(f.cargo) + '</td>' +
+          '<td class="celda-chica">' + (h ? esc(h.nombre) + (f.permite_ahora ? '' : ' <span class="pill pill--nada">fuera de horario</span>') : '—') + '</td>' +
+          '<td>' + pillVencimiento(f.documentos) + '</td>' +
+          '</tr>';
+      }).join('');
+    } catch (e) {
+      $('tabla').innerHTML = '<tr><td colspan="9" class="text-danger">' + esc(e.message) + '</td></tr>';
+    }
+  }
+
+  // ------------------------------------------------------------- detalle ---
+  const detalleModal = new bootstrap.Modal($('detalle-modal'));
+  let detalleActual = null;      // id del registro Concesionario
+  let detalleIdCliente = null;   // legajo de xSys, que es a lo que cuelgan los documentos
+
+  async function abrirDetalle(id) {
+    detalleActual = id;
+    $('detalle-cuerpo').innerHTML = '<p class="text-muted">Cargando…</p>';
+    detalleModal.show();
+    const d = await api('/api/concesionarios/' + id + '/');
+    const p = d.persona;
+    detalleIdCliente = p.id_cliente;
+    $('detalle-titulo').textContent = p.nombre_completo;
+    const tipos = await api('/api/concesionarios/tipos-documento/');
+    const opcionesTipo = tipos.results.filter(t => t.activo)
+      .map(t => '<option value="' + t.id + '" data-vence="' + (t.requiere_vencimiento ? 1 : 0) + '">' + esc(t.nombre) + '</option>').join('');
+
+    $('detalle-cuerpo').innerHTML =
+      '<div class="row g-3">' +
+        '<div class="col-12 col-lg-5">' +
+          '<h6>Persona</h6>' +
+          '<dl class="row mb-3 small">' +
+            fila('Legajo', p.id_cliente) + fila('DNI', p.doc_nro) +
+            fila('Categoría', p.categoria) + fila('Nacimiento', fecha(p.fecha_nac)) +
+            fila('Credencial', p.credencial_nro) + fila('Email', p.email) +
+            fila('Activo en xSys', p.activo ? 'Sí' : 'No') +
+          '</dl>' +
+          '<h6>Asignación</h6>' +
+          '<form id="d-form" class="row g-2 small">' +
+            '<div class="col-12"><label class="form-label mb-1">Empresa</label>' +
+              '<select class="form-select form-select-sm" name="empresa">' +
+              empresas.map(e => '<option value="' + e.id + '"' + (e.id === d.empresa.id ? ' selected' : '') + '>' + esc(e.nombre) + '</option>').join('') +
+              '</select></div>' +
+            '<div class="col-6"><label class="form-label mb-1">Cargo</label>' +
+              '<input class="form-control form-control-sm" name="cargo" value="' + esc(d.cargo) + '"></div>' +
+            '<div class="col-6"><label class="form-label mb-1">Horario</label>' +
+              '<select class="form-select form-select-sm" name="horario"><option value="">El de la empresa</option>' +
+              horarios.map(h => '<option value="' + h.id + '"' + (h.id === d.horario_id ? ' selected' : '') + '>' + esc(h.nombre) + '</option>').join('') +
+              '</select></div>' +
+            '<div class="col-6"><label class="form-label mb-1">Alta</label>' +
+              '<input type="date" class="form-control form-control-sm" name="fecha_alta" value="' + esc(d.fecha_alta || '') + '"></div>' +
+            '<div class="col-6"><label class="form-label mb-1">Baja</label>' +
+              '<input type="date" class="form-control form-control-sm" name="fecha_baja" value="' + esc(d.fecha_baja || '') + '"></div>' +
+            '<div class="col-12"><label class="form-label mb-1">Observaciones</label>' +
+              '<textarea class="form-control form-control-sm" name="observaciones" rows="2">' + esc(d.observaciones) + '</textarea></div>' +
+            '<div class="col-12 form-check ms-1">' +
+              '<input class="form-check-input" type="checkbox" name="activo" id="d-activo"' + (d.activo ? ' checked' : '') + '>' +
+              '<label class="form-check-label" for="d-activo">Activo</label></div>' +
+            '<div class="col-12 d-flex gap-2 align-items-center">' +
+              '<button class="btn btn-sm btn-primary" type="submit">Guardar</button>' +
+              '<button class="btn btn-sm btn-outline-danger" type="button" id="d-borrar">Quitar de concesionarios</button>' +
+              '<span id="d-msg" class="small"></span></div>' +
+          '</form>' +
+          (d.horario ? '<p class="celda-chica mt-2">Horario vigente: <strong>' + esc(d.horario.nombre) + '</strong> — ' + esc(d.horario.resumen) + (d.horario.propio ? ' (propio)' : ' (de la empresa)') + '</p>' : '') +
+        '</div>' +
+        '<div class="col-12 col-lg-7">' +
+          '<h6>Documentación</h6>' +
+          '<div class="table-responsive mb-3"><table class="table table-sm align-middle">' +
+            '<thead><tr><th>Tipo</th><th>Número</th><th>Emisión</th><th>Vence</th><th>Estado</th><th></th></tr></thead>' +
+            '<tbody id="d-docs"></tbody></table></div>' +
+          '<h6>Adjuntar documento</h6>' +
+          '<form id="d-doc-form" class="row g-2 small">' +
+            '<div class="col-12 col-md-5"><label class="form-label mb-1">Tipo</label>' +
+              '<select class="form-select form-select-sm" name="tipo" required>' + opcionesTipo + '</select></div>' +
+            '<div class="col-6 col-md-3"><label class="form-label mb-1">Número</label>' +
+              '<input class="form-control form-control-sm" name="numero"></div>' +
+            '<div class="col-6 col-md-2"><label class="form-label mb-1">Emisión</label>' +
+              '<input type="date" class="form-control form-control-sm" name="fecha_emision"></div>' +
+            '<div class="col-6 col-md-2"><label class="form-label mb-1">Vence</label>' +
+              '<input type="date" class="form-control form-control-sm" name="fecha_vencimiento"></div>' +
+            '<div class="col-12 col-md-7"><label class="form-label mb-1">Archivo</label>' +
+              '<input type="file" class="form-control form-control-sm" name="archivo" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.tif,.tiff"></div>' +
+            '<div class="col-12 col-md-5"><label class="form-label mb-1">Observaciones</label>' +
+              '<input class="form-control form-control-sm" name="observaciones"></div>' +
+            '<div class="col-12 d-flex gap-2 align-items-center">' +
+              '<button class="btn btn-sm btn-primary" type="submit">Adjuntar</button>' +
+              '<span id="d-doc-msg" class="small"></span></div>' +
+          '</form>' +
+        '</div>' +
+      '</div>';
+
+    pintarDocs(d.documentos);
+    $('d-form').addEventListener('submit', guardarAsignacion);
+    $('d-borrar').addEventListener('click', borrarConcesionario);
+    $('d-doc-form').addEventListener('submit', adjuntar);
+  }
+
+  function fila(rotulo, valor) {
+    return '<dt class="col-5 text-muted fw-normal">' + rotulo + '</dt><dd class="col-7">' + esc(valor === null || valor === undefined || valor === '' ? '—' : valor) + '</dd>';
+  }
+
+  function pintarDocs(docs) {
+    if (!docs.length) {
+      $('d-docs').innerHTML = '<tr><td colspan="6" class="text-muted">Sin documentos cargados.</td></tr>';
+      return;
+    }
+    $('d-docs').innerHTML = docs.map(function (x) {
+      return '<tr>' +
+        '<td>' + esc(x.tipo_nombre) + (x.bloquea_acceso ? ' <span class="pill pill--bloquea">habilita el ingreso</span>' : '') + '</td>' +
+        '<td class="celda-chica">' + esc(x.numero) + '</td>' +
+        '<td class="celda-chica">' + fecha(x.fecha_emision) + '</td>' +
+        '<td class="celda-chica">' + fecha(x.fecha_vencimiento) + '</td>' +
+        '<td><span class="pill pill--' + x.estado + '">' + ETIQUETA[x.estado] + '</span></td>' +
+        '<td class="text-end">' +
+          (x.archivo_url ? '<a class="btn btn-sm btn-outline-secondary" href="' + x.archivo_url + '" target="_blank" rel="noopener">Ver</a> ' : '') +
+          '<button class="btn btn-sm btn-outline-danger" data-borrar-doc="' + x.id + '">Borrar</button>' +
+        '</td></tr>';
+    }).join('');
+    Array.prototype.forEach.call($('d-docs').querySelectorAll('[data-borrar-doc]'), function (b) {
+      b.addEventListener('click', async function () {
+        if (!confirm('¿Borrar este documento y su archivo?')) return;
+        await api('/api/concesionarios/documentos/' + b.dataset.borrarDoc + '/', { method: 'DELETE' });
+        abrirDetalle(detalleActual); cargarListado();
+      });
+    });
+  }
+
+  async function guardarAsignacion(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    const cuerpo = {
+      empresa: parseInt(f.empresa.value, 10),
+      cargo: f.cargo.value,
+      horario: f.horario.value ? parseInt(f.horario.value, 10) : null,
+      fecha_alta: f.fecha_alta.value || null,
+      fecha_baja: f.fecha_baja.value || null,
+      observaciones: f.observaciones.value,
+      activo: f.activo.checked,
+    };
+    try {
+      await api('/api/concesionarios/' + detalleActual + '/', { method: 'PUT', body: JSON.stringify(cuerpo) });
+      $('d-msg').className = 'small text-success'; $('d-msg').textContent = 'Guardado.';
+      cargarListado();
+    } catch (e) {
+      $('d-msg').className = 'small text-danger'; $('d-msg').textContent = e.message;
+    }
+  }
+
+  async function borrarConcesionario() {
+    if (!confirm('Se quita de la administración de concesionarios. No se toca nada en xSys. ¿Seguir?')) return;
+    await api('/api/concesionarios/' + detalleActual + '/', { method: 'DELETE' });
+    detalleModal.hide(); cargarListado();
+  }
+
+  async function adjuntar(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    const fd = new FormData();
+    fd.append('id_cliente', String(detalleIdCliente));
+    fd.append('tipo', f.tipo.value);
+    if (f.numero.value) fd.append('numero', f.numero.value);
+    if (f.fecha_emision.value) fd.append('fecha_emision', f.fecha_emision.value);
+    if (f.fecha_vencimiento.value) fd.append('fecha_vencimiento', f.fecha_vencimiento.value);
+    if (f.observaciones.value) fd.append('observaciones', f.observaciones.value);
+    if (f.archivo.files[0]) fd.append('archivo', f.archivo.files[0]);
+    try {
+      await api('/api/concesionarios/documentos/', { method: 'POST', body: fd });
+      $('d-doc-msg').className = 'small text-success'; $('d-doc-msg').textContent = 'Adjuntado.';
+      abrirDetalle(detalleActual); cargarListado();
+    } catch (e) {
+      $('d-doc-msg').className = 'small text-danger'; $('d-doc-msg').textContent = e.message;
+    }
+  }
+
+  // ----------------------------------------------------------------- alta ---
+  const altaModal = new bootstrap.Modal($('alta-modal'));
+
+  async function buscarCandidatos() {
+    const q = encodeURIComponent($('alta-busqueda').value.trim());
+    const d = await api('/api/concesionarios/candidatos/?q=' + q);
+    if (!d.results.length) {
+      $('alta-resultados').innerHTML = '<tr><td colspan="4" class="text-muted">Sin resultados.</td></tr>';
+      return;
+    }
+    $('alta-resultados').innerHTML = d.results.map(function (p) {
+      return '<tr><td>' + esc(p.nombre_completo) + '</td><td>' + esc(p.doc_nro || '') + '</td>' +
+        '<td>' + esc(p.id_cliente) + '</td>' +
+        '<td class="text-end"><button class="btn btn-sm btn-outline-primary" data-elegir="' + p.id_cliente + '" data-nombre="' + esc(p.nombre_completo) + '">Elegir</button></td></tr>';
+    }).join('');
+    Array.prototype.forEach.call($('alta-resultados').querySelectorAll('[data-elegir]'), function (b) {
+      b.addEventListener('click', function () {
+        $('alta-id-cliente').value = b.dataset.elegir;
+        $('alta-elegido').textContent = b.dataset.nombre + ' (legajo ' + b.dataset.elegir + ')';
+      });
+    });
+  }
+
+  async function altaSubmit(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    if (!$('alta-id-cliente').value) {
+      $('alta-msg').textContent = 'Elegí una persona de la lista.'; return;
+    }
+    const cuerpo = {
+      id_cliente: parseInt($('alta-id-cliente').value, 10),
+      empresa: parseInt(f.empresa.value, 10),
+      cargo: f.cargo.value,
+      horario: f.horario.value ? parseInt(f.horario.value, 10) : null,
+    };
+    try {
+      await api('/api/concesionarios/alta/', { method: 'POST', body: JSON.stringify(cuerpo) });
+      altaModal.hide(); f.reset();
+      $('alta-id-cliente').value = ''; $('alta-elegido').textContent = 'Ninguna persona seleccionada.';
+      $('alta-msg').textContent = '';
+      cargarListado();
+    } catch (e) { $('alta-msg').textContent = e.message; }
+  }
+
+  // ---------------------------------------------------------------- inicio --
+  async function inicio() {
+    const [e, h] = await Promise.all([
+      api('/api/concesionarios/empresas/'), api('/api/concesionarios/horarios/')]);
+    empresas = e.results; horarios = h.results;
+    $('f-empresa').innerHTML = '<option value="">Todas</option>' +
+      empresas.map(x => '<option value="' + x.id + '">' + esc(x.nombre) + '</option>').join('');
+    $('alta-empresa').innerHTML = empresas.filter(x => x.activa)
+      .map(x => '<option value="' + x.id + '">' + esc(x.nombre) + '</option>').join('');
+    $('alta-horario').innerHTML = '<option value="">El de la empresa</option>' +
+      horarios.filter(x => x.activo).map(x => '<option value="' + x.id + '">' + esc(x.nombre) + '</option>').join('');
+    cargarListado();
+  }
+
+  $('filtros').addEventListener('submit', function (ev) { ev.preventDefault(); cargarListado(); });
+  $('f-activos').addEventListener('change', cargarListado);
+  $('f-problemas').addEventListener('change', cargarListado);
+  $('tabla').addEventListener('click', function (ev) {
+    const tr = ev.target.closest('tr[data-id]');
+    if (tr) abrirDetalle(tr.dataset.id);
+  });
+  $('alta-buscar').addEventListener('click', buscarCandidatos);
+  $('alta-busqueda').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); buscarCandidatos(); }
+  });
+  $('alta-form').addEventListener('submit', altaSubmit);
+  inicio();
+})();
+</script>
+{% endblock %}

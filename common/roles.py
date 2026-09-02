@@ -21,6 +21,10 @@ from rest_framework.permissions import BasePermission
 
 GRUPO_ADMIN = "Administrador"
 GRUPO_PUERTAS = "Configuración de Puertas"
+# La administración de concesionarios (empresas, documentación con vencimiento y
+# horarios de ingreso) es trabajo de mesa de entradas, no de sistemas: va en su
+# propio grupo para poder delegarla sin dar acceso a todo el panel.
+GRUPO_CONCESIONARIOS = "Concesionarios"
 
 
 def es_admin(user) -> bool:
@@ -36,6 +40,14 @@ def puede_config_puertas(user) -> bool:
     return bool(
         getattr(user, "is_authenticated", False)
         and (es_admin(user) or user.groups.filter(name=GRUPO_PUERTAS).exists())
+    )
+
+
+def puede_concesionarios(user) -> bool:
+    """El usuario es admin o pertenece al grupo Concesionarios."""
+    return bool(
+        getattr(user, "is_authenticated", False)
+        and (es_admin(user) or user.groups.filter(name=GRUPO_CONCESIONARIOS).exists())
     )
 
 
@@ -56,6 +68,7 @@ def _rol_requerido(check):
 
 admin_requerido = _rol_requerido(es_admin)
 puertas_requerido = _rol_requerido(puede_config_puertas)
+concesionarios_requerido = _rol_requerido(puede_concesionarios)
 
 
 class PuedeConfigPuertas(BasePermission):
@@ -65,3 +78,12 @@ class PuedeConfigPuertas(BasePermission):
 
     def has_permission(self, request, view):
         return puede_config_puertas(request.user)
+
+
+class PuedeConcesionarios(BasePermission):
+    """Permiso DRF: admin o grupo Concesionarios."""
+
+    message = "Requiere el rol de administración de concesionarios."
+
+    def has_permission(self, request, view):
+        return puede_concesionarios(request.user)

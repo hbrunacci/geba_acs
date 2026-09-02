@@ -90,6 +90,18 @@
             <a href="{% url 'diag_facial_console' %}">Diagnóstico de facial</a>
           </li>
           {% endif %}
+          {% if nav_can_concesionarios %}
+          <li class="nav__item nav__item--expandable{% if current_url == 'concesionarios_listado' or current_url == 'concesionarios_empresas' or current_url == 'concesionarios_horarios' %} nav__item--active{% endif %}">
+            <details{% if current_url == 'concesionarios_listado' or current_url == 'concesionarios_empresas' or current_url == 'concesionarios_horarios' %} open{% endif %}>
+              <summary>Concesionarios</summary>
+              <ul class="nav__sublist">
+                <li class="nav__subitem"><a href="{% url 'concesionarios_listado' %}">Listado</a></li>
+                <li class="nav__subitem"><a href="{% url 'concesionarios_empresas' %}">Empresas y documentos</a></li>
+                <li class="nav__subitem"><a href="{% url 'concesionarios_horarios' %}">Horarios de ingreso</a></li>
+              </ul>
+            </details>
+          </li>
+          {% endif %}
           {% if nav_is_admin %}
           <li class="nav__item{% if current_url == 'parking_movements_console' %} nav__item--active{% endif %}">
             <a href="{% url 'parking_movements_console' %}">Estacionamiento</a>
