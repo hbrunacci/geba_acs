@@ -245,6 +245,7 @@ class MSSQLAccessCheckService:
 
     MOTIVOS = {
         "persona_inactiva": (104, "Persona inactiva"),
+        "deuda_actividades": (118, "Deuda de Actividades"),
         "vencimiento": (105, "Rechazo por vencimiento"),
         "ucp_obligatoria": (309, "La persona no posee UCP al día"),
         "master": (202, "Acceso Master"),
@@ -300,6 +301,21 @@ class MSSQLAccessCheckService:
             raise AccessCheckError(
                 "No se pudo establecer la conexión con MSSQL: " + str(exc)
             ) from exc
+
+    def _deuda_actividades_bloquea(self, cursor, id_cliente: int) -> bool:
+        """¿Está en CD_Clientes_Deuda_Actividades con Bloquea = 1 y vigente?
+
+        Si la tabla todavía no existe —código nuevo contra una base donde no se
+        aplicó la excepción— no se frena a nadie.
+        """
+        if not self._scalar(cursor, "SELECT OBJECT_ID('dbo.CD_Clientes_Deuda_Actividades')", ()):
+            return False
+        return bool(self._scalar(
+            cursor,
+            "SELECT TOP 1 1 FROM CD_Clientes_Deuda_Actividades "
+            "WHERE Id_Cliente = ? AND ISNULL(Activo, 1) = 1 AND ISNULL(Bloquea, 0) = 1",
+            (id_cliente,),
+        ))
 
     @staticmethod
     def _scalar(cursor, sql: str, params: tuple) -> Any:
@@ -489,6 +505,13 @@ class MSSQLAccessCheckService:
             # --- Rechazos críticos ---
             if not activo:
                 return resolved(False, "persona_inactiva")
+
+            # Deuda de cuotas de actividades. Va acá, en el mismo lugar y con el
+            # mismo motivo (118) que en CP_SCA_RegistrarAcceso: si sólo estuviera
+            # en el SP, la lista blanca que arma este servicio seguiría
+            # habilitando a esa gente y entrarían igual por el facial.
+            if self._deuda_actividades_bloquea(cursor, id_cliente):
+                return resolved(False, "deuda_actividades")
 
             vencimiento = self._scalar(
                 cursor,

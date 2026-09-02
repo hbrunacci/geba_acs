@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 # no depender del orden interno de aquel dict.
 MOTIVO_KEYS = (
     "persona_inactiva",
+    "deuda_actividades",
     "vencimiento",
     "ucp_obligatoria",
     "master",
@@ -84,6 +85,11 @@ SELECT
     ISNULL(C.Activo, 0)                                                   AS activo,
     ISNULL(C.Id_Cliente_Ref, 0)                                           AS id_ref,
     dbo.CF_SCA_ValidarVencimientosPersona(C.Id_Cliente, @acc, @f)         AS venc,
+    CASE WHEN EXISTS (SELECT 1 FROM CD_Clientes_Deuda_Actividades D
+                      WHERE D.Id_Cliente = C.Id_Cliente
+                        AND ISNULL(D.Activo, 1) = 1
+                        AND ISNULL(D.Bloquea, 0) = 1)
+         THEN 1 ELSE 0 END                                                AS deuda_act,
     dbo.CF_SCA_ValidarMaster(C.Id_Cliente)                                AS master,
     dbo.CF_SCA_ValidarUltCuotaPaga(C.Id_Cliente, @acc, @f)                AS ucp,
     dbo.CF_SCA_ValidarContratosTipos(C.Id_Cliente, @acc, @f)              AS contrato,
@@ -189,7 +195,8 @@ def compute_habilitacion_bulk(
 
     out: dict[int, dict[str, Any]] = {}
     for row in filas:
-        (cid, activo, _id_ref, venc, master, ucp, contrato, tipo, prod_desc, prod_tit_desc) = row
+        (cid, activo, _id_ref, venc, deuda_act, master, ucp, contrato, tipo,
+         prod_desc, prod_tit_desc) = row
         cid = int(cid)
 
         def res(hab: bool, key: str, detalle: str = "") -> dict[str, Any]:
@@ -205,6 +212,12 @@ def compute_habilitacion_bulk(
         # --- MISMA cascada que MSSQLAccessCheckService.check_access ---
         if not activo:
             out[cid] = res(False, "persona_inactiva")
+            continue
+        # Mismo rechazo y mismo motivo (118) que CP_SCA_RegistrarAcceso. Sin
+        # esto, el barrido volvería a habilitar a los que xSys frena en el
+        # molinete y entrarían por el facial.
+        if deuda_act:
+            out[cid] = res(False, "deuda_actividades")
             continue
         if venc:
             if descripciones and venc not in cache_venc:

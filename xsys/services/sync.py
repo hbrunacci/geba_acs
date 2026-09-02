@@ -22,6 +22,7 @@ from xsys.models import (
     SyncState,
     XsysAcceso,
     XsysBajaRevision,
+    XsysDeudaActividades,
     XsysContrato,
     XsysControlador,
     XsysMotivo,
@@ -384,6 +385,48 @@ class XsysSyncService:
             )
         return len(objs)
 
+    def sync_deuda_actividades(self, cursor) -> int:
+        """Espejo de CD_Clientes_Deuda_Actividades (deuda de cuotas de actividad).
+
+        Como el espejo de las bajas en revisión: si la tabla todavía no existe
+        en xSys no es un error, se devuelve 0 y sigue.
+        """
+        cursor.execute("SELECT OBJECT_ID('dbo.CD_Clientes_Deuda_Actividades')")
+        if cursor.fetchone()[0] is None:
+            return 0
+        cursor.execute(
+            "SELECT Id_Cliente, Cuotas, Importe, Actividad, Bloquea, Activo, "
+            "Origen, Observacion, Fecha_Alta FROM CD_Clientes_Deuda_Actividades"
+        )
+        rows = cursor.fetchall()
+        now = timezone.now()
+        objs = [
+            XsysDeudaActividades(
+                id_cliente=r[0],
+                cuotas=r[1],
+                importe=r[2],
+                actividad=(r[3] or "").strip()[:60],
+                bloquea=bool(r[4]),
+                activo=bool(r[5]) if r[5] is not None else True,
+                origen=(r[6] or "").strip()[:60],
+                observacion=(r[7] or "").strip()[:200],
+                fecha_alta=_aware(r[8]) if r[8] else None,
+                synced_at=now,
+            )
+            for r in rows
+        ]
+        vivos = {o.id_cliente for o in objs}
+        XsysDeudaActividades.objects.exclude(id_cliente__in=vivos).delete()
+        if objs:
+            XsysDeudaActividades.objects.bulk_create(
+                objs,
+                update_conflicts=True,
+                update_fields=["cuotas", "importe", "actividad", "bloquea", "activo",
+                               "origen", "observacion", "fecha_alta", "synced_at"],
+                unique_fields=["id_cliente"],
+            )
+        return len(objs)
+
     def sync_bajas_revision(self, cursor) -> int:
         """Espejo de CD_Clientes_Baja_Revision (socios con la baja en duda).
 
@@ -678,6 +721,7 @@ class XsysSyncService:
             stats["accesos"] = self.sync_accesos(cursor)
             stats["controladores"] = self.sync_controladores(cursor)
             stats["motivos"] = self.sync_motivos(cursor)
+            stats["deuda_actividades"] = self.sync_deuda_actividades(cursor)
             stats["bajas_revision"] = self.sync_bajas_revision(cursor)
             stats["socios"] = self.sync_socios_all(cursor)
             stats["contratos"] = self.sync_contratos_all(cursor)
@@ -863,6 +907,7 @@ class XsysSyncService:
             stats["accesos"] = self.sync_accesos(cursor)
             stats["controladores"] = self.sync_controladores(cursor)
             stats["motivos"] = self.sync_motivos(cursor)
+            stats["deuda_actividades"] = self.sync_deuda_actividades(cursor)
             stats["bajas_revision"] = self.sync_bajas_revision(cursor)
             rows = self.read_novedades(cursor, last_id, limit=limit)
             stats["novedades"] = len(rows)

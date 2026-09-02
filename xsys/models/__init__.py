@@ -2,6 +2,7 @@ from .acceso import XsysAcceso, XsysMotivo
 from .baja_revision import XsysBajaRevision
 from .contrato import XsysContrato
 from .controlador import XsysControlador
+from .deuda_actividades import XsysDeudaActividades
 from .foto import XsysSocioFoto
 from .novedad import XsysNovedad
 from .pantalla import PantallaPuerta
@@ -20,5 +21,6 @@ __all__ = [
     "XsysControlador",
     "XsysContrato",
     "XsysBajaRevision",
+    "XsysDeudaActividades",
     "PantallaPuerta",
 ]

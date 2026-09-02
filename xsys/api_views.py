@@ -26,6 +26,7 @@ from xsys.models import (
     XsysContrato,
     XsysControlador,
     XsysMotivo,
+    XsysDeudaActividades,
     XsysSocio,
     XsysSocioFoto,
     XsysWhitelist,
@@ -429,6 +430,22 @@ def _estado_concesionarios(cids) -> dict:
         return {}
 
 
+def _deuda_actividades(cids) -> dict:
+    """Socios con deuda de cuotas de actividades, para marcarlos en el visor.
+
+    Los que tienen ``bloquea`` no llegan acá: xSys ya los frenó con el motivo
+    118 y el mensaje sale de CD_Motivos. Los que no bloquean —la tanda de 2 y 3
+    cuotas— pasan, y hay que avisarle al operador en amarillo.
+    """
+    ids = {int(c) for c in cids if c}
+    if not ids:
+        return {}
+    return {
+        d.id_cliente: d for d in
+        XsysDeudaActividades.objects.filter(id_cliente__in=ids, activo=True)
+    }
+
+
 def _bajas_en_revision(cids) -> set[int]:
     """Socios que pasan pese a figurar dados de baja, porque la baja está en duda.
 
@@ -544,7 +561,7 @@ def _mensaje_no_registrado(id_tarjeta: str) -> str:
     return f"Credencial no registrada: {tag}"
 
 
-def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None) -> dict:
+def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None, deuda_act: dict | None = None) -> dict:
     socio = socios.get(ev.id_cliente)
     tiene_foto = ev.id_cliente in fotos
     # Mensaje original de xSys (motivo de pantalla u observación).
@@ -617,6 +634,14 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         estado = "anomalia"
         mensaje = f"Pasa · {conc['empresa']}: {conc['motivo']}"
 
+    # Deuda de cuotas de actividades. Los que la tienen y NO bloquean —2 y 3
+    # cuotas— pasan: se los marca en amarillo para que el operador los mande a
+    # Administración. A los que bloquean los frena xSys antes (motivo 118).
+    deuda = (deuda_act or {}).get(ev.id_cliente)
+    if deuda and permitido:
+        estado = "anomalia"
+        mensaje = f"Deuda de Actividades · {deuda.cuotas} cuota(s)"
+
     # La credencial ya estaba reservada en otro molinete: prevalece sobre
     # cualquier otro mensaje, porque es el motivo por el que no debe pasar.
     if ev.conflicto_molinete:
@@ -655,6 +680,7 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         # revisar. Entra igual; hay que mandarlo a Socios.
         "baja_en_revision": revision,
         "concesionario_alerta": (conc or {}).get("motivo", ""),
+        "deuda_actividades": (deuda.cuotas if deuda else None),
         "concesionario_empresa": (conc or {}).get("empresa", ""),
         "es_barrera": bool(barreras and ev.id_acceso in barreras),
         # En una barrera el producto que habilita es la cochera. Se manda sólo
@@ -670,7 +696,7 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
     }
 
 
-def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None) -> dict:
+def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None, deuda_act: dict | None = None) -> dict:
     """Payload de un acceso facial BioStar, con la MISMA forma que _evento_payload
     para poder fusionarlo en la misma columna del visor. La identidad del equipo
     (``facial_equipo``) es el dato que xSys no tiene: viene del log de BioStar."""
@@ -705,6 +731,14 @@ def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avi
     if conc and permitido:
         estado = "anomalia"
         mensaje = f"Pasa · {conc['empresa']}: {conc['motivo']}"
+
+    # Deuda de cuotas de actividades. Los que la tienen y NO bloquean —2 y 3
+    # cuotas— pasan: se los marca en amarillo para que el operador los mande a
+    # Administración. A los que bloquean los frena xSys antes (motivo 118).
+    deuda = (deuda_act or {}).get(ev.id_cliente)
+    if deuda and permitido:
+        estado = "anomalia"
+        mensaje = f"Deuda de Actividades · {deuda.cuotas} cuota(s)"
     if ev.conflicto_molinete:
         estado = "no"
         mensaje = f"Paso pendiente Molinete: {ev.conflicto_molinete}"
@@ -735,6 +769,7 @@ def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avi
         "contratos": (contratos_por_socio or {}).get(ev.id_cliente) or [],
         "baja_en_revision": revision,
         "concesionario_alerta": (conc or {}).get("motivo", ""),
+        "deuda_actividades": (deuda.cuotas if deuda else None),
         "concesionario_empresa": (conc or {}).get("empresa", ""),
     }
 
@@ -945,6 +980,7 @@ class PuertaEstadoAPI(APIView):
         sin_cuota = _cuota_no_aplica(cids, socios)
         en_revision = _bajas_en_revision(cids)
         conc_estado = _estado_concesionarios(cids)
+        deuda_act = _deuda_actividades(cids)
         barreras = _accesos_barrera()
         todos_xsys = [e for col in xsys_por_col for e in col]
         # Sólo se calcula si esta puerta realmente tiene accesos de barrera: en
@@ -957,10 +993,10 @@ class PuertaEstadoAPI(APIView):
         columnas = []
         for cd, xs, fx in zip(cols_def, xsys_por_col, facial_por_col):
             # (fecha, payload) para poder ordenar la mezcla por tiempo (desc).
-            items = [(e.fecha, _evento_payload(e, socios, fotos, motivos, ctrls, avisos_por_socio, contratos_por_socio, barreras, ingresos_hoy, sin_cuota, en_revision, conc_estado)) for e in xs]
+            items = [(e.fecha, _evento_payload(e, socios, fotos, motivos, ctrls, avisos_por_socio, contratos_por_socio, barreras, ingresos_hoy, sin_cuota, en_revision, conc_estado, deuda_act)) for e in xs]
             # Los faciales se ubican en la línea de tiempo por su hora de ingesta
             # (real), no por la hora de BioStar (atrasada). Los xSys sí por fecha.
-            items += [(e.synced_at, _facial_evento_payload(e, socios, fotos, avisos_por_socio, contratos_por_socio, sin_cuota, en_revision, conc_estado)) for e in fx]
+            items += [(e.synced_at, _facial_evento_payload(e, socios, fotos, avisos_por_socio, contratos_por_socio, sin_cuota, en_revision, conc_estado, deuda_act)) for e in fx]
             items.sort(key=lambda t: t[0], reverse=True)
             payloads = [p for _, p in items[: HISTORIAL_LEN + 1]]
             columnas.append({
