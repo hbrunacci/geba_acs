@@ -646,7 +646,11 @@
       var row = e.target.closest(".hrow");
       if (row) {
         var ides = parseInt(row.getAttribute("data-ides"), 10);
-        var cand = (cd.historial || []).slice();
+        // La lista que se está VIENDO es hist[].list. Cuando se cargó el día
+        // completo tiene muchos más eventos que colData, que sólo guarda la
+        // ventana del sondeo: buscar ahí dejaba sin modal a todo lo viejo.
+        var stc = hist[ckey];
+        var cand = ((stc && stc.list && stc.list.length) ? stc.list : (cd.historial || [])).slice();
         if (cd.ultimo) cand.push(cd.ultimo);
         for (var i = 0; i < cand.length; i++) if (cand[i].id_es === ides) { ev = cand[i]; break; }
       } else if (e.target.closest(".col__current")) {

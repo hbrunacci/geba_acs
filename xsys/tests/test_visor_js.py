@@ -171,3 +171,36 @@ class VisorJavaScriptTests(unittest.TestCase):
             "el visor tiene que seguir en ES5: un error de sintaxis anula el "
             "archivo entero y la pantalla queda en blanco.",
         )
+
+
+class HistorialCompletoTests(unittest.TestCase):
+    """El modal tiene que resolver el evento de la lista que se está viendo.
+
+    Cuando el visor carga el día completo de una columna, esa lista queda en
+    ``hist[key].list``; ``colData`` sigue teniendo sólo la ventana del sondeo.
+    Buscar el evento en ``colData`` dejaba sin modal a todo lo viejo del día:
+    se hacía clic en la tarjeta y no pasaba nada.
+    """
+
+    def setUp(self):
+        self.texto = TEMPLATE.read_text(encoding="utf-8")
+
+    def _handler(self) -> str:
+        i = self.texto.index("click en fila de historial")
+        return self.texto[i:i + 1200]
+
+    def test_el_modal_busca_en_la_lista_que_se_muestra(self):
+        handler = self._handler()
+        self.assertIn("hist[ckey]", handler)
+
+    def test_no_resuelve_solo_desde_la_ventana_del_sondeo(self):
+        handler = self._handler()
+        self.assertNotIn("var cand = (cd.historial || []).slice();", handler)
+
+    def test_el_dia_completo_se_pide_al_endpoint_aparte(self):
+        self.assertIn("/puerta/historial/?col=", self.texto)
+
+    def test_el_sondeo_no_pisa_la_lista_expandida(self):
+        """Con el día cargado, un paso nuevo no puede devolver al operador arriba."""
+        i = self.texto.index("if (st.full) {")
+        self.assertIn("nuevos.concat(st.list)", self.texto[i:i + 900])
