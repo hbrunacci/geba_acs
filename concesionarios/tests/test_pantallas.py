@@ -36,6 +36,19 @@ class PantallasUsablesTests(TestCase):
         for url in PANTALLAS:
             self.assertEqual(self.client.get(url).status_code, 200, url)
 
+    def test_no_se_filtra_sintaxis_de_template_a_la_pantalla(self):
+        """`{# … #}` es de UNA línea: en varias, Django lo imprime tal cual.
+
+        No falla, no avisa, y la pantalla aparece con texto crudo arriba. Pasó
+        con el comentario de los modales. Un 200 no alcanza para dar por buena
+        una pantalla: hay que mirar lo que sale.
+        """
+        for url in PANTALLAS:
+            html = self.client.get(url).content.decode()
+            cuerpo = html.split("</head>", 1)[-1]
+            for marca in ("{#", "#}", "{% comment %}", "{% endcomment %}", "{% block"):
+                self.assertNotIn(marca, cuerpo, f"{url}: quedó «{marca}» en el HTML")
+
     def test_ningun_modal_queda_desplegado_tapando_la_pagina(self):
         """Un .modal sin `hidden` cubre la pantalla entera y come los clics."""
         for url in PANTALLAS:

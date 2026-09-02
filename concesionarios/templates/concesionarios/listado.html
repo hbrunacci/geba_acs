@@ -101,11 +101,17 @@
 {% endblock %}
 
 {% block extra_modals %}
-{# Modales con la convención de la casa (.modal + atributo hidden, que abre y
-   cierra dashboard.js). NO se usan los de Bootstrap: dashboard.css define su
-   propia clase .modal a pantalla completa y se carga DESPUÉS de Bootstrap, así
-   que un modal de Bootstrap queda desplegado siempre, invisible por el .fade, y
-   se come todos los clics de la página. #}
+{% comment %}
+Modales con la convención de la casa (.modal + atributo hidden, que abre y
+cierra dashboard.js). NO se usan los de Bootstrap: dashboard.css define su
+propia clase .modal a pantalla completa y se carga DESPUÉS de Bootstrap, así
+que un modal de Bootstrap queda desplegado siempre, invisible por el .fade, y
+se come todos los clics de la página.
+
+Y el comentario va con {% templatetag openblock %} comment {% templatetag closeblock %}
+y no con llave-numeral: ése es de UNA sola línea, y en varias líneas Django lo
+imprime en pantalla tal cual.
+{% endcomment %}
 <div class="modal" id="detalle-modal" hidden>
   <div class="modal__overlay"></div>
   <div class="modal__content modal__content--ancho">
