@@ -66,6 +66,98 @@ class ListadoAPI(_Base):
         })
 
 
+class IngresosAPI(_Base):
+    """Pasadas de los concesionarios en un rango, con foto, empresa y resultado."""
+
+    def get(self, request):
+        from datetime import date, timedelta
+
+        from django.utils import timezone
+
+        def fecha(nombre, default):
+            valor = (request.query_params.get(nombre) or "").strip()
+            if not valor:
+                return default
+            try:
+                return date.fromisoformat(valor)
+            except ValueError:
+                return default
+
+        hoy = timezone.localdate()
+        desde = fecha("desde", hoy - timedelta(days=7))
+        hasta = fecha("hasta", hoy)
+        if hasta < desde:
+            desde, hasta = hasta, desde
+        empresa = request.query_params.get("empresa")
+        datos = services.ingresos(
+            desde=desde, hasta=hasta,
+            empresa_id=int(empresa) if (empresa or "").isdigit() else None,
+            solo_rechazos=_bool(request.query_params.get("solo_rechazos")),
+        )
+        if _bool(request.query_params.get("solo_rechazos")):
+            datos["results"] = [f for f in datos["results"] if not f["permitido"]]
+        if _bool(request.query_params.get("solo_alertas")):
+            datos["results"] = [f for f in datos["results"] if f["alerta"]]
+        datos["desde"], datos["hasta"] = desde, hasta
+        return Response(datos)
+
+
+# ---------------------------------------------------------------------- fotos
+class FotoAPI(_Base):
+    """La cara de la persona: la cargada a mano y, si no hay, la de xSys."""
+
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get(self, request, id_cliente):
+        from django.http import HttpResponse
+
+        from concesionarios import fotos
+        datos, tipo = fotos.bytes_para_mostrar(
+            id_cliente, miniatura=not _bool(request.query_params.get("full")))
+        if not datos:
+            raise Http404
+        respuesta = HttpResponse(datos, content_type=tipo or "image/jpeg")
+        respuesta["Cache-Control"] = "private, max-age=60"
+        return respuesta
+
+    def post(self, request, id_cliente):
+        from concesionarios import fotos
+        archivo = request.data.get("archivo") or request.data.get("imagen")
+        if archivo is None:
+            return Response({"archivo": ["Falta la imagen."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            foto = fotos.guardar(
+                id_cliente, archivo.read(),
+                content_type=getattr(archivo, "content_type", ""),
+                usuario=request.user.get_username())
+        except fotos.FotoInvalida as exc:
+            return Response({"archivo": [str(exc)]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"id_cliente": foto.id_cliente, "subido_por": foto.subido_por,
+                         "enrolada": False}, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, id_cliente):
+        from concesionarios.models import FotoPersona
+        FotoPersona.objects.filter(id_cliente=id_cliente).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class EnrolarFotoAPI(_Base):
+    """Manda la foto cargada al rostro de BioStar."""
+
+    def post(self, request, id_cliente):
+        from xsys.models import XsysSocio
+
+        from concesionarios import fotos
+        socio = XsysSocio.objects.filter(id_cliente=id_cliente).first()
+        nombre = ""
+        if socio:
+            nombre = f"{socio.apellido} {socio.nombre}".strip() or socio.razon_social
+        resultado = fotos.enrolar(id_cliente, nombre=nombre)
+        codigo = status.HTTP_200_OK if resultado["ok"] else status.HTTP_502_BAD_GATEWAY
+        return Response(resultado, status=codigo)
+
+
 class CandidatosAPI(_Base):
     """Socios con categoría CONCESIONARIO en xSys que todavía no están cargados."""
 

@@ -312,3 +312,43 @@ class Documento(models.Model):
         if not self.fecha_vencimiento:
             return None
         return (self.fecha_vencimiento - (hoy or timezone.localdate())).days
+
+
+# --------------------------------------------------------------------- la foto
+class FotoPersona(models.Model):
+    """Foto cargada a mano para el rostro de BioStar.
+
+    De los 101 concesionarios de la nómina, **4** tienen foto en xSys: el
+    enrolamiento facial no tiene de dónde sacar la cara. Esta es la que carga
+    la oficina, y manda sobre la de xSys donde haya que mostrar a la persona.
+
+    La imagen va como binario en la base, igual que ``XsysSocioFoto``, y no como
+    archivo: es lo que consumen ``make_thumbnail`` y ``resize_for_face``, y lo
+    que hay que mandarle a BioStar en base64. Cuelga de ``id_cliente`` —no de
+    ``Concesionario``— por lo mismo que la documentación: le sirve a cualquiera
+    que pase por una puerta.
+    """
+
+    id_cliente = models.IntegerField(unique=True, db_index=True)
+    imagen = models.BinaryField()
+    thumbnail = models.BinaryField(null=True, blank=True)
+    content_type = models.CharField(max_length=60, blank=True, default="image/jpeg")
+    sha256 = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    subido_por = models.CharField(max_length=150, blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now)
+    # Resultado del último intento de enrolar el rostro en BioStar.
+    enrolada_at = models.DateTimeField(null=True, blank=True)
+    enrolada_resultado = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        db_table = "conc_foto_persona"
+        verbose_name = "Foto cargada"
+        verbose_name_plural = "Fotos cargadas"
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:  # pragma: no cover - representación auxiliar
+        return f"Foto de {self.id_cliente}"
+
+    @property
+    def enrolada(self) -> bool:
+        return bool(self.enrolada_at and self.enrolada_resultado.startswith(("enrolled", "created")))

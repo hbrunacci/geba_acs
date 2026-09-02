@@ -10,6 +10,12 @@ def concesionarios_listado(request):
 
 
 @concesionarios_requerido
+def concesionarios_ingresos(request):
+    """Quiénes entraron al club, con foto, empresa, hora y resultado."""
+    return render(request, "concesionarios/ingresos.html")
+
+
+@concesionarios_requerido
 def concesionarios_empresas(request):
     """Empresas concesionarias y tipos de documento."""
     return render(request, "concesionarios/empresas.html")

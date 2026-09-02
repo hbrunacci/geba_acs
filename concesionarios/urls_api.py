@@ -6,6 +6,10 @@ urlpatterns = [
     path("concesionarios/", v.ListadoAPI.as_view(), name="api_conc_listado"),
     path("concesionarios/alta/", v.ConcesionariosAPI.as_view(), name="api_conc_alta"),
     path("concesionarios/candidatos/", v.CandidatosAPI.as_view(), name="api_conc_candidatos"),
+    path("concesionarios/ingresos/", v.IngresosAPI.as_view(), name="api_conc_ingresos"),
+    path("concesionarios/foto/<int:id_cliente>/", v.FotoAPI.as_view(), name="api_conc_foto"),
+    path("concesionarios/foto/<int:id_cliente>/enrolar/", v.EnrolarFotoAPI.as_view(),
+         name="api_conc_foto_enrolar"),
     path("concesionarios/<int:pk>/", v.ConcesionarioDetalleAPI.as_view(), name="api_conc_detalle"),
 
     path("concesionarios/empresas/", v.EmpresasAPI.as_view(), name="api_conc_empresas"),

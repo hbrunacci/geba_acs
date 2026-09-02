@@ -1,0 +1,219 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Ingresos de concesionarios{% endblock %}
+{% block header_title %}Ingresos de concesionarios{% endblock %}
+{% block header_subtitle %}Quiénes pasaron por el club, cuándo, por dónde y con qué resultado.{% endblock %}
+
+{% block header_actions %}
+<a class="btn btn-outline-secondary" href="{% url 'concesionarios_listado' %}">Concesionarios</a>
+<a class="btn btn-outline-secondary" href="{% url 'concesionarios_empresas' %}">Empresas y documentos</a>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .avatar { width:38px; height:38px; border-radius:50%; object-fit:cover; background:#e9ecef; }
+  .avatar--vacio { display:inline-flex; align-items:center; justify-content:center;
+                   font-size:.75rem; color:#adb5bd; }
+  .pill { font-size:.75rem; padding:.15rem .5rem; border-radius:999px; white-space:nowrap; }
+  .pill--ok      { background:#d1e7dd; color:#0f5132; }
+  .pill--no      { background:#f8d7da; color:#842029; }
+  .pill--alerta  { background:#fff3cd; color:#664d03; }
+  .pill--bloquea { background:#842029; color:#fff; }
+  .celda-chica { font-size:.8rem; color:#6c757d; }
+  .resumen-cifras { display:flex; gap:1.5rem; flex-wrap:wrap; }
+  .resumen-cifras div { min-width:7rem; }
+  .resumen-cifras strong { display:block; font-size:1.4rem; line-height:1.1; }
+  .fila-alerta { background:#fffbf0; }
+</style>
+{% endblock %}
+
+{% block filter_panel %}
+<form id="filtros" class="row g-2 align-items-end">
+  <div class="col-6 col-md-2">
+    <label class="form-label mb-1" for="f-desde">Desde</label>
+    <input type="date" class="form-control" id="f-desde">
+  </div>
+  <div class="col-6 col-md-2">
+    <label class="form-label mb-1" for="f-hasta">Hasta</label>
+    <input type="date" class="form-control" id="f-hasta">
+  </div>
+  <div class="col-12 col-md-3">
+    <label class="form-label mb-1" for="f-empresa">Empresa</label>
+    <select class="form-select" id="f-empresa"><option value="">Todas</option></select>
+  </div>
+  <div class="col-12 col-md-5 d-flex gap-3 align-items-center pt-2">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="f-rechazos">
+      <label class="form-check-label" for="f-rechazos">Sólo los que no pasaron</label>
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="f-alertas">
+      <label class="form-check-label" for="f-alertas">Sólo con alerta</label>
+    </div>
+    <button class="btn btn-primary ms-auto" type="submit">Buscar</button>
+  </div>
+  <div class="col-12">
+    <div class="btn-group btn-group-sm" role="group">
+      <button type="button" class="btn btn-outline-secondary" data-rango="0">Hoy</button>
+      <button type="button" class="btn btn-outline-secondary" data-rango="7">7 días</button>
+      <button type="button" class="btn btn-outline-secondary" data-rango="30">30 días</button>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block content %}
+<section class="card shadow-sm border-0 mb-3">
+  <div class="card__body">
+    <div class="resumen-cifras">
+      <div><strong id="r-eventos">–</strong><span class="celda-chica">pasadas</span></div>
+      <div><strong id="r-personas">–</strong><span class="celda-chica">personas</span></div>
+      <div><strong id="r-pasaron" class="text-success">–</strong><span class="celda-chica">pasaron</span></div>
+      <div><strong id="r-rechazos" class="text-danger">–</strong><span class="celda-chica">no pasaron</span></div>
+      <div><strong id="r-alertas" class="text-warning">–</strong><span class="celda-chica">con alerta</span></div>
+    </div>
+    <p id="aviso" class="celda-chica mb-0 mt-2"></p>
+  </div>
+</section>
+
+<section class="card shadow-sm border-0">
+  <header class="card__header"><h2 class="card__title">Movimientos</h2></header>
+  <div class="card__body table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr>
+          <th style="width:52px"></th>
+          <th>Nombre completo</th>
+          <th>Empresa</th>
+          <th>Fecha y hora</th>
+          <th>Acceso</th>
+          <th>Resultado</th>
+          <th>Estado de la persona</th>
+        </tr>
+      </thead>
+      <tbody id="tabla"><tr><td colspan="7" class="text-muted">Elegí un rango y buscá.</td></tr></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const esc = (v) => (v === null || v === undefined) ? '' : String(v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  async function api(url) {
+    const r = await fetch(url, { credentials: 'same-origin' });
+    const texto = await r.text();
+    let datos = null;
+    try { datos = texto ? JSON.parse(texto) : null; } catch (e) { datos = { detail: texto }; }
+    if (!r.ok) throw new Error((datos && datos.detail) || 'Error al consultar');
+    return datos;
+  }
+
+  function iso(d) { return d.toISOString().slice(0, 10); }
+
+  function rango(dias) {
+    const hasta = new Date();
+    const desde = new Date();
+    desde.setDate(desde.getDate() - dias);
+    $('f-desde').value = iso(desde);
+    $('f-hasta').value = iso(hasta);
+    buscar();
+  }
+
+  function momento(iso_str) {
+    if (!iso_str) return '';
+    const d = new Date(iso_str);
+    const dosDigitos = (n) => (n < 10 ? '0' : '') + n;
+    return dosDigitos(d.getDate()) + '/' + dosDigitos(d.getMonth() + 1) + '/' + d.getFullYear() +
+      ' ' + dosDigitos(d.getHours()) + ':' + dosDigitos(d.getMinutes());
+  }
+
+  function avatar(f) {
+    const p = f.persona;
+    if (!f.tiene_foto) {
+      const iniciales = (p.nombre_completo || '?').split(/[\s,]+/).filter(Boolean)
+        .slice(0, 2).map(x => x[0]).join('');
+      return '<span class="avatar avatar--vacio">' + esc(iniciales.toUpperCase()) + '</span>';
+    }
+    return '<img class="avatar" loading="lazy" alt="" src="/api/concesionarios/foto/' +
+      p.id_cliente + '/">';
+  }
+
+  async function buscar() {
+    $('tabla').innerHTML = '<tr><td colspan="7" class="text-muted">Buscando…</td></tr>';
+    const p = new URLSearchParams();
+    if ($('f-desde').value) p.set('desde', $('f-desde').value);
+    if ($('f-hasta').value) p.set('hasta', $('f-hasta').value);
+    if ($('f-empresa').value) p.set('empresa', $('f-empresa').value);
+    if ($('f-rechazos').checked) p.set('solo_rechazos', '1');
+    if ($('f-alertas').checked) p.set('solo_alertas', '1');
+    try {
+      const d = await api('/api/concesionarios/ingresos/?' + p.toString());
+      const r = d.resumen || {};
+      $('r-eventos').textContent = (d.results || []).length;
+      $('r-personas').textContent = r.personas != null ? r.personas : '–';
+      $('r-pasaron').textContent = r.pasaron != null ? r.pasaron : '–';
+      $('r-rechazos').textContent = r.rechazos != null ? r.rechazos : '–';
+      $('r-alertas').textContent = r.con_alerta != null ? r.con_alerta : '–';
+
+      const avisos = [];
+      if (d.error) avisos.push(d.error);
+      if (d.sin_concesionarios) avisos.push('No hay concesionarios cargados con ese filtro.');
+      if (d.truncado) avisos.push('Se muestran los primeros ' + (d.results || []).length +
+        ' de ' + d.total_crudo + ' movimientos: acortá el rango.');
+      $('aviso').textContent = avisos.join(' · ');
+      $('aviso').className = 'celda-chica mb-0 mt-2' + (d.error ? ' text-danger' : '');
+
+      if (!d.results || !d.results.length) {
+        $('tabla').innerHTML = '<tr><td colspan="7" class="text-muted">Sin movimientos en ese rango.</td></tr>';
+        return;
+      }
+      $('tabla').innerHTML = d.results.map(function (f) {
+        const p2 = f.persona;
+        const resultado = f.permitido
+          ? '<span class="pill pill--ok">Pasó</span>'
+          : '<span class="pill pill--no">No pasó</span>';
+        const estado = f.alerta
+          ? '<span class="pill ' + (f.doc_bloqueado ? 'pill--bloquea' : 'pill--alerta') + '">' +
+            esc(f.alerta_motivo) + '</span>'
+          : '<span class="celda-chica">—</span>';
+        return '<tr' + (f.alerta ? ' class="fila-alerta"' : '') + '>' +
+          '<td>' + avatar(f) + '</td>' +
+          '<td>' + esc(p2.nombre_completo) +
+            '<br><span class="celda-chica">DNI ' + esc(p2.doc_nro || '—') + '</span></td>' +
+          '<td>' + esc(f.empresa) + '</td>' +
+          '<td>' + momento(f.fecha) + '</td>' +
+          '<td class="celda-chica">' + esc(f.lector) +
+            '<br>' + esc(f.lectura) + '</td>' +
+          '<td>' + resultado +
+            '<br><span class="celda-chica">' + esc(f.motivo) + '</span></td>' +
+          '<td>' + estado + '</td>' +
+          '</tr>';
+      }).join('');
+    } catch (e) {
+      $('tabla').innerHTML = '<tr><td colspan="7" class="text-danger">' + esc(e.message) + '</td></tr>';
+    }
+  }
+
+  $('filtros').addEventListener('submit', function (ev) { ev.preventDefault(); buscar(); });
+  ['f-empresa', 'f-rechazos', 'f-alertas'].forEach(id => $(id).addEventListener('change', buscar));
+  Array.prototype.forEach.call(document.querySelectorAll('[data-rango]'), function (b) {
+    b.addEventListener('click', function () { rango(parseInt(b.dataset.rango, 10)); });
+  });
+
+  (async function () {
+    try {
+      const e = await api('/api/concesionarios/empresas/');
+      $('f-empresa').innerHTML = '<option value="">Todas</option>' +
+        e.results.map(x => '<option value="' + x.id + '">' + esc(x.nombre) + '</option>').join('');
+    } catch (err) { /* el filtro queda en "Todas" */ }
+    rango(7);
+  })();
+})();
+</script>
+{% endblock %}

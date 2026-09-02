@@ -410,6 +410,25 @@ def _accesos_barrera() -> set[int]:
     return valor
 
 
+def _estado_concesionarios(cids) -> dict:
+    """Concesionarios que pasan pero están dados de baja o con documentación vencida.
+
+    xSys no sabe nada de esto: la baja de la concesión y los papeles (ART,
+    libreta sanitaria, seguro) se llevan acá. La puerta la sigue decidiendo
+    xSys; lo que se agrega es el aviso al operador, que es quien puede frenar a
+    la persona y mandarla a la oficina.
+    """
+    ids = {int(c) for c in cids if c}
+    if not ids:
+        return {}
+    try:
+        from concesionarios.services import estado_operativo
+        return {cid: e for cid, e in estado_operativo(ids).items() if e.get("alerta")}
+    except Exception:  # pragma: no cover - el visor no se cae por un accesorio
+        logger.exception("No se pudo resolver el estado de los concesionarios")
+        return {}
+
+
 def _bajas_en_revision(cids) -> set[int]:
     """Socios que pasan pese a figurar dados de baja, porque la baja está en duda.
 
@@ -525,7 +544,7 @@ def _mensaje_no_registrado(id_tarjeta: str) -> str:
     return f"Credencial no registrada: {tag}"
 
 
-def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None) -> dict:
+def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None) -> dict:
     socio = socios.get(ev.id_cliente)
     tiene_foto = ev.id_cliente in fotos
     # Mensaje original de xSys (motivo de pantalla u observación).
@@ -591,6 +610,13 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         estado = "anomalia"
         mensaje = "Pasa · Figura dado de baja por error"
 
+    # Concesionario dado de baja en su concesión o con documentación vencida.
+    # xSys no lo sabe y lo deja pasar; el que puede frenarlo es el operador.
+    conc = (conc_estado or {}).get(ev.id_cliente)
+    if conc and permitido:
+        estado = "anomalia"
+        mensaje = f"Pasa · {conc['empresa']}: {conc['motivo']}"
+
     # La credencial ya estaba reservada en otro molinete: prevalece sobre
     # cualquier otro mensaje, porque es el motivo por el que no debe pasar.
     if ev.conflicto_molinete:
@@ -628,6 +654,8 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         # Figura dado de baja por el proceso masivo del 28/08/2026, todavía sin
         # revisar. Entra igual; hay que mandarlo a Socios.
         "baja_en_revision": revision,
+        "concesionario_alerta": (conc or {}).get("motivo", ""),
+        "concesionario_empresa": (conc or {}).get("empresa", ""),
         "es_barrera": bool(barreras and ev.id_acceso in barreras),
         # En una barrera el producto que habilita es la cochera. Se manda sólo
         # ahí: en un molinete peatonal el producto es "CUOTA SOCIAL" y no aporta.
@@ -642,7 +670,7 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
     }
 
 
-def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None) -> dict:
+def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None) -> dict:
     """Payload de un acceso facial BioStar, con la MISMA forma que _evento_payload
     para poder fusionarlo en la misma columna del visor. La identidad del equipo
     (``facial_equipo``) es el dato que xSys no tiene: viene del log de BioStar."""
@@ -673,6 +701,10 @@ def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avi
     revision = bool(en_revision and ev.id_cliente in en_revision)
     if revision and permitido:
         estado, mensaje = "anomalia", "Pasa · Figura dado de baja por error"
+    conc = (conc_estado or {}).get(ev.id_cliente)
+    if conc and permitido:
+        estado = "anomalia"
+        mensaje = f"Pasa · {conc['empresa']}: {conc['motivo']}"
     if ev.conflicto_molinete:
         estado = "no"
         mensaje = f"Paso pendiente Molinete: {ev.conflicto_molinete}"
@@ -702,6 +734,8 @@ def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avi
         "avisos": (avisos_por_socio or {}).get(ev.id_cliente) or [],
         "contratos": (contratos_por_socio or {}).get(ev.id_cliente) or [],
         "baja_en_revision": revision,
+        "concesionario_alerta": (conc or {}).get("motivo", ""),
+        "concesionario_empresa": (conc or {}).get("empresa", ""),
     }
 
 
@@ -910,6 +944,7 @@ class PuertaEstadoAPI(APIView):
         # Barreras: se muestra cuántas veces entró hoy con la misma habilitación.
         sin_cuota = _cuota_no_aplica(cids, socios)
         en_revision = _bajas_en_revision(cids)
+        conc_estado = _estado_concesionarios(cids)
         barreras = _accesos_barrera()
         todos_xsys = [e for col in xsys_por_col for e in col]
         # Sólo se calcula si esta puerta realmente tiene accesos de barrera: en
@@ -922,10 +957,10 @@ class PuertaEstadoAPI(APIView):
         columnas = []
         for cd, xs, fx in zip(cols_def, xsys_por_col, facial_por_col):
             # (fecha, payload) para poder ordenar la mezcla por tiempo (desc).
-            items = [(e.fecha, _evento_payload(e, socios, fotos, motivos, ctrls, avisos_por_socio, contratos_por_socio, barreras, ingresos_hoy, sin_cuota, en_revision)) for e in xs]
+            items = [(e.fecha, _evento_payload(e, socios, fotos, motivos, ctrls, avisos_por_socio, contratos_por_socio, barreras, ingresos_hoy, sin_cuota, en_revision, conc_estado)) for e in xs]
             # Los faciales se ubican en la línea de tiempo por su hora de ingesta
             # (real), no por la hora de BioStar (atrasada). Los xSys sí por fecha.
-            items += [(e.synced_at, _facial_evento_payload(e, socios, fotos, avisos_por_socio, contratos_por_socio, sin_cuota, en_revision)) for e in fx]
+            items += [(e.synced_at, _facial_evento_payload(e, socios, fotos, avisos_por_socio, contratos_por_socio, sin_cuota, en_revision, conc_estado)) for e in fx]
             items.sort(key=lambda t: t[0], reverse=True)
             payloads = [p for _, p in items[: HISTORIAL_LEN + 1]]
             columnas.append({

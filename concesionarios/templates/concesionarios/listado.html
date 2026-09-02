@@ -24,6 +24,9 @@
   .resumen-cifras { display:flex; gap:1.5rem; flex-wrap:wrap; }
   .resumen-cifras div { min-width: 7rem; }
   .resumen-cifras strong { display:block; font-size:1.4rem; line-height:1.1; }
+  .foto-grande { width:110px; height:110px; border-radius:.5rem; object-fit:cover; background:#e9ecef; }
+  .foto-grande--vacia { display:flex; align-items:center; justify-content:center;
+                        font-size:.8rem; color:#adb5bd; }
 </style>
 {% endblock %}
 
@@ -271,6 +274,19 @@
     $('detalle-cuerpo').innerHTML =
       '<div class="row g-3">' +
         '<div class="col-12 col-lg-5">' +
+          '<h6>Foto para el facial</h6>' +
+          '<div class="d-flex gap-3 align-items-start mb-3">' +
+            '<img id="d-foto" class="foto-grande" alt="" src="/api/concesionarios/foto/' + p.id_cliente + '/?full=1&t=' + Date.now() + '"' +
+                 ' onerror="this.style.display=\'none\';document.getElementById(\'d-sin-foto\').style.display=\'flex\'">' +
+            '<span id="d-sin-foto" class="foto-grande foto-grande--vacia" style="display:none">Sin foto</span>' +
+            '<div class="flex-grow-1 small">' +
+              '<p class="text-muted mb-2">La usa el facial. En xSys casi ningún concesionario tiene foto, así que hay que cargarla acá.</p>' +
+              '<input type="file" class="form-control form-control-sm mb-2" id="d-foto-archivo" accept="image/jpeg,image/png,image/webp">' +
+              '<button class="btn btn-sm btn-primary" type="button" id="d-foto-subir">Guardar foto</button> ' +
+              '<button class="btn btn-sm btn-outline-secondary" type="button" id="d-foto-enrolar">Enviar a BioStar</button>' +
+              '<div id="d-foto-msg" class="small mt-1"></div>' +
+            '</div>' +
+          '</div>' +
           '<h6>Persona</h6>' +
           '<dl class="row mb-3 small">' +
             fila('Legajo', p.id_cliente) + fila('DNI', p.doc_nro) +
@@ -336,6 +352,36 @@
     $('d-form').addEventListener('submit', guardarAsignacion);
     $('d-borrar').addEventListener('click', borrarConcesionario);
     $('d-doc-form').addEventListener('submit', adjuntar);
+    $('d-foto-subir').addEventListener('click', subirFoto);
+    $('d-foto-enrolar').addEventListener('click', enrolarFoto);
+  }
+
+  function msgFoto(texto, clase) {
+    $('d-foto-msg').className = 'small mt-1 ' + clase;
+    $('d-foto-msg').textContent = texto;
+  }
+
+  async function subirFoto() {
+    const archivo = $('d-foto-archivo').files[0];
+    if (!archivo) { msgFoto('Elegí una imagen.', 'text-danger'); return; }
+    const fd = new FormData();
+    fd.append('archivo', archivo);
+    try {
+      await api('/api/concesionarios/foto/' + detalleIdCliente + '/', { method: 'POST', body: fd });
+      const img = $('d-foto');
+      img.src = '/api/concesionarios/foto/' + detalleIdCliente + '/?full=1&t=' + Date.now();
+      img.style.display = ''; $('d-sin-foto').style.display = 'none';
+      msgFoto('Foto guardada. Enviala a BioStar para que la use el facial.', 'text-success');
+      cargarListado();
+    } catch (e) { msgFoto(e.message, 'text-danger'); }
+  }
+
+  async function enrolarFoto() {
+    msgFoto('Enviando a BioStar…', 'text-muted');
+    try {
+      const r = await api('/api/concesionarios/foto/' + detalleIdCliente + '/enrolar/', { method: 'POST' });
+      msgFoto('BioStar: ' + (r.resultado || 'ok'), 'text-success');
+    } catch (e) { msgFoto('BioStar rechazó la foto: ' + e.message, 'text-danger'); }
   }
 
   function fila(rotulo, valor) {
