@@ -576,11 +576,42 @@
       if (st.page > maxPage) st.page = maxPage;
       var items = st.list.slice(st.page * PER_PAGE, st.page * PER_PAGE + PER_PAGE);
       col.querySelector(".hlist").innerHTML = historialHTML(items);
-      col.querySelector(".hpage").textContent = (st.page + 1) + "/" + (maxPage + 1);
+      col.querySelector(".hpage").textContent = (st.page + 1) + "/" + (maxPage + 1) +
+        (st.full ? (st.truncado ? " (tope)" : " · día") : "");
       col.querySelector('[data-act="up"]').disabled = st.page === 0;
       col.querySelector('[data-act="reset"]').disabled = st.page === 0;
-      col.querySelector('[data-act="down"]').disabled = st.page >= maxPage;
+      // Con el día sin traer, "bajar" sigue habilitado: es lo que lo pide.
+      col.querySelector('[data-act="down"]').disabled = st.page >= maxPage && st.full;
     }
+    // Trae TODOS los ingresos del día de una columna. Se llama una sola vez por
+    // columna, cuando el operador llega al final de la ventana del sondeo.
+    function cargarDiaCompleto(key) {
+      var st = hist[key];
+      if (!st || st.full || st.cargando) return;
+      st.cargando = true;
+      var col = document.querySelector('.col[data-col="' + cssq(key) + '"]');
+      var pag = col ? col.querySelector(".hpage") : null;
+      if (pag) pag.textContent = "…";
+      fetch(API + "/puerta/historial/?col=" + encodeURIComponent(key) +
+            (verDia ? ("&fecha=" + verDia) : ""), { headers: hdr() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          st.cargando = false;
+          var todos = d.historial || [];
+          // El primero ya se muestra arriba, en el panel del último acceso.
+          st.list = todos.length ? todos.slice(1) : [];
+          st.full = true;
+          st.truncado = !!d.truncado;
+          st.page = Math.min(st.page + 1, Math.max(0, Math.ceil(st.list.length / PER_PAGE) - 1));
+          renderHist(key);
+        })
+        .catch(function (e) {
+          st.cargando = false;
+          if (window.console && console.error) console.error("[monitor] historial:", e);
+          renderHist(key);
+        });
+    }
+
     function cssq(s) { return String(s).replace(/"/g, '\\"'); }
 
     document.getElementById("columns").addEventListener("click", function (e) {
@@ -592,8 +623,17 @@
         var maxPage = Math.max(0, Math.ceil(st.list.length / PER_PAGE) - 1);
         var act = btn.getAttribute("data-act");
         if (act === "up") st.page = Math.max(0, st.page - 1);
-        else if (act === "down") st.page = Math.min(maxPage, st.page + 1);
         else if (act === "reset") { st.page = 0; st.topId = st.list.length ? st.list[0].id_es : null; }
+        else if (act === "down") {
+          // El sondeo trae una ventana corta (no puede cargar con el día entero
+          // dos veces por segundo). Al llegar al final se pide de una vez todo
+          // el día de ESTA columna y se sigue paginando en pantalla.
+          if (st.page >= maxPage && !st.full && !st.cargando) {
+            cargarDiaCompleto(key);
+            return;
+          }
+          st.page = Math.min(maxPage, st.page + 1);
+        }
         renderHist(key);
         return;
       }
@@ -732,8 +772,22 @@
         colState[c.key] = ultId;
         col.querySelector(".col__current").innerHTML = currentHTML(c.ultimo);
       }
-      var st = hist[c.key] || (hist[c.key] = { list: [], page: 0, topId: null });
-      st.list = c.historial || [];
+      var st = hist[c.key] || (hist[c.key] = { list: [], page: 0, topId: null, full: false });
+      var frescos = c.historial || [];
+      if (st.full) {
+        // Ya se trajo el día completo: el sondeo sólo aporta lo nuevo, y se
+        // agrega arriba. Pisar la lista acá devolvía al operador a los últimos
+        // 50 en cuanto pasaba alguien.
+        var vistos = {};
+        for (var i = 0; i < st.list.length; i++) { vistos[st.list[i].id_es] = 1; }
+        var nuevos = [];
+        for (var j = 0; j < frescos.length; j++) {
+          if (!vistos[frescos[j].id_es]) nuevos.push(frescos[j]);
+        }
+        if (nuevos.length) st.list = nuevos.concat(st.list);
+      } else {
+        st.list = frescos;
+      }
       var newest = st.list.length ? st.list[0].id_es : null;
       if (st.page === 0 && newest !== st.topId) { st.topId = newest; renderHist(c.key); }
     }

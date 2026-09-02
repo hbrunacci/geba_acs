@@ -260,8 +260,20 @@ def _registrar_pantalla(request) -> PantallaPuerta | None:
     return pantalla
 
 
-# Cuántos ingresos de historial se devuelven por columna (para paginar de a 5).
+# Cuántos ingresos de historial viajan en CADA sondeo del visor (se paginan de a
+# 5 en pantalla). No es el máximo que se puede ver: cuando el operador llega al
+# final, el visor pide el día completo de esa columna a /puerta/historial/.
+#
+# Este número no se sube: las pantallas sondean 2 veces por segundo y el cuerpo
+# pesa ~792 bytes por evento. Con 50 son 136 KB por respuesta; con un día entero
+# del facial de Alcorta —4.900 eventos el 29/08— serían casi 4 MB en cada
+# refresco de un kiosco.
 HISTORIAL_LEN = 50
+
+# Tope del día completo que sirve /puerta/historial/. Es una consulta puntual,
+# no la del sondeo, así que puede ser generosa; el tope está para que un día
+# anómalo no arme una respuesta sin límite.
+HISTORIAL_DIA_MAX = 5000
 
 # Días que se pueden mirar hacia atrás en el visor, incluido hoy. Coincide con la
 # retención local: CD_ES se espeja sólo la última semana y los eventos faciales
@@ -879,6 +891,109 @@ def _firma_estado(cols_def, dia) -> str:
         _version_visor(), dia.isoformat(), max_cdes or 0, max_bio or 0, max_aviso or 0, ventana)
 
 
+def _contexto_eventos(todos_x, todos_f) -> dict:
+    """Resuelve en lote todo lo que necesitan los payloads del visor.
+
+    Estaba embebido en ``PuertaEstadoAPI``; se extrajo para que
+    ``PuertaHistorialAPI`` arme los mismos payloads sin duplicar la resolución
+    —socios, fotos, motivos, avisos, contratos, deudas— ni caer en N+1.
+    Devuelve los argumentos posicionales de ``_evento_payload`` y de
+    ``_facial_evento_payload``, en ese orden.
+    """
+    cids = {e.id_cliente for e in todos_x if e.id_cliente}
+    cids |= {e.id_cliente for e in todos_f if e.id_cliente}
+    mids = {e.id_cd_motivo for e in todos_x if e.id_cd_motivo}
+    ctrl_ids = {e.id_controlador for e in todos_x if e.id_controlador}
+    socios = {s.id_cliente: s for s in XsysSocio.objects.filter(pk__in=cids)}
+    faltantes_socio = cids - set(socios)
+    if faltantes_socio:
+        from xsys.services import socio_fetch
+
+        socio_fetch.request_many(faltantes_socio)
+    fotos = set(XsysSocioFoto.objects.filter(id_cliente__in=cids).values_list("id_cliente", flat=True))
+    foto_fetch.request_many(cids - fotos)
+    motivos = {m.id_cd_motivo: m for m in XsysMotivo.objects.filter(pk__in=mids)}
+    ctrls = {c.id_controlador: c for c in XsysControlador.objects.filter(pk__in=ctrl_ids)}
+    avisos_por_socio: dict = {}
+    for a in SocioAviso.objects.filter(id_cliente__in=cids).order_by("-created_at"):
+        avisos_por_socio.setdefault(a.id_cliente, []).append(a.texto)
+    contratos_por_socio = contratos_svc.resumen_por_socio(cids)
+    sin_cuota = _cuota_no_aplica(cids, socios)
+    en_revision = _bajas_en_revision(cids)
+    conc_estado = _estado_concesionarios(cids)
+    deuda_act = _deuda_actividades(cids)
+    barreras = _accesos_barrera()
+    ingresos_hoy = (
+        _ingresos_hoy_por_habilitacion(todos_x, barreras)
+        if any(e.id_acceso in barreras for e in todos_x) else {}
+    )
+    return {
+        "xsys": (socios, fotos, motivos, ctrls, avisos_por_socio, contratos_por_socio,
+                 barreras, ingresos_hoy, sin_cuota, en_revision, conc_estado, deuda_act),
+        "facial": (socios, fotos, avisos_por_socio, contratos_por_socio, sin_cuota,
+                   en_revision, conc_estado, deuda_act),
+    }
+
+
+class PuertaHistorialAPI(APIView):
+    """GET /api/xsys/puerta/historial/?col=<key>&fecha=YYYY-MM-DD
+
+    El día COMPLETO de una sola columna. Existe porque el sondeo del visor no
+    puede cargar con eso: manda ``HISTORIAL_LEN`` eventos dos veces por segundo,
+    y el día entero del facial más movido son casi 4 MB. Cuando el operador
+    llega al final de lo que ya tiene, el visor pide esto una vez y sigue
+    paginando en pantalla.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        pantalla = _registrar_pantalla(request)
+        if pantalla is None:
+            return Response({"detail": "Falta el token de pantalla."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        door = pantalla.door
+        if door is None:
+            return Response({"detail": "La pantalla no tiene puerta."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        clave = (request.query_params.get("col") or "").strip()
+        cd = next((c for c in _columnas_de_puerta(door) if c["key"] == clave), None)
+        if cd is None:
+            return Response({"detail": "Columna desconocida."}, status=status.HTTP_404_NOT_FOUND)
+
+        dia, _minimo, _hoy = _dia_pedido(request)
+        ctrls = cd["controladores"]
+        devs = cd.get("biostar_devices") or []
+        xs = list(
+            ExternalAccessLogEntry.objects
+            .filter(id_controlador__in=ctrls, tipo="E", fecha__date=dia)
+            .order_by("-external_id")[:HISTORIAL_DIA_MAX]
+        ) if ctrls else []
+        fx = list(
+            BiostarAccessEvent.objects
+            .filter(device_id__in=devs, id_cliente__isnull=False, synced_at__date=dia)
+            .order_by("-synced_at")[:HISTORIAL_DIA_MAX]
+        ) if devs else []
+
+        contexto = _contexto_eventos(xs, fx)
+        items = [(e.fecha, _evento_payload(e, *contexto["xsys"])) for e in xs]
+        items += [(e.synced_at, _facial_evento_payload(e, *contexto["facial"])) for e in fx]
+        items.sort(key=lambda t: t[0], reverse=True)
+        payloads = [p for _, p in items[:HISTORIAL_DIA_MAX]]
+        return Response({
+            "key": cd["key"],
+            "nombre": cd["nombre"],
+            "fecha": dia.isoformat(),
+            # El visor ya muestra el más nuevo arriba en el panel: acá va todo,
+            # y él descarta el primero para no repetirlo.
+            "historial": payloads,
+            "total": len(payloads),
+            "truncado": len(xs) >= HISTORIAL_DIA_MAX or len(fx) >= HISTORIAL_DIA_MAX,
+        })
+
+
 class PuertaEstadoAPI(APIView):
     """GET /api/xsys/puerta/estado/ → estado por columna (una por molinete de la puerta).
 
@@ -948,55 +1063,17 @@ class PuertaEstadoAPI(APIView):
             xsys_por_col.append(xs)
             facial_por_col.append(fx)
 
-        # Resolución en lote de socios / fotos / motivos (ambas fuentes; evita N+1).
         todos_x = [e for evs in xsys_por_col for e in evs]
         todos_f = [e for evs in facial_por_col for e in evs]
-        cids = {e.id_cliente for e in todos_x if e.id_cliente}
-        cids |= {e.id_cliente for e in todos_f if e.id_cliente}
-        mids = {e.id_cd_motivo for e in todos_x if e.id_cd_motivo}
-        ctrl_ids = {e.id_controlador for e in todos_x if e.id_controlador}
-        socios = {s.id_cliente: s for s in XsysSocio.objects.filter(pk__in=cids)}
-        # Socios que no están en el espejo local (p.ej. inactivos): traerlos en
-        # segundo plano desde xSys para resolver el nombre en el próximo refresco.
-        faltantes_socio = cids - set(socios)
-        if faltantes_socio:
-            from xsys.services import socio_fetch
-
-            socio_fetch.request_many(faltantes_socio)
-        fotos = set(XsysSocioFoto.objects.filter(id_cliente__in=cids).values_list("id_cliente", flat=True))
-        # Fallback async: los socios sin foto local se buscan en xSys en segundo
-        # plano; la foto aparecerá en un refresco posterior.
-        foto_fetch.request_many(cids - fotos)
-        motivos = {m.id_cd_motivo: m for m in XsysMotivo.objects.filter(pk__in=mids)}
-        ctrls = {c.id_controlador: c for c in XsysControlador.objects.filter(pk__in=ctrl_ids)}
-        # Avisos locales por socio (los que se dejan en /diag-facial): se muestran
-        # en el visor cuando ese socio pasa.
-        avisos_por_socio: dict = {}
-        for a in SocioAviso.objects.filter(id_cliente__in=cids).order_by("-created_at"):
-            avisos_por_socio.setdefault(a.id_cliente, []).append(a.texto)
-        # Contratos vigentes + último pago de cada uno (una sola query al espejo).
-        contratos_por_socio = contratos_svc.resumen_por_socio(cids)
-        # Barreras: se muestra cuántas veces entró hoy con la misma habilitación.
-        sin_cuota = _cuota_no_aplica(cids, socios)
-        en_revision = _bajas_en_revision(cids)
-        conc_estado = _estado_concesionarios(cids)
-        deuda_act = _deuda_actividades(cids)
-        barreras = _accesos_barrera()
-        todos_xsys = [e for col in xsys_por_col for e in col]
-        # Sólo se calcula si esta puerta realmente tiene accesos de barrera: en
-        # los molinetes peatonales (la mayoría) era una query por poll para nada.
-        ingresos_hoy = (
-            _ingresos_hoy_por_habilitacion(todos_xsys, barreras)
-            if any(e.id_acceso in barreras for e in todos_xsys) else {}
-        )
+        contexto = _contexto_eventos(todos_x, todos_f)
 
         columnas = []
         for cd, xs, fx in zip(cols_def, xsys_por_col, facial_por_col):
             # (fecha, payload) para poder ordenar la mezcla por tiempo (desc).
-            items = [(e.fecha, _evento_payload(e, socios, fotos, motivos, ctrls, avisos_por_socio, contratos_por_socio, barreras, ingresos_hoy, sin_cuota, en_revision, conc_estado, deuda_act)) for e in xs]
+            items = [(e.fecha, _evento_payload(e, *contexto["xsys"])) for e in xs]
             # Los faciales se ubican en la línea de tiempo por su hora de ingesta
             # (real), no por la hora de BioStar (atrasada). Los xSys sí por fecha.
-            items += [(e.synced_at, _facial_evento_payload(e, socios, fotos, avisos_por_socio, contratos_por_socio, sin_cuota, en_revision, conc_estado, deuda_act)) for e in fx]
+            items += [(e.synced_at, _facial_evento_payload(e, *contexto["facial"])) for e in fx]
             items.sort(key=lambda t: t[0], reverse=True)
             payloads = [p for _, p in items[: HISTORIAL_LEN + 1]]
             columnas.append({

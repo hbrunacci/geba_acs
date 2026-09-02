@@ -12,6 +12,7 @@ from xsys.api_views import (
     PuertaConfigDetailAPI,
     PuertaControladoresAPI,
     PuertaEstadoAPI,
+    PuertaHistorialAPI,
     PuertaSeleccionarAPI,
     PuertasConfigAPI,
     PuertasListAPI,
@@ -28,6 +29,7 @@ urlpatterns = [
     path("xsys/diagnostico/", DiagnosticoAccesoAPI.as_view(), name="xsys_diagnostico_api"),
     path("xsys/puertas/", PuertasListAPI.as_view(), name="xsys_puertas_api"),
     path("xsys/puerta/estado/", PuertaEstadoAPI.as_view(), name="xsys_puerta_estado_api"),
+    path("xsys/puerta/historial/", PuertaHistorialAPI.as_view(), name="xsys_puerta_historial_api"),
     path("xsys/accesos/buscar/", AccesosBuscarAPI.as_view(), name="xsys_accesos_buscar_api"),
     path("xsys/puerta/seleccionar/", PuertaSeleccionarAPI.as_view(), name="xsys_puerta_seleccionar_api"),
     # Armado de puertas (requiere login): puerta -> controladores -> molinetes.
