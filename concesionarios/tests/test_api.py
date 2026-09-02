@@ -8,7 +8,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from common.roles import GRUPO_CONCESIONARIOS
+from common.roles import GRUPO_ADMIN, GRUPO_CONCESIONARIOS, GRUPO_RESPONSABLES
 from concesionarios.models import (
     Concesionario,
     Documento,
@@ -126,6 +126,12 @@ class ListadoTests(TestCase):
 
 
 class PermisosTests(TestCase):
+    """El módulo lo ven el superadmin, el staff y el grupo ``concesionarios``.
+
+    Nadie más: tener el grupo ``Administrador`` de la app NO alcanza, porque el
+    club lo pidió expresamente así.
+    """
+
     @classmethod
     def setUpTestData(cls):
         cls.empresa = Empresa.objects.create(nombre="Buffet")
@@ -133,24 +139,47 @@ class PermisosTests(TestCase):
         cls.operador = User.objects.create_user("operador", password="x")
         grupo, _ = Group.objects.get_or_create(name=GRUPO_CONCESIONARIOS)
         cls.operador.groups.add(grupo)
+        cls.staff = User.objects.create_user("staff", password="x", is_staff=True)
         cls.jefe = User.objects.create_superuser("jefe", "j@x.com", "x")
+        cls.admin_app = User.objects.create_user("admin_app", password="x")
+        cls.admin_app.groups.add(Group.objects.get_or_create(name=GRUPO_ADMIN)[0])
+        cls.responsable = User.objects.create_user("responsable", password="x")
+        cls.responsable.groups.add(Group.objects.get_or_create(name=GRUPO_RESPONSABLES)[0])
+
+    def _puede(self, user) -> tuple[int, int]:
+        self.client.force_login(user)
+        return (self.client.get("/concesionarios/").status_code,
+                self.client.get("/api/concesionarios/").status_code)
 
     def test_sin_rol_no_entra_ni_a_la_pantalla_ni_a_la_api(self):
-        self.client.force_login(self.pelado)
-        self.assertEqual(self.client.get("/concesionarios/").status_code, 403)
-        self.assertEqual(self.client.get("/api/concesionarios/").status_code, 403)
+        self.assertEqual(self._puede(self.pelado), (403, 403))
 
     def test_anonimo_no_entra(self):
         self.assertEqual(self.client.get("/api/concesionarios/").status_code, 403)
 
     def test_el_grupo_concesionarios_alcanza(self):
-        self.client.force_login(self.operador)
-        self.assertEqual(self.client.get("/concesionarios/").status_code, 200)
-        self.assertEqual(self.client.get("/api/concesionarios/").status_code, 200)
+        self.assertEqual(self._puede(self.operador), (200, 200))
 
-    def test_el_admin_tambien(self):
-        self.client.force_login(self.jefe)
-        self.assertEqual(self.client.get("/api/concesionarios/").status_code, 200)
+    def test_el_staff_entra(self):
+        self.assertEqual(self._puede(self.staff), (200, 200))
+
+    def test_el_superusuario_entra(self):
+        self.assertEqual(self._puede(self.jefe), (200, 200))
+
+    def test_el_grupo_Administrador_por_si_solo_no_alcanza(self):
+        self.assertEqual(self._puede(self.admin_app), (403, 403))
+
+    def test_el_grupo_responsables_por_si_solo_no_alcanza(self):
+        """``responsables`` todavía no habilita nada; que no habilite esto."""
+        self.assertEqual(self._puede(self.responsable), (403, 403))
+
+    def test_el_sidebar_solo_lo_muestra_a_quien_puede(self):
+        self.client.force_login(self.operador)
+        self.assertIn("Concesionarios</summary>",
+                      self.client.get("/concesionarios/").content.decode())
+        self.client.force_login(self.pelado)
+        self.assertNotIn("Concesionarios</summary>",
+                         self.client.get("/").content.decode())
 
 
 class ApiTests(TestCase):

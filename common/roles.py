@@ -24,7 +24,11 @@ GRUPO_PUERTAS = "Configuración de Puertas"
 # La administración de concesionarios (empresas, documentación con vencimiento y
 # horarios de ingreso) es trabajo de mesa de entradas, no de sistemas: va en su
 # propio grupo para poder delegarla sin dar acceso a todo el panel.
-GRUPO_CONCESIONARIOS = "Concesionarios"
+GRUPO_CONCESIONARIOS = "concesionarios"
+# Grupo pedido por el club para identificar responsables. Todavía no gobierna
+# ninguna pantalla: existe para poder asignarlo y usarlo cuando se defina qué
+# habilita. Si en algún momento decide algo, la regla va acá y no suelta por ahí.
+GRUPO_RESPONSABLES = "responsables"
 
 
 def es_admin(user) -> bool:
@@ -44,10 +48,17 @@ def puede_config_puertas(user) -> bool:
 
 
 def puede_concesionarios(user) -> bool:
-    """El usuario es admin o pertenece al grupo Concesionarios."""
+    """Superusuario, staff, o miembro del grupo ``concesionarios``.
+
+    A diferencia de los otros roles, éste NO mira el grupo ``Administrador``:
+    el club pidió expresamente que el módulo lo vean sólo el superadmin, el
+    staff y quien tenga el grupo. Ser "Administrador" de la app no alcanza.
+    """
     return bool(
         getattr(user, "is_authenticated", False)
-        and (es_admin(user) or user.groups.filter(name=GRUPO_CONCESIONARIOS).exists())
+        and (user.is_superuser
+             or user.is_staff
+             or user.groups.filter(name=GRUPO_CONCESIONARIOS).exists())
     )
 
 
