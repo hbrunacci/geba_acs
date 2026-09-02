@@ -7,7 +7,7 @@
 {% block header_actions %}
 <a class="btn btn-outline-secondary" href="{% url 'concesionarios_empresas' %}">Empresas y documentos</a>
 <a class="btn btn-outline-secondary" href="{% url 'concesionarios_horarios' %}">Horarios</a>
-<button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#alta-modal">Agregar concesionario</button>
+<button class="btn btn-primary" type="button" data-open-modal="alta-modal">Agregar concesionario</button>
 {% endblock %}
 
 {% block extra_css %}
@@ -27,6 +27,9 @@
   .foto-grande { width:110px; height:110px; border-radius:.5rem; object-fit:cover; background:#e9ecef; }
   .foto-grande--vacia { display:flex; align-items:center; justify-content:center;
                         font-size:.8rem; color:#adb5bd; }
+  /* .modal__content de la casa mide 520px: para el detalle y el alta hace falta más. */
+  .modal__content--ancho { width: min(1080px, 94vw); max-height: 88vh; overflow-y: auto; }
+  .modal__content--medio { width: min(760px, 94vw); max-height: 88vh; overflow-y: auto; }
 </style>
 {% endblock %}
 
@@ -98,26 +101,30 @@
 {% endblock %}
 
 {% block extra_modals %}
-<div class="modal fade" id="detalle-modal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="detalle-titulo">Concesionario</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-      </div>
-      <div class="modal-body" id="detalle-cuerpo"></div>
+{# Modales con la convención de la casa (.modal + atributo hidden, que abre y
+   cierra dashboard.js). NO se usan los de Bootstrap: dashboard.css define su
+   propia clase .modal a pantalla completa y se carga DESPUÉS de Bootstrap, así
+   que un modal de Bootstrap queda desplegado siempre, invisible por el .fade, y
+   se come todos los clics de la página. #}
+<div class="modal" id="detalle-modal" hidden>
+  <div class="modal__overlay"></div>
+  <div class="modal__content modal__content--ancho">
+    <div class="modal__header">
+      <h5 class="mb-0" id="detalle-titulo">Concesionario</h5>
+      <button type="button" class="modal__close" data-close-modal aria-label="Cerrar">&times;</button>
     </div>
+    <div id="detalle-cuerpo"></div>
   </div>
 </div>
 
-<div class="modal fade" id="alta-modal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Agregar concesionario</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-      </div>
-      <div class="modal-body">
+<div class="modal" id="alta-modal" hidden>
+  <div class="modal__overlay"></div>
+  <div class="modal__content modal__content--medio">
+    <div class="modal__header">
+      <h5 class="mb-0">Agregar concesionario</h5>
+      <button type="button" class="modal__close" data-close-modal aria-label="Cerrar">&times;</button>
+    </div>
+    <div>
         <p class="text-muted small">
           Buscá a la persona en el espejo de xSys. Aparecen los socios con categoría
           CONCESIONARIO que todavía no están cargados acá.
@@ -153,7 +160,6 @@
             <button class="btn btn-primary" type="submit">Guardar</button>
           </div>
         </form>
-      </div>
     </div>
   </div>
 </div>
@@ -255,14 +261,17 @@
   }
 
   // ------------------------------------------------------------- detalle ---
-  const detalleModal = new bootstrap.Modal($('detalle-modal'));
+  // Abrir y cerrar como el resto de la app: el atributo hidden. dashboard.js ya
+  // cierra con [data-close-modal] y con el clic en el overlay.
+  const abrirModal = (id) => $(id).removeAttribute('hidden');
+  const cerrarModal = (id) => $(id).setAttribute('hidden', 'hidden');
   let detalleActual = null;      // id del registro Concesionario
   let detalleIdCliente = null;   // legajo de xSys, que es a lo que cuelgan los documentos
 
   async function abrirDetalle(id) {
     detalleActual = id;
     $('detalle-cuerpo').innerHTML = '<p class="text-muted">Cargando…</p>';
-    detalleModal.show();
+    abrirModal('detalle-modal');
     const d = await api('/api/concesionarios/' + id + '/');
     const p = d.persona;
     detalleIdCliente = p.id_cliente;
@@ -438,7 +447,7 @@
   async function borrarConcesionario() {
     if (!confirm('Se quita de la administración de concesionarios. No se toca nada en xSys. ¿Seguir?')) return;
     await api('/api/concesionarios/' + detalleActual + '/', { method: 'DELETE' });
-    detalleModal.hide(); cargarListado();
+    cerrarModal('detalle-modal'); cargarListado();
   }
 
   async function adjuntar(ev) {
@@ -462,7 +471,6 @@
   }
 
   // ----------------------------------------------------------------- alta ---
-  const altaModal = new bootstrap.Modal($('alta-modal'));
 
   async function buscarCandidatos() {
     const q = encodeURIComponent($('alta-busqueda').value.trim());
@@ -498,7 +506,7 @@
     };
     try {
       await api('/api/concesionarios/alta/', { method: 'POST', body: JSON.stringify(cuerpo) });
-      altaModal.hide(); f.reset();
+      cerrarModal('alta-modal'); f.reset();
       $('alta-id-cliente').value = ''; $('alta-elegido').textContent = 'Ninguna persona seleccionada.';
       $('alta-msg').textContent = '';
       cargarListado();

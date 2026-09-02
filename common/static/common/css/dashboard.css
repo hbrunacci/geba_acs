@@ -482,6 +482,16 @@ body.layout {
   justify-items: center;
 }
 
+/* Bootstrap también llama .modal a lo suyo, y este archivo se carga DESPUÉS que
+   su hoja de estilos: sin esta regla, un modal de Bootstrap pisa su propio
+   display:none, queda desplegado a pantalla completa e invisible (el .fade lo
+   deja en opacidad 0) y se come los clics de toda la página. Pasó con la
+   pantalla de concesionarios. Los modales de la casa no usan .fade, así que
+   esto no los toca. */
+.modal.fade:not(.show) {
+  display: none;
+}
+
 .modal__overlay {
   position: absolute;
   inset: 0;
