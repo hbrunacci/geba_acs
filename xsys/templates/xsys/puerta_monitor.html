@@ -215,7 +215,7 @@
     /* Buscador de accesos del día */
     .buscar__title { font-size: 18px; font-weight: 700; margin: 0 0 12px; }
     .buscar__res { max-height: 62vh; overflow-y: auto; margin-top: 6px; }
-    .brow { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px solid #21262d; }
+    .brow { cursor: pointer; display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px solid #21262d; }
     .bthumb { width: 46px; height: 60px; object-fit: cover; border-radius: 6px; flex: 0 0 auto; background: #21262d; border: 1px solid #30363d; }
     .bbody { min-width: 0; flex: 1; }
     .bname { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -718,6 +718,7 @@
     var buscarModal = document.getElementById("buscar-modal");
     var buscarInput = document.getElementById("buscar-input");
     var buscarRes = document.getElementById("buscar-res");
+    var buscarData = {};   // id_es -> evento, para el modal de detalle
     var buscarTimer = null;
     var MSG_MIN = '<div class="hempty">Escribí al menos 2 caracteres.</div>';
 
@@ -748,12 +749,16 @@
             buscarRes.innerHTML = '<div class="hempty">Sin accesos hoy para “' + esc(q) + '”.</div>';
             return;
           }
+          // Se guardan para poder abrir el modal al tocar un resultado: antes las
+          // filas del buscador no eran clicables y no había forma de ver el detalle.
+          buscarData = {};
+          for (var bi = 0; bi < lista.length; bi++) { buscarData[lista[bi].id_es] = lista[bi]; }
           buscarRes.innerHTML = lista.map(function (ev) {
             var cls = ev.permitido ? "ok" : "no";
             var thumb = ev.foto_thumb_url
               ? '<img class="bthumb" src="' + esc(ev.foto_thumb_url) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
               : '<div class="bthumb"></div>';
-            return '<div class="brow">' + thumb +
+            return '<div class="brow" data-ides="' + esc(ev.id_es) + '">' + thumb +
               '<div class="bbody">' +
                 '<div class="bname">' + esc(ev.nombre || ("Cliente " + (ev.id_cliente || ""))) + '</div>' +
                 '<div class="bsub">N° ' + esc(ev.id_cliente || "—") + (ev.doc_nro ? ' · DNI ' + esc(ev.doc_nro) : "") + '</div>' +
@@ -766,6 +771,13 @@
         })
         .catch(function () { buscarRes.innerHTML = '<div class="hempty">No se pudo buscar. Reintentá.</div>'; });
     }
+
+    buscarRes.addEventListener("click", function (e) {
+      var row = e.target.closest ? e.target.closest(".brow") : null;
+      if (!row) return;
+      var ev = buscarData[row.getAttribute("data-ides")];
+      if (ev) openModal(ev, ev.molinete || "");
+    });
 
     function updateColumna(c) {
       colData[c.key] = c;

@@ -204,3 +204,20 @@ class HistorialCompletoTests(unittest.TestCase):
         """Con el día cargado, un paso nuevo no puede devolver al operador arriba."""
         i = self.texto.index("if (st.full) {")
         self.assertIn("nuevos.concat(st.list)", self.texto[i:i + 900])
+
+
+class BuscadorTests(unittest.TestCase):
+    """Las filas del buscador tienen que poder abrir el modal de detalle."""
+
+    def setUp(self):
+        self.texto = TEMPLATE.read_text(encoding="utf-8")
+
+    def test_las_filas_del_buscador_se_pueden_tocar(self):
+        self.assertIn('class="brow" data-ides=', self.texto)
+
+    def test_hay_un_manejador_de_clic_en_los_resultados(self):
+        i = self.texto.index("buscarRes.addEventListener")
+        self.assertIn("openModal(", self.texto[i:i + 400])
+
+    def test_se_guardan_los_resultados_para_el_modal(self):
+        self.assertIn("buscarData[", self.texto)

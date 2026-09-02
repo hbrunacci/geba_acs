@@ -1135,13 +1135,21 @@ class AccesosBuscarAPI(APIView):
         if not ctrl_a_molinete:
             return Response({"q": q, "resultados": []})
 
+        # Los faciales van por device, no por controlador: el mapa se arma en
+        # paralelo al de molinetes para poder etiquetar igual el resultado.
+        dev_a_molinete: dict[int, str] = {}
+        for cd in cols_def:
+            for d in (cd.get("biostar_devices") or []):
+                dev_a_molinete[int(d)] = cd["nombre"]
+
         # Socios que matchean el texto: apellido/nombre siempre; si es numérico,
         # también por N° de socio (Id_Cliente) o DNI (Doc_Nro).
         criterio = Q(apellido__icontains=q) | Q(nombre__icontains=q)
         if q.isdigit():
             criterio |= Q(id_cliente=int(q)) | Q(doc_nro=int(q))
-        socios = {s.id_cliente: s for s in XsysSocio.objects.filter(criterio)[:300]}
-        if not socios:
+        ids_socio = list(
+            XsysSocio.objects.filter(criterio).values_list("id_cliente", flat=True)[:300])
+        if not ids_socio:
             return Response({"q": q, "resultados": []})
 
         # El buscador mira el MISMO día que está mostrando el visor: si no, al
@@ -1150,31 +1158,34 @@ class AccesosBuscarAPI(APIView):
         evs = list(
             ExternalAccessLogEntry.objects
             .filter(id_controlador__in=ctrl_a_molinete.keys(), tipo="E",
-                    fecha__date=hoy, id_cliente__in=socios.keys())
+                    fecha__date=hoy, id_cliente__in=ids_socio)
             .order_by("-external_id")[:300]
         )
-        cids = {e.id_cliente for e in evs if e.id_cliente}
-        con_foto = set(
-            XsysSocioFoto.objects.filter(id_cliente__in=cids).values_list("id_cliente", flat=True)
-        )
+        # Los pasos por facial NO estaban en la búsqueda. En puertas como Ombúes
+        # o Noble son la mayoría de los ingresos del día: buscar a alguien que
+        # entró por la cara no devolvía nada.
+        fx = list(
+            BiostarAccessEvent.objects
+            .filter(device_id__in=dev_a_molinete.keys(), synced_at__date=hoy,
+                    id_cliente__in=ids_socio)
+            .order_by("-synced_at")[:300]
+        ) if dev_a_molinete else []
+
+        # Payload COMPLETO, el mismo del historial: el visor abre el modal de
+        # detalle con el resultado de la búsqueda, y con el dict reducido que se
+        # devolvía antes le faltaba todo (mensaje, categoría, avisos, contratos).
+        contexto = _contexto_eventos(evs, fx)
+        items = [(e.fecha, ctrl_a_molinete.get(e.id_controlador, ""),
+                  _evento_payload(e, *contexto["xsys"])) for e in evs]
+        items += [(e.synced_at, dev_a_molinete.get(e.device_id, ""),
+                   _facial_evento_payload(e, *contexto["facial"])) for e in fx]
+        items.sort(key=lambda t: t[0], reverse=True)
 
         resultados = []
-        for ev in evs:
-            s = socios.get(ev.id_cliente)
-            foto_url = f"/api/xsys/socios/{ev.id_cliente}/foto/" if ev.id_cliente in con_foto else None
-            resultados.append({
-                "id_es": ev.external_id,
-                "fecha": ev.fecha.isoformat() if ev.fecha else None,
-                "molinete": ctrl_a_molinete.get(ev.id_controlador, ""),
-                "id_cliente": ev.id_cliente,
-                "doc_nro": (s.doc_nro if s else None),
-                "nombre": (
-                    (f"{s.apellido}, {s.nombre}".strip(", ") or s.razon_social) if s else ""
-                ),
-                "resultado": ev.resultado,
-                "permitido": ev.resultado == "S",
-                "foto_thumb_url": (foto_url + "?thumb=1") if foto_url else None,
-            })
+        for _fecha, molinete, payload in items:
+            payload = dict(payload)
+            payload["molinete"] = molinete
+            resultados.append(payload)
         return Response({"q": q, "puerta": door.name, "resultados": resultados})
 
 
