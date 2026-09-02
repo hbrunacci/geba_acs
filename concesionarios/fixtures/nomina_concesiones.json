@@ -1,0 +1,1737 @@
+[
+ {
+  "model": "concesionarios.empresa",
+  "pk": 1,
+  "fields": {
+   "nombre": "Bar Hockey - Camacho",
+   "cuit": "20-31703788-1",
+   "rubro": "",
+   "contacto_nombre": "",
+   "contacto_email": "",
+   "contacto_telefono": "",
+   "horario": null,
+   "activa": true,
+   "observaciones": "Sede: SM · Cargada desde la nómina de concesiones (planilla del 01/09/2026).",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 1,
+  "fields": {
+   "id_cliente": 942593,
+   "empresa": 1,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 2,
+  "fields": {
+   "id_cliente": 942589,
+   "empresa": 1,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 3,
+  "fields": {
+   "id_cliente": 942591,
+   "empresa": 1,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 4,
+  "fields": {
+   "id_cliente": 946025,
+   "empresa": 1,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 5,
+  "fields": {
+   "id_cliente": 942597,
+   "empresa": 1,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 6,
+  "fields": {
+   "id_cliente": 942596,
+   "empresa": 1,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 7,
+  "fields": {
+   "id_cliente": 942588,
+   "empresa": 1,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 8,
+  "fields": {
+   "id_cliente": 942592,
+   "empresa": 1,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 9,
+  "fields": {
+   "id_cliente": 942595,
+   "empresa": 1,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.empresa",
+  "pk": 2,
+  "fields": {
+   "nombre": "El Castillo Eventos",
+   "cuit": "33-71620214-9",
+   "rubro": "",
+   "contacto_nombre": "",
+   "contacto_email": "",
+   "contacto_telefono": "",
+   "horario": null,
+   "activa": true,
+   "observaciones": "Sede: SM · Cargada desde la nómina de concesiones (planilla del 01/09/2026).",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 10,
+  "fields": {
+   "id_cliente": 946026,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 11,
+  "fields": {
+   "id_cliente": 942575,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 12,
+  "fields": {
+   "id_cliente": 942579,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 13,
+  "fields": {
+   "id_cliente": 942584,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 14,
+  "fields": {
+   "id_cliente": 942583,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 15,
+  "fields": {
+   "id_cliente": 942577,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 16,
+  "fields": {
+   "id_cliente": 942571,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 17,
+  "fields": {
+   "id_cliente": 942572,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 18,
+  "fields": {
+   "id_cliente": 942580,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 19,
+  "fields": {
+   "id_cliente": 942578,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 20,
+  "fields": {
+   "id_cliente": 942585,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 21,
+  "fields": {
+   "id_cliente": 942576,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 22,
+  "fields": {
+   "id_cliente": 942573,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 23,
+  "fields": {
+   "id_cliente": 942574,
+   "empresa": 2,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.empresa",
+  "pk": 3,
+  "fields": {
+   "nombre": "Hoyo 9",
+   "cuit": "27-96018643-0",
+   "rubro": "",
+   "contacto_nombre": "",
+   "contacto_email": "",
+   "contacto_telefono": "",
+   "horario": null,
+   "activa": true,
+   "observaciones": "Sede: SM · Cargada desde la nómina de concesiones (planilla del 01/09/2026).",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 24,
+  "fields": {
+   "id_cliente": 942623,
+   "empresa": 3,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 25,
+  "fields": {
+   "id_cliente": 891820,
+   "empresa": 3,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "Legajo duplicado en xSys con el mismo DNI (946027). Se usa el 891820 porque es el que funciona en el control de acceso.",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 26,
+  "fields": {
+   "id_cliente": 942624,
+   "empresa": 3,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 27,
+  "fields": {
+   "id_cliente": 942621,
+   "empresa": 3,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 28,
+  "fields": {
+   "id_cliente": 942626,
+   "empresa": 3,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 29,
+  "fields": {
+   "id_cliente": 942625,
+   "empresa": 3,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 30,
+  "fields": {
+   "id_cliente": 942618,
+   "empresa": 3,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.empresa",
+  "pk": 4,
+  "fields": {
+   "nombre": "Confitería Tenis - Sinato",
+   "cuit": "20-35366108-7",
+   "rubro": "",
+   "contacto_nombre": "",
+   "contacto_email": "",
+   "contacto_telefono": "",
+   "horario": null,
+   "activa": true,
+   "observaciones": "Sede: SM · Esta concesión se reparte entre San Martín y Jorge Newbery · Cargada desde la nómina de concesiones (planilla del 01/09/2026).",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 31,
+  "fields": {
+   "id_cliente": 942673,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 32,
+  "fields": {
+   "id_cliente": 942658,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 33,
+  "fields": {
+   "id_cliente": 942675,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 34,
+  "fields": {
+   "id_cliente": 942677,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 35,
+  "fields": {
+   "id_cliente": 942669,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 36,
+  "fields": {
+   "id_cliente": 942662,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 37,
+  "fields": {
+   "id_cliente": 942674,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 38,
+  "fields": {
+   "id_cliente": 942648,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 39,
+  "fields": {
+   "id_cliente": 942660,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 40,
+  "fields": {
+   "id_cliente": 942664,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 41,
+  "fields": {
+   "id_cliente": 942668,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 42,
+  "fields": {
+   "id_cliente": 942665,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 43,
+  "fields": {
+   "id_cliente": 946028,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 44,
+  "fields": {
+   "id_cliente": 942667,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 45,
+  "fields": {
+   "id_cliente": 915493,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 46,
+  "fields": {
+   "id_cliente": 942672,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 47,
+  "fields": {
+   "id_cliente": 946030,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 48,
+  "fields": {
+   "id_cliente": 942652,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 49,
+  "fields": {
+   "id_cliente": 942659,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 50,
+  "fields": {
+   "id_cliente": 942670,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 51,
+  "fields": {
+   "id_cliente": 942676,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 52,
+  "fields": {
+   "id_cliente": 942666,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 53,
+  "fields": {
+   "id_cliente": 946031,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 54,
+  "fields": {
+   "id_cliente": 946032,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 55,
+  "fields": {
+   "id_cliente": 942661,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 56,
+  "fields": {
+   "id_cliente": 927086,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 57,
+  "fields": {
+   "id_cliente": 942671,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 58,
+  "fields": {
+   "id_cliente": 942651,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 59,
+  "fields": {
+   "id_cliente": 946034,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 60,
+  "fields": {
+   "id_cliente": 946035,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 61,
+  "fields": {
+   "id_cliente": 946036,
+   "empresa": 4,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.empresa",
+  "pk": 5,
+  "fields": {
+   "nombre": "Corner y Pro Shop",
+   "cuit": "27-23103077-3",
+   "rubro": "",
+   "contacto_nombre": "",
+   "contacto_email": "",
+   "contacto_telefono": "",
+   "horario": null,
+   "activa": true,
+   "observaciones": "Sede: SM/ JN · Esta nómina agrupa dos concesiones (Corner y Pro Shop); solo una persona corresponde a Pro Shop · Cargada desde la nómina de concesiones (planilla del 01/09/2026).",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 62,
+  "fields": {
+   "id_cliente": 942640,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 63,
+  "fields": {
+   "id_cliente": 942645,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 64,
+  "fields": {
+   "id_cliente": 942641,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 65,
+  "fields": {
+   "id_cliente": 942642,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 66,
+  "fields": {
+   "id_cliente": 942634,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 67,
+  "fields": {
+   "id_cliente": 946037,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 68,
+  "fields": {
+   "id_cliente": 942644,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 69,
+  "fields": {
+   "id_cliente": 942635,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 70,
+  "fields": {
+   "id_cliente": 942638,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 71,
+  "fields": {
+   "id_cliente": 942630,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 72,
+  "fields": {
+   "id_cliente": 942637,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 73,
+  "fields": {
+   "id_cliente": 942646,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 74,
+  "fields": {
+   "id_cliente": 946038,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 75,
+  "fields": {
+   "id_cliente": 942639,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 76,
+  "fields": {
+   "id_cliente": 942632,
+   "empresa": 5,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.empresa",
+  "pk": 6,
+  "fields": {
+   "nombre": "Punto Cero - Take Away",
+   "cuit": "30-71705549-3",
+   "rubro": "",
+   "contacto_nombre": "",
+   "contacto_email": "",
+   "contacto_telefono": "",
+   "horario": null,
+   "activa": true,
+   "observaciones": "Sede: SM · Cargada desde la nómina de concesiones (planilla del 01/09/2026).",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 77,
+  "fields": {
+   "id_cliente": 942609,
+   "empresa": 6,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 78,
+  "fields": {
+   "id_cliente": 942612,
+   "empresa": 6,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 79,
+  "fields": {
+   "id_cliente": 942598,
+   "empresa": 6,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 80,
+  "fields": {
+   "id_cliente": 942613,
+   "empresa": 6,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 81,
+  "fields": {
+   "id_cliente": 942611,
+   "empresa": 6,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 82,
+  "fields": {
+   "id_cliente": 942604,
+   "empresa": 6,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 83,
+  "fields": {
+   "id_cliente": 942599,
+   "empresa": 6,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.empresa",
+  "pk": 7,
+  "fields": {
+   "nombre": "Estadio, SA",
+   "cuit": "30-71512548-6",
+   "rubro": "",
+   "contacto_nombre": "",
+   "contacto_email": "",
+   "contacto_telefono": "",
+   "horario": null,
+   "activa": true,
+   "observaciones": "Sede: SM · Loles, gastronómico · LOLES S.A. (CUIT 30-71512548-6) + STADIO S.A. (CUIT 33-71699075-9) · Cargada desde la nómina de concesiones (planilla del 01/09/2026).",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 84,
+  "fields": {
+   "id_cliente": 946039,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 85,
+  "fields": {
+   "id_cliente": 946040,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 86,
+  "fields": {
+   "id_cliente": 946041,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 87,
+  "fields": {
+   "id_cliente": 946042,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 88,
+  "fields": {
+   "id_cliente": 840564,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "Legajo duplicado en xSys con el mismo DNI (946043). Se usa el 840564 porque es el que funciona en el control de acceso.",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 89,
+  "fields": {
+   "id_cliente": 946044,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 90,
+  "fields": {
+   "id_cliente": 946045,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 91,
+  "fields": {
+   "id_cliente": 946046,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 92,
+  "fields": {
+   "id_cliente": 946047,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 93,
+  "fields": {
+   "id_cliente": 946048,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 94,
+  "fields": {
+   "id_cliente": 946049,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 95,
+  "fields": {
+   "id_cliente": 946050,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 96,
+  "fields": {
+   "id_cliente": 946051,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 97,
+  "fields": {
+   "id_cliente": 946052,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 98,
+  "fields": {
+   "id_cliente": 375744,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 99,
+  "fields": {
+   "id_cliente": 946054,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 100,
+  "fields": {
+   "id_cliente": 946055,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ },
+ {
+  "model": "concesionarios.concesionario",
+  "pk": 101,
+  "fields": {
+   "id_cliente": 946056,
+   "empresa": 7,
+   "cargo": "",
+   "horario": null,
+   "activo": true,
+   "fecha_alta": null,
+   "fecha_baja": null,
+   "observaciones": "",
+   "created_at": "2026-09-02T01:59:35.276685+00:00",
+   "updated_at": "2026-09-02T01:59:35.276685+00:00"
+  }
+ }
+]
