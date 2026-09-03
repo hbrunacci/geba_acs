@@ -3,6 +3,7 @@ from .biostar_event import BiostarAccessEvent, BiostarPollState
 from .biostart_user import BioStarUser
 from .biostar_device_group import BioStarDeviceGroup
 from .device import BioStarDevice
+from .historial_socio import SocioAcceso
 from .intelektron_event import IntelektronEvent
 from .paso_pendiente import PasoPendiente
 from .socio_aviso import SocioAviso
@@ -28,5 +29,6 @@ __all__ = [
     "AnsesVerificationRecord",
     "IntelektronEvent",
     "SocioAviso",
+    "SocioAcceso",
     "PasoPendiente",
 ]

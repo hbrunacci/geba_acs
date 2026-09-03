@@ -7,7 +7,7 @@ from django.shortcuts import render
 from django.db.models import Count, OuterRef, Q, Subquery
 from django.utils.dateparse import parse_date
 
-from common.roles import admin_requerido, puertas_requerido
+from common.roles import admin_requerido, puede_config_puertas, puertas_requerido, socios_requerido
 from django.db.utils import OperationalError
 from django.db.models.functions import ExtractHour, TruncDate
 
@@ -106,12 +106,17 @@ def diag_facial_console(request):
     return render(request, "access_control/diag_facial.html", contexto)
 
 
-@puertas_requerido
+@socios_requerido
 def avisos_pendientes(request):
     """Pantalla para la oficina de Socios: avisos pendientes de notificar.
 
     Lista los avisos dejados en el diagnóstico de facial (``SocioAviso``), con los
     datos del socio, y permite marcarlos como notificados/resueltos.
+
+    La ve el grupo ``socios`` además de quien ya la veía por el rol de puertas.
+    El diagnóstico de facial, en cambio, sigue siendo del rol de puertas: consulta
+    en vivo contra el SQL del club. Por eso el template esconde esos enlaces a
+    quien no puede abrirlos, en vez de mandarlo a un 403.
     """
     from access_control.models import SocioAviso
     from xsys.models import XsysSocio, XsysSocioFoto
@@ -146,6 +151,7 @@ def avisos_pendientes(request):
         "filas": filas,
         "estado": estado,
         "pendientes": SocioAviso.objects.filter(resuelto=False).count(),
+        "puede_diagnostico": puede_config_puertas(request.user),
     }
     return render(request, "access_control/avisos_pendientes.html", contexto)
 

@@ -103,7 +103,7 @@ def _store_event(event_types: dict, e: dict) -> bool:
             )[:60]
     except Exception:  # pragma: no cover - nunca romper la ingesta
         conflicto = ""
-    _, created = BiostarAccessEvent.objects.get_or_create(
+    obj, created = BiostarAccessEvent.objects.get_or_create(
         biostar_id=bid,
         defaults={
             "conflicto_molinete": conflicto,
@@ -116,6 +116,12 @@ def _store_event(event_types: dict, e: dict) -> bool:
             "permitido": permitido,
         },
     )
+    if created:
+        # Esta tabla también se purga; el historial del socio no. Best-effort:
+        # la función no levanta, y si fallara el evento ya quedó guardado.
+        from access_control.services import historial_socio
+
+        historial_socio.registrar_facial(obj)
     return created
 
 

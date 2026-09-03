@@ -17,6 +17,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from access_control.models.models import ExternalAccessLogEntry
+from access_control.services import historial_socio
 
 from xsys.models import (
     SyncState,
@@ -815,6 +816,10 @@ class XsysSyncService:
                     unique_fields=["external_id"],
                     update_fields=_CDES_UPDATE_FIELDS,
                 )
+            # El espejo de arriba se purga a los 7 días; el historial del socio no.
+            # Va después del bulk_create y fuera de la transacción: es best-effort
+            # y no puede arrastrar al movimiento si falla.
+            historial_socio.registrar_movimientos(objs)
             total += len(objs)
             max_id = max(max_id, max(o.external_id for o in objs))
         if total:

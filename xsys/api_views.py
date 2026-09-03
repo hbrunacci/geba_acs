@@ -8,13 +8,14 @@ from pathlib import Path
 
 from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from access_control.models import BiostarAccessEvent, SocioAviso
+from access_control.models import BiostarAccessEvent, SocioAcceso, SocioAviso
 from access_control.models.models import ExternalAccessLogEntry
 from common.roles import PuedeConfigPuertas
 from institutions.models import AccessDoor, DoorController, DoorTurnstileGroup
@@ -1648,6 +1649,81 @@ class SocioDetalleAPI(APIView):
             "contratos": contratos,
             "avisos": _avisos_recientes(id_cliente),
             "avisos_hoy": _tipos_avisados_hoy(id_cliente),
+        })
+
+
+ACCESOS_PAGINA = 50
+ACCESOS_PAGINA_MAX = 500
+
+
+class SocioAccesosAPI(APIView):
+    """GET /api/xsys/socios/<id_cliente>/accesos/ → historial de pasos del socio.
+
+    Sale de ``SocioAcceso``, el registro local que no se purga, así que responde
+    sin tocar xSys ni BioStar y funciona con la VPN caída.
+
+    Parámetros: ``desde``/``hasta`` (AAAA-MM-DD), ``origen`` (credencial|facial),
+    ``resultado`` (ok|rechazo), ``limit``/``offset``.
+
+    El resumen se calcula sobre el filtro completo, no sobre la página: el dato
+    que se busca al abrir la ficha es "cuántas veces le dijo que no", y si
+    contara sólo lo visible cambiaría al pasar de página.
+    """
+
+    def get(self, request, id_cliente: int):
+        p = request.query_params
+        qs = SocioAcceso.objects.filter(id_cliente=id_cliente)
+
+        desde = parse_date(p.get("desde") or "")
+        hasta = parse_date(p.get("hasta") or "")
+        if desde:
+            qs = qs.filter(fecha__date__gte=desde)
+        if hasta:
+            qs = qs.filter(fecha__date__lte=hasta)
+        origen = (p.get("origen") or "").strip()
+        if origen in (SocioAcceso.ORIGEN_CREDENCIAL, SocioAcceso.ORIGEN_FACIAL):
+            qs = qs.filter(origen=origen)
+        resultado = (p.get("resultado") or "").strip()
+        if resultado == "ok":
+            qs = qs.filter(permitido=True)
+        elif resultado == "rechazo":
+            qs = qs.filter(permitido=False)
+
+        total = qs.count()
+        permitidos = qs.filter(permitido=True).count()
+        try:
+            limit = min(max(int(p.get("limit") or ACCESOS_PAGINA), 1), ACCESOS_PAGINA_MAX)
+        except (TypeError, ValueError):
+            limit = ACCESOS_PAGINA
+        try:
+            offset = max(int(p.get("offset") or 0), 0)
+        except (TypeError, ValueError):
+            offset = 0
+
+        filas = list(qs.order_by("-fecha", "-id")[offset:offset + limit])
+        return Response({
+            "id_cliente": id_cliente,
+            "total": total,
+            "permitidos": permitidos,
+            "rechazados": total - permitidos,
+            "limit": limit,
+            "offset": offset,
+            "resultados": [
+                {
+                    "id": a.id,
+                    "fecha": a.fecha.isoformat() if a.fecha else None,
+                    "origen": a.origen,
+                    "permitido": a.permitido,
+                    "resultado": a.resultado,
+                    "mensaje": a.mensaje,
+                    "detalle": a.detalle,
+                    "motivo_code": a.motivo_code,
+                    "puerta": a.puerta,
+                    "molinete": a.molinete,
+                    "conflicto_molinete": a.conflicto_molinete,
+                }
+                for a in filas
+            ],
         })
 
 

@@ -101,6 +101,60 @@
     </div>
   </div>
 </section>
+
+<section id="historial" class="card mt-4 d-none">
+  <div class="card__body">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <h5 class="mb-0">Historial de accesos</h5>
+      <span id="h-total" class="badge text-bg-secondary"></span>
+      <span id="h-ok" class="badge text-bg-success"></span>
+      <span id="h-no" class="badge text-bg-danger"></span>
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+      <div>
+        <label class="form-label small mb-1" for="h-origen">Lectura</label>
+        <select id="h-origen" class="form-select form-select-sm">
+          <option value="">Todas</option>
+          <option value="credencial">Credencial / DNI / QR</option>
+          <option value="facial">Facial</option>
+        </select>
+      </div>
+      <div>
+        <label class="form-label small mb-1" for="h-resultado">Resultado</label>
+        <select id="h-resultado" class="form-select form-select-sm">
+          <option value="">Todos</option>
+          <option value="ok">Pasó</option>
+          <option value="rechazo">No pasó</option>
+        </select>
+      </div>
+      <div>
+        <label class="form-label small mb-1" for="h-desde">Desde</label>
+        <input id="h-desde" type="date" class="form-control form-control-sm" />
+      </div>
+      <div>
+        <label class="form-label small mb-1" for="h-hasta">Hasta</label>
+        <input id="h-hasta" type="date" class="form-control form-control-sm" />
+      </div>
+      <button type="button" id="h-limpiar" class="btn btn-outline-secondary btn-sm">Limpiar</button>
+    </div>
+    <div id="h-vacio" class="alert alert-secondary d-none mb-0"></div>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead>
+          <tr class="text-muted small">
+            <th>Fecha y hora</th><th>Puerta</th><th>Molinete</th>
+            <th>Lectura</th><th>Resultado</th><th>Mensaje</th>
+          </tr>
+        </thead>
+        <tbody id="h-filas"></tbody>
+      </table>
+    </div>
+    <div class="mt-3 d-flex align-items-center gap-2">
+      <button type="button" id="h-mas" class="btn btn-outline-primary btn-sm d-none">Ver más</button>
+      <span id="h-estado" class="small text-muted"></span>
+    </div>
+  </div>
+</section>
 {% endblock content %}
 
 {% block extra_js %}
@@ -165,6 +219,7 @@
       foto.style.display = "none";
     }
     res.classList.remove("d-none");
+    cargarHistorial(s.id_cliente, true);
   }
 
   const lista = document.getElementById("resultados-lista");
@@ -229,9 +284,98 @@
     debounce = setTimeout(function () { buscarLista(q); }, 300);
   });
 
+  // ------------------------------------------------ historial de accesos
+  // Sale de la tabla local, que no se purga: el socio puede tener años de
+  // pasos. Por eso se pagina y se filtra en el servidor, y los contadores del
+  // encabezado son del filtro completo, no de lo que está a la vista.
+  const HIST = document.getElementById("historial");
+  const hFilas = document.getElementById("h-filas");
+  const hMas = document.getElementById("h-mas");
+  const hVacio = document.getElementById("h-vacio");
+  const hEstado = document.getElementById("h-estado");
+  const hFiltros = ["h-origen", "h-resultado", "h-desde", "h-hasta"];
+  let hSocio = null;
+  let hOffset = 0;
+
+  function filtrosHistorial() {
+    const p = new URLSearchParams();
+    const origen = document.getElementById("h-origen").value;
+    const resultado = document.getElementById("h-resultado").value;
+    const desde = document.getElementById("h-desde").value;
+    const hasta = document.getElementById("h-hasta").value;
+    if (origen) p.set("origen", origen);
+    if (resultado) p.set("resultado", resultado);
+    if (desde) p.set("desde", desde);
+    if (hasta) p.set("hasta", hasta);
+    return p;
+  }
+
+  function filaHistorial(a) {
+    const fecha = a.fecha ? new Date(a.fecha).toLocaleString("es-AR") : "—";
+    const lectura = a.origen === "facial" ? "Facial" : "Credencial";
+    const badge = a.permitido
+      ? '<span class="badge text-bg-success">Pasó</span>'
+      : '<span class="badge text-bg-danger">No pasó</span>';
+    // El conflicto de paso pendiente explica el rechazo mejor que el mensaje
+    // que se le mostró, así que se agrega en vez de reemplazarlo.
+    const conflicto = a.conflicto_molinete
+      ? '<div class="small text-warning-emphasis">Paso pendiente en ' + esc(a.conflicto_molinete) + "</div>"
+      : "";
+    // El detalle es la observación cruda de xSys: se muestra sólo cuando dice
+    // algo distinto del mensaje, o repetiría la columna entera.
+    const detalle = (a.detalle && a.detalle !== a.mensaje)
+      ? '<div class="small text-muted">' + esc(a.detalle) + "</div>"
+      : "";
+    return "<tr><td class=\"text-nowrap\">" + esc(fecha) + "</td><td>" + esc(a.puerta || "—") +
+      "</td><td>" + esc(a.molinete || "—") + "</td><td>" + esc(lectura) + "</td><td>" + badge +
+      "</td><td>" + esc(a.mensaje || "—") + detalle + conflicto + "</td></tr>";
+  }
+
+  function cargarHistorial(idCliente, reset) {
+    if (!idCliente) { HIST.classList.add("d-none"); return; }
+    if (reset) { hSocio = idCliente; hOffset = 0; hFilas.innerHTML = ""; }
+    HIST.classList.remove("d-none");
+    hEstado.textContent = "Cargando…";
+    const p = filtrosHistorial();
+    p.set("offset", hOffset);
+    fetch("/api/xsys/socios/" + encodeURIComponent(idCliente) + "/accesos/?" + p.toString(), {
+      credentials: "same-origin", headers: { "Accept": "application/json" },
+    })
+      .then(function (r) { if (!r.ok) throw new Error("Error " + r.status); return r.json(); })
+      .then(function (d) {
+        hEstado.textContent = "";
+        document.getElementById("h-total").textContent = d.total + " acceso" + (d.total === 1 ? "" : "s");
+        document.getElementById("h-ok").textContent = d.permitidos + " pasó";
+        document.getElementById("h-no").textContent = d.rechazados + " rechazo" + (d.rechazados === 1 ? "" : "s");
+        hFilas.insertAdjacentHTML("beforeend", (d.resultados || []).map(filaHistorial).join(""));
+        hOffset = d.offset + (d.resultados || []).length;
+        hMas.classList.toggle("d-none", hOffset >= d.total);
+        if (!d.total) {
+          hVacio.textContent = "Sin accesos registrados para este socio con los filtros elegidos.";
+          hVacio.classList.remove("d-none");
+        } else {
+          hVacio.classList.add("d-none");
+          hEstado.textContent = "Mostrando " + hOffset + " de " + d.total + ".";
+        }
+      })
+      .catch(function (e) { hEstado.textContent = e.message || "No se pudo cargar el historial."; });
+  }
+
+  hMas.addEventListener("click", function () { cargarHistorial(hSocio, false); });
+  hFiltros.forEach(function (id) {
+    document.getElementById(id).addEventListener("change", function () {
+      cargarHistorial(hSocio, true);
+    });
+  });
+  document.getElementById("h-limpiar").addEventListener("click", function () {
+    hFiltros.forEach(function (id) { document.getElementById(id).value = ""; });
+    cargarHistorial(hSocio, true);
+  });
+
   form.addEventListener("submit", function (ev) {
     ev.preventDefault();
     res.classList.add("d-none");
+    HIST.classList.add("d-none");
     const tipo = document.getElementById("tipo").value;
     const valor = document.getElementById("valor").value.trim();
     if (!valor) { showMsg("Ingresá un valor para buscar.", "warning"); return; }

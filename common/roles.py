@@ -29,6 +29,9 @@ GRUPO_CONCESIONARIOS = "concesionarios"
 # ninguna pantalla: existe para poder asignarlo y usarlo cuando se defina qué
 # habilita. Si en algún momento decide algo, la regla va acá y no suelta por ahí.
 GRUPO_RESPONSABLES = "responsables"
+# La oficina de Socios: ve los avisos dejados sobre los socios para llamarlos y
+# resolverlos. Es trabajo de mostrador, no de sistemas.
+GRUPO_SOCIOS = "socios"
 
 
 def es_admin(user) -> bool:
@@ -62,6 +65,19 @@ def puede_concesionarios(user) -> bool:
     )
 
 
+def puede_socios(user) -> bool:
+    """Quién ve los avisos a socios: el grupo ``socios``, más quien ya los veía.
+
+    La pantalla nació dentro del rol de puertas —los avisos se dejan desde el
+    diagnóstico de facial, en el mostrador—, así que el grupo nuevo SUMA: sacarle
+    la pantalla a quien la viene usando no era lo que se pidió.
+    """
+    return bool(
+        getattr(user, "is_authenticated", False)
+        and (puede_config_puertas(user) or user.groups.filter(name=GRUPO_SOCIOS).exists())
+    )
+
+
 def _rol_requerido(check):
     """Construye un decorador de vista: login + chequeo de rol (403 si no cumple)."""
 
@@ -80,6 +96,7 @@ def _rol_requerido(check):
 admin_requerido = _rol_requerido(es_admin)
 puertas_requerido = _rol_requerido(puede_config_puertas)
 concesionarios_requerido = _rol_requerido(puede_concesionarios)
+socios_requerido = _rol_requerido(puede_socios)
 
 
 class PuedeConfigPuertas(BasePermission):

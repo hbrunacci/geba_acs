@@ -10,7 +10,9 @@
 <section class="card mb-3">
   <div class="card__body d-flex flex-wrap gap-2 align-items-center">
     <span class="badge bg-danger">{{ pendientes }} pendiente{{ pendientes|pluralize }}</span>
+    {% if puede_diagnostico %}
     <a class="btn btn-outline-secondary btn-sm" href="/diag-facial/" target="_blank" rel="noopener">Ir al diagnóstico de facial</a>
+    {% endif %}
     <div class="ms-auto btn-group btn-group-sm" role="group">
       <a class="btn {% if estado != 'todos' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?estado=pendientes">Pendientes</a>
       <a class="btn {% if estado == 'todos' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?estado=todos">Todos</a>
@@ -43,7 +45,9 @@
         </div>
       </div>
       <div class="d-flex gap-2 align-items-center ms-auto">
+        {% if puede_diagnostico %}
         <a class="btn btn-outline-secondary btn-sm" href="/diag-facial/?q={{ f.aviso.id_cliente }}&modo=socio" target="_blank" rel="noopener">Diagnóstico</a>
+        {% endif %}
         {% if f.aviso.resuelto %}
           <button type="button" class="btn btn-outline-warning btn-sm" data-aviso-reabrir>Reabrir</button>
         {% else %}

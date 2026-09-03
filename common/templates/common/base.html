@@ -90,6 +90,11 @@
             <a href="{% url 'diag_facial_console' %}">Diagnóstico de facial</a>
           </li>
           {% endif %}
+          {% if nav_can_socios %}
+          <li class="nav__item{% if current_url == 'avisos_pendientes' %} nav__item--active{% endif %}">
+            <a href="{% url 'avisos_pendientes' %}">Avisos a socios</a>
+          </li>
+          {% endif %}
           {% if nav_can_concesionarios %}
           <li class="nav__item nav__item--expandable{% if current_url == 'concesionarios_listado' or current_url == 'concesionarios_ingresos' or current_url == 'concesionarios_empresas' or current_url == 'concesionarios_horarios' %} nav__item--active{% endif %}">
             <details{% if current_url == 'concesionarios_listado' or current_url == 'concesionarios_ingresos' or current_url == 'concesionarios_empresas' or current_url == 'concesionarios_horarios' %} open{% endif %}>
