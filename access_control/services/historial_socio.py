@@ -81,8 +81,9 @@ def _armar_contexto() -> dict:
 
 # El poller de BioStar persiste de a UN evento, así que sin esto cada facial que
 # pasa costaría cuatro consultas de catálogo. Son tablas chicas que cambian cuando
-# alguien rearma una puerta o xSys agrega un motivo: un minuto de desfasaje no
-# cambia nada, y el nombre del molinete se puede corregir después con el backfill.
+# alguien rearma una puerta o xSys agrega un motivo: durante ese minuto los pasos
+# quedan rotulados con la configuración anterior, que es exactamente lo que el
+# historial guarda a propósito.
 _CACHE_SEGUNDOS = 60
 _cache: dict = {"armado_en": None, "ctx": None}
 

@@ -219,6 +219,42 @@ class CableadoTests(_Base):
         self.assertEqual(a.referencia, "biostar:77001")
 
 
+class ComandoTests(_Base):
+    """El comando de relleno: recupera lo que los espejos todavía tengan."""
+
+    def _correr(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        salida = StringIO()
+        call_command("historial_socio_backfill", stdout=salida)
+        return salida.getvalue()
+
+    def test_registra_lo_que_esta_en_los_espejos(self):
+        self._mov().save()
+        self._facial().save()
+        self._correr()
+        self.assertEqual(SocioAcceso.objects.count(), 2)
+
+    def test_correrlo_dos_veces_no_duplica(self):
+        self._mov().save()
+        self._correr()
+        self._correr()
+        self.assertEqual(SocioAcceso.objects.count(), 1)
+
+    def test_no_lee_la_historia_de_cd_es(self):
+        """El club pidió que el historial arranque con lo que registra este
+        sistema. Si el comando volviera a pegarle a xSys, esto lo señala."""
+        import inspect
+
+        from access_control.management.commands import historial_socio_backfill
+
+        codigo = inspect.getsource(historial_socio_backfill)
+        self.assertNotIn("FROM CD_ES", codigo)
+        self.assertNotIn("MSSQL_XSYS", codigo)
+
+
 class CacheTests(_Base):
     def test_no_relee_los_catalogos_en_cada_evento(self):
         """El poller de BioStar persiste de a uno: sin caché serían 4 consultas por cara."""
