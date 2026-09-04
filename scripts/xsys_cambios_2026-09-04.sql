@@ -95,27 +95,59 @@ GO
 --------------------------------------------------------------------------- */
 
 
+/* =============================================================================
+   SEGUNDA PARTE — DOCENTE IGSM entra por los molinetes de San Martín
+   Aplicado el mismo 04/09/2026, a pedido del club.
+
+   Cargarles el documento no alcanzaba. CF_SCA_ValidarTipo exige una fila en
+   CD_Accesos_Cli_Tipos para el par (acceso, categoría), y la 1135 sólo tenía
+   cuatro puertas: 13 CS-20-AL, 21 ROEL Mora, 22 Acceso CS, 27 CONTROL MANUAL.
+   Ninguna de San Martín. Sin esto, los dos habrían pasado de "La Persona es
+   inválida" (103) a "No cumple ninguna condición habilitante" (112), que es lo
+   que vienen recibiendo los demás docentes.
+
+   "San Martín" son cinco puertas y el club eligió SÓLO LOS TRES MOLINETES
+   PEATONALES. Queda deliberadamente afuera el acceso 4 (SanMartin_Alcorta:
+   faciales, garita y celulares), que es el de más tránsito de la sede — 56.457
+   lecturas en 30 días contra 8.492 del 14. Si algún día se pide que la garita
+   de Alcorta también los deje pasar, es la fila (4, 1135).
+
+   Respaldo de la tabla ENTERA (134 filas) en: zCD_Accesos_Cli_Tipos_20260904
+   Para deshacer:
+     DELETE FROM CD_Accesos_Cli_Tipos
+      WHERE Id_Tipo_Cli = 1135 AND Id_Acceso IN (14, 15, 16)
+   ============================================================================= */
+
+SELECT * INTO dbo.zCD_Accesos_Cli_Tipos_20260904 FROM CD_Accesos_Cli_Tipos
+GO
+
+/* Flag_Habilitado en NULL, no en 'H': así están las otras cuatro filas de esta
+   categoría y así lo lee CF_SCA_ValidarTipo, que hace ISNULL(Flag, 'H'). Poner
+   'H' funcionaría igual, pero dejaría estas tres filas distintas de las demás. */
+INSERT INTO CD_Accesos_Cli_Tipos (Id_Acceso, Id_Tipo_Cli, Flag_Habilitado)
+VALUES (14, 1135, NULL),   /* SM-Alcorta */
+       (15, 1135, NULL),   /* SM-Ombues  */
+       (16, 1135, NULL)    /* SM-Noble   */
+GO
+
+
 /* ---------------------------------------------------------------------------
-   4) LO QUE ESTO NO ARREGLA
+   ALCANCE Y ADVERTENCIAS
 --------------------------------------------------------------------------- */
--- Ahora el molinete los identifica, pero por SM-Alcorta siguen sin pasar.
--- CF_SCA_ValidarTipo exige una fila en CD_Accesos_Cli_Tipos para (acceso,
--- categoría), y la categoría 1135 sólo tiene cuatro:
+-- Alcanza a los 75 docentes IGSM activos, no sólo a los dos del principio. Los
+-- 75 ya tienen documento cargado (con estos dos se completó el padrón); 35 tienen
+-- además credencial.
 --
---     13 CS-20-AL | 21 ROEL Mora | 22 Acceso CS | 27 CONTROL MANUAL
+-- En los últimos 30 días este cambio habría evitado 14 rechazos: 8 en SM-Ombues
+-- (6 personas) y 6 en SM-Alcorta (2 personas).
 --
--- SM-Alcorta (14) y SM-Ombues (15) NO están. Por eso el mensaje que van a
--- recibir cambia de "La Persona es inválida" (103) a "No cumple ninguna
--- condición habilitante" (112), que es lo que vienen recibiendo los demás
--- docentes: en 30 días, 24 rechazos contra 19 pasos, y esos 19 entraron por otra
--- vía (figuran además como EMPLEADO, o tienen cuota social paga). Ninguno entró
--- por ser docente.
+-- OJO, LO MISMO QUE SE ADVIRTIÓ EL 01/09 CON EL CONTRATO INSTITUTO:
+-- habilitar por CATEGORÍA no mira la cuota ni la deuda. Es la misma vía por la
+-- que entran EMPLEADO y VITALICIO+71, que no pagan cuota social. Un docente que
+-- deba algo va a entrar igual por estos tres molinetes. Si el club quiere que la
+-- deuda los frene, la herramienta es CD_Clientes_Deuda_Actividades (motivo 118),
+-- que sí corta antes de cualquier habilitación.
 --
--- Si el club decide que DOCENTE IGSM debe abrir esas puertas, es agregar la fila
--- correspondiente en CD_Accesos_Cli_Tipos, igual que el 01/09 se hizo con el
--- contrato INSTITUTO para los alumnos:
---
---   INSERT INTO CD_Accesos_Cli_Tipos (Id_Acceso, Id_Tipo_Cli, Flag_Habilitado)
---   VALUES (14, 1135, NULL)   -- NULL vale 'H': así lo lee CF_SCA_ValidarTipo
---
--- NO se aplicó: es una decisión de la casa, no un error de datos.
+-- El facial no se toca y no hacía falta: valida contra la lista blanca que calcula
+-- geba_acs, y los seis equipos lo hacen contra el acceso 22, que esta categoría ya
+-- tenía. (Sigue pendiente separar la lista blanca por sede.)
