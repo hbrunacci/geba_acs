@@ -16,6 +16,11 @@ class SocioAviso(models.Model):
     TIPO_TOMAR_FOTO = "tomar_foto"
     TIPO_DEUDA = "deuda"
     TIPO_DATOS_A_ACTUALIZAR = "datos_a_actualizar"
+    # Lo deja el chequeo automático: la persona está habilitada a entrar pero no
+    # tiene con qué identificarse en un molinete. Ver
+    # ``xsys.services.chequeo_identificacion``. Se resuelve solo cuando le cargan
+    # el dato que falta.
+    TIPO_SIN_IDENTIFICACION = "sin_identificacion"
     TIPO_LIBRE = "libre"
 
     TEXTO_PASE_POR_SOCIOS = "Se indica pasar por oficina de socios"

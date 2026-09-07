@@ -979,4 +979,13 @@ class XsysSyncService:
 
             stats["movimientos"] = self.sync_movements(cursor)
             stats["movimientos_purgados"] = self.purge_old_movements()
+
+        # Con el espejo ya al día: quién quedó habilitado a entrar pero sin
+        # documento, credencial ni facial. Va acá y no en su propio contenedor
+        # porque necesita justamente los datos que se acaban de refrescar, y
+        # porque una tarea más que arrancar es una tarea más que se olvida de
+        # arrancar. Es best-effort: no puede romper el sync.
+        from xsys.services import chequeo_identificacion
+
+        stats["sin_identificacion"] = chequeo_identificacion.revisar_best_effort()
         return stats
