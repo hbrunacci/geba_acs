@@ -32,6 +32,11 @@ GRUPO_RESPONSABLES = "responsables"
 # La oficina de Socios: ve los avisos dejados sobre los socios para llamarlos y
 # resolverlos. Es trabajo de mostrador, no de sistemas.
 GRUPO_SOCIOS = "socios"
+# Los tableros muestran el padrón entero y la deuda de la masa societaria. Es
+# información de gestión —Tesorería, Comisión Directiva— y no de operación, así
+# que va en su propio grupo: se entrega el número sin entregar el sistema. Igual
+# que ``concesionarios``, NO alcanza con ser Administrador de la app.
+GRUPO_TABLEROS = "tableros"
 
 
 def es_admin(user) -> bool:
@@ -78,6 +83,22 @@ def puede_socios(user) -> bool:
     )
 
 
+def puede_tableros(user) -> bool:
+    """Superusuario, staff, o miembro del grupo ``tableros``.
+
+    Mismo criterio que ``puede_concesionarios`` y por el mismo motivo: se pidió
+    un grupo aparte para dar los números a quien los necesita sin darle el resto
+    del sistema. Ser "Administrador" NO alcanza; si el club quiere que los
+    administradores entren igual, se agrega ``es_admin(user) or`` acá y listo.
+    """
+    return bool(
+        getattr(user, "is_authenticated", False)
+        and (user.is_superuser
+             or user.is_staff
+             or user.groups.filter(name=GRUPO_TABLEROS).exists())
+    )
+
+
 def _rol_requerido(check):
     """Construye un decorador de vista: login + chequeo de rol (403 si no cumple)."""
 
@@ -97,6 +118,7 @@ admin_requerido = _rol_requerido(es_admin)
 puertas_requerido = _rol_requerido(puede_config_puertas)
 concesionarios_requerido = _rol_requerido(puede_concesionarios)
 socios_requerido = _rol_requerido(puede_socios)
+tableros_requerido = _rol_requerido(puede_tableros)
 
 
 class PuedeConfigPuertas(BasePermission):
@@ -115,3 +137,25 @@ class PuedeConcesionarios(BasePermission):
 
     def has_permission(self, request, view):
         return puede_concesionarios(request.user)
+
+
+class PuedeSocios(BasePermission):
+    """Permiso DRF: mismo criterio que la pantalla de avisos a socios.
+
+    Cubre las APIs de la ficha del socio, incluida la edición: quien atiende al
+    socio en el mostrador es quien le corrige el documento.
+    """
+
+    message = "Requiere el rol de socios."
+
+    def has_permission(self, request, view):
+        return puede_socios(request.user)
+
+
+class PuedeTableros(BasePermission):
+    """Permiso DRF: mismo criterio que la pantalla de tableros."""
+
+    message = "Requiere el rol de tableros."
+
+    def has_permission(self, request, view):
+        return puede_tableros(request.user)

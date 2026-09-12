@@ -46,9 +46,10 @@ class PuertaMonitorTests(TestCase):
         for orden, cid in enumerate((59, 60, 90)):
             DoorController.objects.create(door=cls.door, id_controlador=cid, orden=orden)
 
-    def _ev(self, id_es, id_controlador, id_acceso=14, tipo="E", resultado="S", motivo=305):
+    def _ev(self, id_es, id_controlador, id_acceso=14, tipo="E", resultado="S", motivo=305,
+            id_cliente=944426):
         return ExternalAccessLogEntry.objects.create(
-            external_id=id_es, tipo=tipo, id_cliente=944426, fecha=timezone.now(),
+            external_id=id_es, tipo=tipo, id_cliente=id_cliente, fecha=timezone.now(),
             resultado=resultado, id_acceso=id_acceso, id_controlador=id_controlador,
             id_cd_motivo=motivo, observacion="obs",
         )
@@ -107,6 +108,36 @@ class PuertaMonitorTests(TestCase):
         self.assertFalse(ev["cuota_al_dia"])
         self.assertEqual(ev["estado"], "anomalia")
         self.assertEqual(ev["mensaje"], "Acceso Concedido · Cuota Vencida")
+
+    def test_al_que_no_paga_cuota_no_se_le_pinta_cuota_vencida(self):
+        # Desde que los accesos exigen la cuota (11/09/2026), el molinete deja
+        # pasar a quien no la paga: no es socio, o es de una categoría que el
+        # club no factura. Si el visor igual dijera "Cuota Vencida", el operador
+        # vería una contradicción con el molinete y no sabría cuál creer.
+        from datetime import datetime as _dt
+
+        from django.utils import timezone as _tz
+
+        PantallaPuerta.objects.create(token=TOKEN, door=self.door)
+        vieja = _tz.make_aware(_dt(2019, 1, 1))
+        for i, (tipo, etiqueta) in enumerate((
+            (1010, "VITALICIO + 71"),
+            (1100, "SOCIO HONORARIO"),
+            (1126, "SOCIO OLIMPICO"),
+            (1018, "INVITADOS"),
+            (1134, "BICICLETA"),
+        )):
+            cid = 970000 + i
+            XsysSocio.objects.create(
+                id_cliente=cid, apellido="EXENTO", nombre=etiqueta, activo=1,
+                categoria=etiqueta, id_tipo_cli=tipo, ult_cuota_paga=vieja)
+            self._ev(9300 + i, 59, resultado="S", id_cliente=cid)
+            d = _get(self.client, "/api/xsys/puerta/estado/").json()
+            col = next(c for c in d["columnas"] if 59 in c["controladores"])
+            ev = col["ultimo"]
+            self.assertTrue(ev["cuota_al_dia"], etiqueta)
+            self.assertNotEqual(ev["estado"], "anomalia", etiqueta)
+            self.assertNotIn("Cuota Vencida", ev["mensaje"], etiqueta)
 
     def test_mensaje_deducido_cuota_vencida(self):
         from datetime import datetime as _dt

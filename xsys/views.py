@@ -1,7 +1,20 @@
+from django.db.models import Count
 from django.shortcuts import render
 
-from common.roles import admin_requerido, puertas_requerido
-from xsys.models import SyncState, XsysSocio, XsysSocioFoto, XsysWhitelist
+from common.roles import (
+    admin_requerido,
+    puertas_requerido,
+    socios_requerido,
+    tableros_requerido,
+)
+from xsys.models import (
+    SyncState,
+    XsysDeudaFoto,
+    XsysSocio,
+    XsysSocioFoto,
+    XsysWhitelist,
+)
+from xsys.services.tableros import RANGOS as RANGOS_TABLERO
 
 STREAM_LABELS = {
     "novedades": "Novedades / socios",
@@ -47,6 +60,31 @@ def xsys_molinetes_config(request):
     return render(request, "xsys/molinetes_config.html")
 
 
+@socios_requerido
+def xsys_socios_fichas(request):
+    """Fichas de socios: listado, edición, historial de pasos, cuenta corriente,
+    contratos y grupo familiar.
+
+    Las categorías del filtro salen del espejo local y no del catálogo de xSys:
+    interesan las que ALGUIEN tiene puesta (58 categorías existen, 30 se usan) y
+    así la pantalla abre sin depender de la VPN.
+    """
+    categorias = [
+        {"id": c["id_tipo_cli"], "nombre": c["categoria"], "socios": c["n"]}
+        for c in XsysSocio.objects.exclude(id_tipo_cli__isnull=True)
+        .values("id_tipo_cli", "categoria")
+        .annotate(n=Count("id_cliente"))
+        .order_by("categoria")
+        if c["categoria"]
+    ]
+    context = {
+        "categorias": categorias,
+        "total_socios": XsysSocio.objects.count(),
+        "total_activos": XsysSocio.objects.filter(activo=1).count(),
+    }
+    return render(request, "xsys/socios_fichas.html", context)
+
+
 @admin_requerido
 def xsys_socio_console(request):
     """Consola de búsqueda de socios del espejo xSys (datos + foto + lista blanca)."""
@@ -70,3 +108,33 @@ def xsys_socio_console(request):
         "total_habilitados": XsysWhitelist.objects.filter(habilitado=True).count(),
     }
     return render(request, "xsys/socio_console.html", context)
+
+
+@tableros_requerido
+def xsys_tableros(request):
+    """Tableros de gestión: padrón, altas y bajas, categorías y deuda.
+
+    La pantalla arranca vacía y pide todo por API. El catálogo de categorías del
+    filtro sí viene servido acá, del espejo local: son 30 opciones que no cambian
+    entre recargas y así el ``<select>`` está poblado antes del primer dibujo,
+    sin un salto visual mientras llega el JSON.
+
+    La fecha de la última foto de deuda también viaja en el HTML, porque es lo
+    primero que hay que saber al mirar un número de deuda: si es de esta mañana
+    o de hace tres días.
+    """
+    categorias = [
+        {"id": c["id_tipo_cli"], "nombre": c["categoria"], "socios": c["n"]}
+        for c in XsysSocio.objects.filter(activo=1)
+        .exclude(id_tipo_cli__isnull=True)
+        .values("id_tipo_cli", "categoria")
+        .annotate(n=Count("id_cliente"))
+        .order_by("categoria")
+        if c["categoria"]
+    ]
+    foto = XsysDeudaFoto.ultima_buena()
+    return render(request, "xsys/tableros.html", {
+        "categorias": categorias,
+        "deuda_foto": foto,
+        "rangos": RANGOS_TABLERO,
+    })

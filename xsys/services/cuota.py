@@ -16,6 +16,19 @@ coinciden, el operador ve "al día" a alguien que el molinete acaba de rechazar
 estatuto ("dos cuotas impagas"), que daba un día más que xSys en casi todos los
 meses.
 
+A QUIÉN se le exige
+-------------------
+Desde el 11/09/2026 la cuota se exige sólo a quien la paga. ``CF_SCA_ValidarUltCuotaPaga``
+devuelve 1 —sin mirar la fecha— cuando la persona no es socio (``Flag_Tipo``
+distinto de P y de S) o pertenece a una categoría de socio que el club no
+factura (VITALICIO + 71, SOCIO HONORARIO, SOCIO OLÍMPICO).
+
+Ese recorte NO vive acá: estas funciones sólo saben de fechas. Quien lo aplica
+del lado del visor es ``_CATEGORIAS_SIN_CUOTA`` en ``xsys.api_views``, y ahí
+está la lista con su justificación. Llamar a ``cuota_al_dia`` sin pasar antes
+por esa lista da "Cuota Vencida" sobre invitados y vitalicios que entran sin
+problema.
+
 REGLA: si cambia ``CF_SCA_ValidarUltCuotaPaga`` en xSys, hay que cambiar esto.
 La fórmula de allá, textual::
 

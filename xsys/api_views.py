@@ -348,23 +348,48 @@ _MOTIVOS_SIN_CUOTA = {202, 204, 205}
 # que no necesita.
 _MOTIVOS_QR = {114, 115, 116}
 
-# Categorías (Clientes.Id_Tipo_Cli) que directamente NO tienen cuota social que
-# pagar: concesionarios, alumnos y docentes del instituto, profesores,
-# proveedores, visitas y no socios. A ellos "Cuota Vencida" es siempre un falso
-# positivo, entren o no: su habilitación sale del contrato o del producto, no de
-# la cuota. Va por id y no por descripción porque el id es lo que usa xSys en
-# CD_Accesos_Cli_Tipos y la descripción la renombran.
+# Categorías (Clientes.Id_Tipo_Cli) a las que NO se les exige la cuota social.
+# A ellas "Cuota Vencida" es siempre un falso positivo, entren o no: su
+# habilitación sale del contrato o del producto, no de la cuota. Va por id y no
+# por descripción porque el id es lo que usa xSys en CD_Accesos_Cli_Tipos y la
+# descripción la renombran.
 #
-# NO está acá a propósito: EMPLEADO (1006), que sí registra cuota en el 99% de
-# los casos y además ya queda exento por el motivo 205.
+# ESTA LISTA ES UN ESPEJO de la guarda que lleva `CF_SCA_ValidarUltCuotaPaga`
+# desde el 11/09/2026, que es la que decide en el molinete:
+#
+#     no se exige si Flag_Tipo NOT IN ('P','S')  -- no es socio
+#                 o Id_Tipo_Cli IN (1010, 1100, 1126)
+#
+# Las tres últimas son categorías de socio a las que el club no factura la
+# cuota: medido sobre los lotes CSOC_2026-08/09/10, VITALICIO + 71 recibe cupón
+# en 682 de 3.677 fichas, SOCIO OLÍMPICO en 1 de 19 y SOCIO HONORARIO en 1 de
+# 11, contra el 93-100% del resto. Su Ult_Cuota_Paga quedó congelado porque no
+# se les emite cupón.
+#
+# REGLA: si cambia la guarda en xSys, hay que cambiar esta lista. Si las dos no
+# coinciden, el visor pinta "Cuota Vencida" sobre alguien que el molinete deja
+# pasar —o al revés— y el operador no tiene forma de saber cuál miente.
 _CATEGORIAS_SIN_CUOTA = {
+    0,     # SIN CATEGORIZAR
+    10,    # ACCESO MASTER
+    1006,  # EMPLEADO
+    1008,  # USUARIO
+    1010,  # VITALICIO + 71          (socio, pero no se le factura la cuota)
     1015,  # CONCESIONARIO
     1018,  # INVITADOS
+    1019,  # COLEGIOS
+    1100,  # SOCIO HONORARIO         (socio, pero no se le factura la cuota)
+    1101,  # MASTER
     1103,  # NO SOCIO
     1113,  # VISITA
+    1114,  # INVITADO SC
+    1126,  # SOCIO OLIMPICO          (socio, pero no se le factura la cuota)
     1127,  # ALUMNO IGSM
+    1128,  # TESORERIA
+    1129,  # TENIS
     1131,  # PROFESORES
     1132,  # PROVEEDORES
+    1134,  # BICICLETA
     1135,  # DOCENTE IGSM
 }
 

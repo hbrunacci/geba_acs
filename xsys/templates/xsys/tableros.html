@@ -1,0 +1,1600 @@
+{% extends "common/base.html" %}
+{% load static %}
+
+{% block page_title %}Tableros{% endblock page_title %}
+
+{% block header_title %}Tableros{% endblock header_title %}
+
+{% block header_subtitle %}
+  Padrón, altas y bajas, reparto por categoría y deuda de la masa societaria.
+{% endblock header_subtitle %}
+
+{% block extra_css %}
+<style>
+  /* Alto fijo en el contenedor y no en el <canvas>: Chart.js con
+     maintainAspectRatio:false crece hasta llenar al padre, y si el padre no
+     tiene alto propio el canvas se estira sin fin en cada redibujado. */
+  .tab-graf { position: relative; height: 320px; }
+  .tab-graf--torta { height: 300px; }
+  .tab-kpi { font-variant-numeric: tabular-nums; }
+  .tab-kpi__valor { font-size: 1.6rem; font-weight: 600; line-height: 1.15; }
+  .tab-kpi__label { font-size: .78rem; text-transform: uppercase;
+                    letter-spacing: .04em; opacity: .7; }
+  .tab-rango .btn { --bs-btn-padding-y: .2rem; --bs-btn-padding-x: .55rem;
+                    --bs-btn-font-size: .8rem; }
+  .tab-cats { max-height: 260px; overflow-y: auto; }
+  .tab-cats label { font-size: .85rem; }
+  .tab-tabla { font-size: .85rem; font-variant-numeric: tabular-nums; }
+  /* Filas que abren el detalle. Se marca con el cursor y un fondo al pasar
+     porque nada más en la tabla sugiere que se pueda hacer clic. */
+  .tab-clic { cursor: pointer; }
+  .tab-clic:hover { background: rgba(47, 111, 181, .07); }
+
+  /* Encabezados que ordenan. La flecha se agrega por CSS según el atributo que
+     pone el JS, así no hay que reconstruir el <thead> en cada reordenamiento. */
+  .tab-orden { cursor: pointer; user-select: none; white-space: nowrap; }
+  .tab-orden:hover { text-decoration: underline; }
+  /* Flechas literales y no escapes CSS (\2195): el escape se comía el
+     dígito siguiente y salía una cajita con "95" al lado de cada título. */
+  .tab-orden::after { content: " ↕"; opacity: .3; font-size: .85em; }
+  .tab-orden[data-activo="desc"]::after { content: " ↓"; opacity: 1; }
+  .tab-orden[data-activo="asc"]::after { content: " ↑"; opacity: 1; }
+
+  .tab-vacio { display: flex; align-items: center; justify-content: center;
+               height: 100%; color: #6c757d; font-size: .9rem; text-align: center; }
+
+  /* Cinturón además del tirante. dashboard.css ya corrige el choque de nombres
+     con el `.modal` de la casa para todos los modales de Bootstrap, pero esta
+     pantalla es la que se comió el problema —el modal quedaba desplegado a
+     pantalla completa e invisible, y ningún filtro respondía—, así que lleva su
+     propia regla por id. Si alguien vuelve a tocar el CSS común, acá no rompe. */
+  #modal-detalle { display: block; z-index: 1055;
+                   align-items: initial; justify-items: initial; }
+  /* dashboard.css centra los modales de la casa con grid; al desactivarlo
+     el diálogo perdía el margen de arriba y quedaba pegado al borde. */
+  #modal-detalle .modal-dialog { margin: 1.75rem auto; }
+  #modal-detalle .modal-header { gap: 0; }
+  #modal-detalle thead th { white-space: nowrap; }
+  #modal-detalle:not(.show) { display: none; }
+
+  /* Barra de período pegada arriba. La página es larga —cuatro gráficos y una
+     tabla— y el período aplica a todos: si hay que subir hasta el techo para
+     cambiar de "1 año" a "3 meses" y volver a bajar, el filtro no se usa.
+     Sirve `sticky` a secas porque acá scrollea el documento: el layout no tiene
+     ningún contenedor con overflow propio que rompa el pegado.
+     El envoltorio lleva el mismo fondo que el body (bg-light-subtle) y un poco
+     de padding para que el contenido que pasa por debajo no asome por el borde
+     superior de la tarjeta. */
+  .tab-filtros {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    padding-top: .75rem;
+    margin-top: -.75rem;
+  }
+  /* Sombra sólo cuando está pegada, para que se despegue visualmente del
+     contenido que le pasa por detrás. El centinela de arriba deja de estar
+     visible justo cuando la barra se pega. */
+  .tab-filtros--pegada .card {
+    box-shadow: 0 .35rem .9rem rgba(20, 27, 45, .13);
+  }
+</style>
+{% endblock extra_css %}
+
+{% block content %}
+
+<!-- ------------------------------------------------------------------ -->
+<!-- Rango, común a los cuatro tableros. Queda pegado arriba al scrollear. -->
+<!-- ------------------------------------------------------------------ -->
+<div id="centinela-filtros" aria-hidden="true"></div>
+<div class="tab-filtros bg-light-subtle" id="filtros">
+<section class="card mb-3">
+  <div class="card__body">
+    <div class="d-flex flex-wrap align-items-end gap-3">
+      <div>
+        <div class="form-label small mb-1">Período</div>
+        <div class="btn-group tab-rango" role="group" id="rangos">
+          {% for clave, etiqueta in rangos.items %}
+          <button type="button" class="btn btn-outline-secondary{% if clave == '1a' %} active{% endif %}"
+                  data-rango="{{ clave }}">{{ etiqueta }}</button>
+          {% endfor %}
+        </div>
+      </div>
+      <div>
+        <label class="form-label small mb-1" for="f-desde">Desde</label>
+        <input id="f-desde" type="date" class="form-control form-control-sm" style="width: 9.5rem" />
+      </div>
+      <div>
+        <label class="form-label small mb-1" for="f-hasta">Hasta</label>
+        <input id="f-hasta" type="date" class="form-control form-control-sm" style="width: 9.5rem" />
+      </div>
+      <div>
+        <button id="btn-aplicar" class="btn btn-sm btn-primary">Aplicar</button>
+      </div>
+
+      {% comment %}
+        Las dos frescuras se muestran separadas porque son distintas y mezclarlas
+        haría creer que todo el tablero es igual de reciente: el padrón, las
+        altas/bajas y las categorías se consultan en vivo a xSys cada vez que se
+        carga la pantalla, mientras que la deuda sale de la foto guardada, que
+        puede ser de anoche. Ver xsys/models/tablero.py.
+      {% endcomment %}
+      <div class="ms-auto d-flex align-items-center gap-3">
+        <div class="text-end small lh-sm">
+          <div>
+            <span class="text-muted">Padrón y categorías:</span>
+            <strong id="frescura-vivo">—</strong>
+          </div>
+          <div>
+            <span class="text-muted">Deuda:</span>
+            <strong id="frescura-deuda">
+              {% if deuda_foto %}{{ deuda_foto.calculado_at|date:"d/m/Y H:i" }}{% else %}sin calcular{% endif %}
+            </strong>
+          </div>
+        </div>
+        <button id="btn-refrescar" class="btn btn-sm btn-outline-primary"
+                title="Vuelve a consultar el padrón, las altas y bajas y las categorías, y relee la última foto de deuda">
+          Refrescar
+        </button>
+      </div>
+    </div>
+    <div class="text-muted small mt-2" id="rango-leyenda"></div>
+  </div>
+</section>
+</div>
+
+<!-- ------------------------------------------------------------------ -->
+<!-- Indicadores                                                          -->
+<!-- ------------------------------------------------------------------ -->
+<div class="row g-3 mb-3" id="kpis">
+  <div class="col-6 col-lg-3">
+    <div class="card h-100"><div class="card__body tab-kpi">
+      <div class="tab-kpi__label">Socios activos</div>
+      <div class="tab-kpi__valor" id="kpi-socios">—</div>
+      <div class="small text-muted" id="kpi-socios-var">&nbsp;</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100"><div class="card__body tab-kpi">
+      <div class="tab-kpi__label">No socios activos</div>
+      <div class="tab-kpi__valor" id="kpi-nosocios">—</div>
+      <div class="small text-muted" id="kpi-nosocios-var">&nbsp;</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100"><div class="card__body tab-kpi">
+      <div class="tab-kpi__label">Altas del período</div>
+      <div class="tab-kpi__valor text-success" id="kpi-altas">—</div>
+      <div class="small text-muted" id="kpi-bajas">&nbsp;</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100"><div class="card__body tab-kpi">
+      <div class="tab-kpi__label">Deuda del período</div>
+      <div class="tab-kpi__valor" id="kpi-deuda">—</div>
+      <div class="small text-muted" id="kpi-deuda-socios">&nbsp;</div>
+    </div></div>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------------------ -->
+<!-- 1. Padrón                                                            -->
+<!-- ------------------------------------------------------------------ -->
+<section class="card mb-3">
+  <div class="card__body">
+    <div class="d-flex justify-content-between align-items-start mb-2">
+      <div>
+        <h2 class="h6 mb-1">Padrón activo</h2>
+        <p class="small text-muted mb-0">
+          Las líneas son cuántos hay al cierre de cada período; las barras, cuánto
+          varió en el período (altas menos bajas).
+        </p>
+      </div>
+      <span class="badge text-bg-light" id="padron-estado"></span>
+    </div>
+    <div class="tab-graf"><canvas id="g-padron"></canvas></div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<!-- 2. Altas y bajas                                                     -->
+<!-- ------------------------------------------------------------------ -->
+<section class="card mb-3">
+  <div class="card__body">
+    <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
+      <div>
+        <h2 class="h6 mb-1">Altas y bajas</h2>
+        <p class="small text-muted mb-0">
+          Una baja se cuenta sólo si la persona sigue de baja hoy: los reingresos
+          no figuran como baja.
+        </p>
+      </div>
+      <div class="btn-group btn-group-sm" id="ab-tipo" role="group">
+        <button type="button" class="btn btn-outline-secondary active" data-tipo="todos">Todos</button>
+        <button type="button" class="btn btn-outline-secondary" data-tipo="socios">Socios</button>
+        <button type="button" class="btn btn-outline-secondary" data-tipo="no_socios">No socios</button>
+      </div>
+    </div>
+    <div class="tab-graf"><canvas id="g-altasbajas"></canvas></div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<!-- 3. Categorías                                                        -->
+<!-- ------------------------------------------------------------------ -->
+<section class="card mb-3">
+  <div class="card__body">
+    <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+      <div>
+        <h2 class="h6 mb-1">Reparto por categoría</h2>
+        <p class="small text-muted mb-0">
+          Foto de hoy, no del período. Las categorías que no llegan al umbral se
+          agrupan en <em>Otras</em> y se abren en la torta de la derecha.
+        </p>
+      </div>
+      <div class="d-flex align-items-end gap-2 flex-wrap">
+        <div>
+          <label class="form-label small mb-1" for="cat-solo">Población</label>
+          <select id="cat-solo" class="form-select form-select-sm" style="width: 9rem">
+            <option value="todos" selected>Todas</option>
+            <option value="socios">Sólo socios</option>
+            <option value="no_socios">Sólo no socios</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label small mb-1" for="cat-umbral">Umbral</label>
+          <select id="cat-umbral" class="form-select form-select-sm" style="width: 6.5rem">
+            <option value="0.5">0,5 %</option>
+            <option value="1" selected>1 %</option>
+            <option value="2">2 %</option>
+            <option value="5">5 %</option>
+          </select>
+        </div>
+        <div class="dropdown">
+          <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                  data-bs-toggle="dropdown" data-bs-auto-close="outside" id="cat-boton">
+            Categorías: todas
+          </button>
+          <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 20rem">
+            <div class="d-flex gap-2 mb-2">
+              <button class="btn btn-sm btn-outline-primary flex-fill" id="cat-todas">Todas</button>
+              <button class="btn btn-sm btn-outline-secondary flex-fill" id="cat-ninguna">Ninguna</button>
+            </div>
+            <div class="tab-cats" id="cat-lista">
+              {% for c in categorias %}
+              <div class="form-check">
+                <input class="form-check-input cat-chk" type="checkbox" checked
+                       value="{{ c.id }}" id="cat-{{ c.id }}" />
+                <label class="form-check-label" for="cat-{{ c.id }}">
+                  {{ c.nombre }} <span class="text-muted">({{ c.socios }})</span>
+                </label>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="tab-graf tab-graf--torta"><canvas id="g-cat-principal"></canvas></div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="tab-graf tab-graf--torta"><canvas id="g-cat-chicas"></canvas></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<!-- 4. Deuda                                                             -->
+<!-- ------------------------------------------------------------------ -->
+<section class="card mb-4">
+  <div class="card__body">
+    <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+      <div>
+        <h2 class="h6 mb-1">Deuda por mes</h2>
+        <p class="small text-muted mb-0">
+          <strong>Socios activos.</strong> Cada mes muestra lo que quedó impago
+          de ese mes. No incluye el cupón opcional proforma, que es voluntario
+          y queda impago siempre.
+        </p>
+        <p class="small mb-0 mt-1">
+          <span class="text-muted">Total con estos filtros:</span>
+          <strong id="d-poblacion">—</strong>
+          <span class="text-muted">(todos los meses, es lo que baja al Excel)</span>
+        </p>
+        <p class="small mb-0" id="deuda-foto">
+          {% if deuda_foto %}
+          <span class="text-muted">Datos calculados el
+            {{ deuda_foto.calculado_at|date:"d/m/Y H:i" }}</span>
+          {% else %}
+          <span class="text-warning">Todavía no se calculó la deuda.</span>
+          {% endif %}
+        </p>
+      </div>
+      <div class="text-end">
+        <button class="btn btn-sm btn-outline-secondary" id="d-actualizar">Actualizar datos</button>
+        <div class="small mt-2 d-none" id="d-progreso"></div>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-12 col-lg-8">
+        <div class="tab-graf"><canvas id="g-deuda"></canvas></div>
+      </div>
+      <div class="col-12 col-lg-4">
+        <h3 class="h6 mb-1">Cuántas cuotas deben</h3>
+        <p class="small text-muted mb-2">
+          Sobre todos los meses, no sólo el período: es la foto de la mora.
+        </p>
+        <div class="table-responsive">
+          <table class="table table-sm tab-tabla align-middle mb-0">
+            <thead>
+              <tr><th>Cuotas</th><th class="text-end">Personas</th>
+                  <th class="text-end">Importe</th></tr>
+            </thead>
+            <tbody id="d-distribucion">
+              <tr><td colspan="3" class="text-muted">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<!-- 5. Deuda abierta por rubro                                           -->
+<!-- ------------------------------------------------------------------ -->
+<section class="card mb-4">
+  <div class="card__body">
+    <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+      <div>
+        <h2 class="h6 mb-1">Cuota social contra actividades</h2>
+        <p class="small text-muted mb-0">
+          <strong>Socios activos.</strong> La misma deuda del gráfico de arriba,
+          abierta según el contrato que la generó. <em>Otros conceptos</em> son
+          comodidades, remitos, carnets y recuperos.
+        </p>
+      </div>
+      <div class="btn-group btn-group-sm" id="ru-modo" role="group">
+        <button type="button" class="btn btn-outline-secondary active" data-modo="apilado">Apilado</button>
+        <button type="button" class="btn btn-outline-secondary" data-modo="lado">Lado a lado</button>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-12 col-lg-8">
+        <div class="tab-graf"><canvas id="g-rubros"></canvas></div>
+      </div>
+      <div class="col-12 col-lg-4">
+        <h3 class="h6 mb-2">Total del período</h3>
+        <div class="table-responsive">
+          <table class="table table-sm tab-tabla align-middle mb-0">
+            <thead>
+              <tr><th>Rubro</th><th class="text-end">Importe</th>
+                  <th class="text-end">Parte</th></tr>
+            </thead>
+            <tbody id="ru-tabla">
+              <tr><td colspan="3" class="text-muted">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <hr class="my-4" />
+
+    <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+      <div>
+        <h3 class="h6 mb-1">Desglose de actividades</h3>
+        <p class="small text-muted mb-0">
+          Qué parte de la deuda de actividades es de cada deporte. Sale del
+          detalle del comprobante: el tipo de contrato no alcanza, porque
+          <em>Deportes federados</em> mete a todos los deportes en la misma bolsa.
+        </p>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-12 col-lg-5">
+        <div class="tab-graf"><canvas id="g-actividades"></canvas></div>
+      </div>
+      <div class="col-12 col-lg-7">
+        <div class="table-responsive">
+          <table class="table table-sm tab-tabla align-middle mb-0">
+            <thead>
+              <tr><th>Actividad</th><th class="text-end">Importe</th>
+                  <th class="text-end">Parte</th><th class="text-end">Cupones</th></tr>
+            </thead>
+            <tbody id="ac-tabla">
+              <tr><td colspan="4" class="text-muted">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<!-- Listado descargable. Acá sí se puede ampliar la población: es un      -->
+<!-- reporte, no el tablero.                                              -->
+<!-- ------------------------------------------------------------------ -->
+<section class="card mb-4">
+  <div class="card__body">
+    <div class="d-flex justify-content-between align-items-end flex-wrap gap-3">
+      <div>
+        <h2 class="h6 mb-1">Listado de deudores</h2>
+        <p class="small text-muted mb-1">
+          Una fila por persona, con la deuda abierta en cuota social y
+          actividades. Los gráficos son siempre de socios activos; acá se puede
+          ampliar la población porque es un reporte puntual.
+        </p>
+        <p class="small mb-0">
+          <span class="text-muted">Va a bajar:</span>
+          <strong id="d-poblacion">—</strong>
+        </p>
+      </div>
+      <div class="d-flex align-items-end gap-2 flex-wrap">
+        <div>
+          <label class="form-label small mb-1" for="d-solo">Población</label>
+          <select id="d-solo" class="form-select form-select-sm" style="width: 12rem">
+            <option value="socios_activos" selected>Socios activos</option>
+            <option value="socios">Socios (con bajas)</option>
+            <option value="activos">Personas activas</option>
+            <option value="todos">Todo el padrón</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label small mb-1" for="d-cuotas">Mínimo de cuotas</label>
+          <select id="d-cuotas" class="form-select form-select-sm" style="width: 10rem">
+            <option value="0" selected>Sin mínimo</option>
+            <option value="2">2 o más</option>
+            <option value="3">3 o más</option>
+            <option value="4">4 o más</option>
+            <option value="6">6 o más</option>
+            <option value="12">12 o más</option>
+          </select>
+        </div>
+        <button class="btn btn-sm btn-success" id="d-excel">Descargar Excel</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<!-- Modal de detalle: quiénes deben y desde cuándo                       -->
+<!-- ------------------------------------------------------------------ -->
+{% comment %}
+  SIN aria-hidden a mano: lo pone y lo saca Bootstrap. Escrito en el HTML, el
+  navegador se lo encuentra puesto sobre el elemento que todavía tiene el foco
+  al cerrar, lo bloquea con la advertencia "Blocked aria-hidden on an element
+  because its descendant retained focus", y el cierre puede quedar a medias
+  dejando el backdrop puesto: una capa invisible con z-index 1050 sobre toda la
+  pantalla que se come TODOS los clics. Ver el cierre defensivo en el JS.
+{% endcomment %}
+{% comment %}
+  SIN la clase `fade`: la animación es lo que deja el cierre a medias. Con fade,
+  Bootstrap saca la clase `show`, espera el evento de fin de transición y recién
+  ahí pone `display:none`. Si ese evento no llega —el navegador lo descarta, la
+  pestaña estaba en segundo plano, hay reduced-motion—, el modal se queda en
+  `display:block` con `opacity:0`: invisible, a pantalla completa y tragándose
+  todos los clics. Sin animación el cierre es sincrónico y no puede colgarse.
+{% endcomment %}
+<div class="modal" id="modal-detalle" tabindex="-1"
+     aria-labelledby="md-titulo">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header align-items-start">
+        <div class="d-flex w-100 align-items-start gap-3">
+          <div class="flex-grow-1 min-w-0">
+            <h5 class="modal-title mb-1" id="md-titulo">Detalle</h5>
+            <p class="small text-muted mb-0" id="md-resumen">&nbsp;</p>
+          </div>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0">
+            <button class="btn btn-sm btn-success text-nowrap" id="md-excel">
+              Descargar Excel
+            </button>
+            <button type="button" class="btn-close m-0" data-bs-dismiss="modal"
+                    aria-label="Cerrar"></button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="row g-2 mb-3" id="md-antiguedad"></div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover tab-tabla align-middle mb-0">
+            <thead class="table-light">
+              <tr id="md-cabeceras">
+                <th class="tab-orden" data-orden="nro_socio">Nº socio</th>
+                <th>Documento</th>
+                <th class="tab-orden" data-orden="nombre">Socio</th>
+                <th class="tab-orden" data-orden="categoria">Categoría</th>
+                <th class="tab-orden text-end" data-orden="cuotas">Cuotas</th>
+                <th class="tab-orden text-end" data-orden="importe">Importe</th>
+                <th class="tab-orden" data-orden="meses">Debe desde</th>
+                <th class="tab-orden" data-orden="meses">Antigüedad</th>
+              </tr>
+            </thead>
+            <tbody id="md-filas">
+              <tr><td colspan="8" class="text-muted">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small text-muted mt-2 mb-0" id="md-pie">&nbsp;</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+  <div id="aviso" class="toast align-items-center text-bg-dark border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="aviso-texto"></div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto"
+              data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+{% endblock content %}
+
+{% block extra_js %}
+<script src="{% static 'xsys/js/chart.umd.min.js' %}"></script>
+<script>
+(function () {
+  "use strict";
+
+  var CSRF = "{{ csrf_token }}";
+
+  // Paleta: azul para socios, gris para no socios, verde para altas, rojo para
+  // bajas y ámbar para deuda. Los colores significan siempre lo mismo en los
+  // cuatro gráficos; si el azul es socios en uno, lo es en todos.
+  var C = {
+    socios: "#2f6fb5",
+    noSocios: "#8a94a6",
+    altas: "#2e9e5b",
+    bajas: "#c1443b",
+    deuda: "#d9862c",
+    neto: "rgba(47, 111, 181, .22)",
+    // Los rubros: la cuota social se lleva el ámbar de la deuda porque es la
+    // mayor parte, y actividades toma un verde azulado que se distingue bien
+    // apilado encima. "Otros" va gris, igual que la porción agrupada de la torta.
+    rCuota: "#d9862c",
+    rActividades: "#3f8f7f",
+    rOtros: "#a8b0bb"
+  };
+  // Para las tortas hace falta más de un color; ésta arranca en el azul de
+  // socios y se aleja girando el tono, así la porción más grande queda con el
+  // color de la marca y el resto se distingue sin competir.
+  var PALETA = ["#2f6fb5", "#4e9ad6", "#66c2a5", "#8a94a6", "#d9862c",
+                "#b07aa1", "#7f9c5a", "#c1443b", "#5b8ea6", "#9c7b4e",
+                "#6b6ecf", "#a3a847", "#c98b9a", "#4f8f7d", "#8d6e63"];
+
+  var estado = {
+    rango: "1a",
+    desde: "",
+    hasta: "",
+    abTipo: "todos",
+    catSolo: "todos",
+    catUmbral: "1",
+    deudaSolo: "socios_activos",
+    deudaCuotas: "0",
+    rubroModo: "apilado"
+  };
+  var graficos = {};
+
+  // --------------------------------------------------------------- utilidades
+  function $(id) { return document.getElementById(id); }
+
+  function numero(n) {
+    return (n === null || n === undefined) ? "—" :
+      Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 });
+  }
+
+  function pesos(n) {
+    if (n === null || n === undefined) { return "—"; }
+    var v = Number(n);
+    // Los importes del club llegan a miles de millones: en el eje y en los
+    // indicadores se abrevian, porque "$ 7.249.937.342" no entra ni se lee.
+    if (Math.abs(v) >= 1e9) { return "$ " + (v / 1e9).toLocaleString("es-AR",
+      { maximumFractionDigits: 2 }) + " MM"; }
+    if (Math.abs(v) >= 1e6) { return "$ " + (v / 1e6).toLocaleString("es-AR",
+      { maximumFractionDigits: 1 }) + " M"; }
+    return "$ " + v.toLocaleString("es-AR", { maximumFractionDigits: 0 });
+  }
+
+  function pesosExacto(n) {
+    return "$ " + Number(n || 0).toLocaleString("es-AR",
+      { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function etiquetaEje(k) {
+    // "2026-03" -> "mar 2026"; "2026-03-08" -> "08/03".
+    var meses = ["ene", "feb", "mar", "abr", "may", "jun",
+                 "jul", "ago", "sep", "oct", "nov", "dic"];
+    var p = String(k).split("-");
+    if (p.length === 2) { return meses[Number(p[1]) - 1] + " " + p[0]; }
+    if (p.length === 3) { return p[2] + "/" + p[1]; }
+    return k;
+  }
+
+  function avisar(texto) {
+    $("aviso-texto").textContent = texto;
+    new bootstrap.Toast($("aviso"), { delay: 5000 }).show();
+  }
+
+  function qs(extra) {
+    var p = new URLSearchParams();
+    if (estado.desde || estado.hasta) {
+      if (estado.desde) { p.set("desde", estado.desde); }
+      if (estado.hasta) { p.set("hasta", estado.hasta); }
+    } else {
+      p.set("rango", estado.rango);
+    }
+    for (var k in (extra || {})) {
+      if (extra[k] !== "" && extra[k] !== null && extra[k] !== undefined) {
+        p.set(k, extra[k]);
+      }
+    }
+    return p.toString();
+  }
+
+  function traer(url) {
+    return fetch(url, { credentials: "same-origin" }).then(function (r) {
+      if (!r.ok) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          throw new Error(j.detail || ("Error " + r.status));
+        });
+      }
+      return r.json();
+    });
+  }
+
+  function dibujar(id, config) {
+    if (graficos[id]) { graficos[id].destroy(); }
+    graficos[id] = new Chart($(id).getContext("2d"), config);
+    return graficos[id];
+  }
+
+  function categoriasElegidas() {
+    var todas = document.querySelectorAll(".cat-chk");
+    var marcadas = document.querySelectorAll(".cat-chk:checked");
+    // Si están todas marcadas no se manda el filtro: es lo mismo y ahorra una
+    // query string de 30 ids en cada pedido.
+    if (marcadas.length === todas.length) { return ""; }
+    var ids = [];
+    for (var i = 0; i < marcadas.length; i++) { ids.push(marcadas[i].value); }
+    return ids.join(",");
+  }
+
+  // ------------------------------------------------------------- 1. Padrón
+  function cargarPadron() {
+    $("padron-estado").textContent = "cargando…";
+    return traer("/api/xsys/tableros/padron/?" + qs()).then(function (d) {
+      var etiquetas = d.etiquetas.map(etiquetaEje);
+      var s = d.series.socios, n = d.series.no_socios;
+      var neto = s.neto.map(function (v, i) { return v + n.neto[i]; });
+
+      dibujar("g-padron", {
+        data: {
+          labels: etiquetas,
+          datasets: [
+            { type: "bar", label: "Variación neta", data: neto,
+              backgroundColor: C.neto, borderWidth: 0, yAxisID: "y2", order: 3 },
+            { type: "line", label: "Socios", data: s.stock, borderColor: C.socios,
+              backgroundColor: C.socios, borderWidth: 2, pointRadius: 0,
+              tension: .25, yAxisID: "y", order: 1 },
+            { type: "line", label: "No socios", data: n.stock,
+              borderColor: C.noSocios, backgroundColor: C.noSocios, borderWidth: 2,
+              pointRadius: 0, tension: .25, yAxisID: "y", order: 2 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { position: "bottom" },
+            tooltip: { callbacks: { label: function (c) {
+              var v = c.parsed.y;
+              var signo = (c.dataset.label === "Variación neta" && v > 0) ? "+" : "";
+              return c.dataset.label + ": " + signo + numero(v);
+            } } }
+          },
+          scales: {
+            y: { position: "left", title: { display: true, text: "Personas activas" },
+                 ticks: { callback: function (v) { return numero(v); } } },
+            y2: { position: "right", grid: { drawOnChartArea: false },
+                  title: { display: true, text: "Variación" },
+                  ticks: { callback: function (v) { return numero(v); } } }
+          }
+        }
+      });
+
+      $("kpi-socios").textContent = numero(d.totales.socios);
+      $("kpi-nosocios").textContent = numero(d.totales.no_socios);
+      $("kpi-socios-var").textContent = variacion(s);
+      $("kpi-nosocios-var").textContent = variacion(n);
+      $("rango-leyenda").textContent =
+        d.rango.etiqueta + " · " + d.rango.desde + " a " + d.rango.hasta +
+        " · agrupado por " + (d.rango.granularidad === "dia" ? "día" : "mes");
+      $("padron-estado").textContent = "";
+    }).catch(function (e) {
+      $("padron-estado").textContent = "sin datos";
+      avisar("Padrón: " + e.message);
+    });
+  }
+
+  function variacion(serie) {
+    var total = 0;
+    for (var i = 0; i < serie.neto.length; i++) { total += serie.neto[i]; }
+    if (!total) { return "sin variación en el período"; }
+    return (total > 0 ? "+" : "") + numero(total) + " en el período";
+  }
+
+  // ------------------------------------------------------- 2. Altas y bajas
+  function cargarAltasBajas() {
+    return traer("/api/xsys/tableros/altas-bajas/?" + qs({ tipo: estado.abTipo }))
+      .then(function (d) {
+        dibujar("g-altasbajas", {
+          type: "bar",
+          data: {
+            labels: d.etiquetas.map(etiquetaEje),
+            datasets: [
+              { label: "Altas", data: d.altas, backgroundColor: C.altas },
+              // Las bajas van hacia abajo para que se lean como salidas y no
+              // haya que comparar dos barras del mismo lado.
+              { label: "Bajas", data: d.bajas.map(function (v) { return -v; }),
+                backgroundColor: C.bajas }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+              legend: { position: "bottom" },
+              tooltip: { callbacks: { label: function (c) {
+                return c.dataset.label + ": " + numero(Math.abs(c.parsed.y));
+              } } }
+            },
+            scales: {
+              x: { stacked: true },
+              y: { stacked: true,
+                   ticks: { callback: function (v) { return numero(Math.abs(v)); } } }
+            }
+          }
+        });
+        $("kpi-altas").textContent = "+" + numero(d.totales.altas);
+        $("kpi-bajas").textContent =
+          numero(d.totales.bajas) + " bajas · neto " +
+          (d.totales.neto > 0 ? "+" : "") + numero(d.totales.neto);
+      }).catch(function (e) { avisar("Altas y bajas: " + e.message); });
+  }
+
+  // --------------------------------------------------------- 3. Categorías
+  function cargarCategorias() {
+    var p = new URLSearchParams();
+    p.set("umbral", estado.catUmbral);
+    p.set("solo", estado.catSolo);
+    var ids = categoriasElegidas();
+    if (ids) { p.set("categorias", ids); }
+
+    return traer("/api/xsys/tableros/categorias/?" + p.toString()).then(function (d) {
+      torta("g-cat-principal", d.principal, d.total,
+            "Categorías principales", "Elegí al menos una categoría");
+      torta("g-cat-chicas", d.chicas, d.total,
+            "Menores al " + estado.catUmbral + " %",
+            "Ninguna categoría queda por debajo del umbral");
+
+      var marcadas = document.querySelectorAll(".cat-chk:checked").length;
+      var todas = document.querySelectorAll(".cat-chk").length;
+      $("cat-boton").textContent = "Categorías: " +
+        (marcadas === todas ? "todas" : marcadas + " de " + todas);
+    }).catch(function (e) { avisar("Categorías: " + e.message); });
+  }
+
+  function torta(id, datos, total, titulo, vacio) {
+    if (!datos || !datos.length) {
+      if (graficos[id]) { graficos[id].destroy(); delete graficos[id]; }
+      var ctx = $(id).getContext("2d");
+      ctx.clearRect(0, 0, $(id).width, $(id).height);
+      ctx.save();
+      ctx.fillStyle = "#6c757d";
+      ctx.font = "13px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(vacio, $(id).width / 2, $(id).height / 2);
+      ctx.restore();
+      return;
+    }
+    dibujar(id, {
+      type: "doughnut",
+      data: {
+        labels: datos.map(function (c) { return c.categoria; }),
+        datasets: [{
+          data: datos.map(function (c) { return c.n; }),
+          backgroundColor: datos.map(function (c, i) {
+            // La porción agrupada va en gris: no es una categoría, es un resto.
+            return c.agrupada ? "#c7ccd4" : PALETA[i % PALETA.length];
+          }),
+          borderWidth: 1, borderColor: "#fff"
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          title: { display: true, text: titulo },
+          legend: { position: "right", labels: { boxWidth: 12, font: { size: 11 } } },
+          tooltip: { callbacks: { label: function (c) {
+            var pct = total ? (c.parsed * 100 / total) : 0;
+            return c.label + ": " + numero(c.parsed) + " (" +
+                   pct.toLocaleString("es-AR", { maximumFractionDigits: 2 }) + " %)";
+          } } }
+        }
+      }
+    });
+  }
+
+  // -------------------------------------------------------------- 4. Deuda
+  function cargarDeuda() {
+    var extra = { solo: estado.deudaSolo, cuotas_min: estado.deudaCuotas };
+    var ids = categoriasElegidas();
+    if (ids) { extra.categorias = ids; }
+
+    return traer("/api/xsys/tableros/deuda/?" + qs(extra)).then(function (d) {
+      if (d.sin_foto) {
+        $("kpi-deuda").textContent = "—";
+        $("kpi-deuda-socios").textContent = "sin calcular";
+        $("d-poblacion").textContent = "—";
+        $("frescura-deuda").textContent = "sin calcular";
+        $("d-distribucion").innerHTML =
+          '<tr><td colspan="3" class="text-muted">' +
+          'Todavía no hay datos. Usá "Actualizar datos".</td></tr>';
+        if (graficos["g-deuda"]) { graficos["g-deuda"].destroy(); delete graficos["g-deuda"]; }
+        return;
+      }
+
+      dibujar("g-deuda", {
+        type: "bar",
+        data: {
+          labels: d.etiquetas.map(etiquetaEje),
+          datasets: [{ label: "Deuda impaga", data: d.importe,
+                       backgroundColor: C.deuda }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: {
+              label: function (c) { return pesosExacto(c.parsed.y); },
+              afterLabel: function (c) {
+                return numero(d.cupones[c.dataIndex]) + " comprobante(s) impago(s)";
+              }
+            } }
+          },
+          scales: { y: { ticks: { callback: function (v) { return pesos(v); } } } }
+        }
+      });
+
+      // El KPI son las barras: importe y comprobantes del período. Las personas
+      // van aparte porque se cuentan sobre todos los meses; ver el docstring de
+      // tableros.deuda() para por qué no se pueden mezclar.
+      $("kpi-deuda").textContent = pesos(d.totales.importe);
+      $("kpi-deuda-socios").textContent =
+        numero(d.totales.cupones) + " comprobantes impagos en el período";
+      $("d-poblacion").textContent =
+        numero(d.poblacion.socios) + " personas · " +
+        numero(d.poblacion.cupones) + " cuotas · " + pesos(d.poblacion.importe);
+
+      var filas = d.distribucion_cuotas || [];
+      if (!filas.length) {
+        $("d-distribucion").innerHTML =
+          '<tr><td colspan="3" class="text-muted">Sin deuda con estos filtros.</td></tr>';
+      } else {
+        var html = "";
+        for (var i = 0; i < filas.length; i++) {
+          var f = filas[i];
+          html += "<tr><td>" + f.cuotas + (f.tope ? " o más" : "") + "</td>" +
+                  '<td class="text-end">' + numero(f.socios) + "</td>" +
+                  '<td class="text-end">' + pesos(f.importe) + "</td></tr>";
+        }
+        $("d-distribucion").innerHTML = html;
+      }
+
+      dibujarRubros(d);
+
+      if (d.foto) {
+        var f = new Date(d.foto.calculado_at);
+        $("deuda-foto").innerHTML =
+          '<span class="text-muted">Datos calculados el ' +
+          f.toLocaleDateString("es-AR") + " a las " +
+          f.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) +
+          " (" + (d.foto.duracion_ms / 1000).toFixed(1) + " s)</span>";
+        $("frescura-deuda").textContent = reloj(f);
+      }
+    }).catch(function (e) { avisar("Deuda: " + e.message); });
+  }
+
+  // El gráfico por rubro se dibuja con la MISMA respuesta que el de deuda, no
+  // con un pedido aparte: así los dos no pueden mostrar totales distintos.
+  var ultimaDeuda = null;
+
+  function dibujarRubros(d) {
+    ultimaDeuda = d;
+    var rubros = (d && d.rubros) || [];
+    if (!rubros.length) {
+      if (graficos["g-rubros"]) { graficos["g-rubros"].destroy(); delete graficos["g-rubros"]; }
+      $("ru-tabla").innerHTML =
+        '<tr><td colspan="3" class="text-muted">Sin datos.</td></tr>';
+      return;
+    }
+    var colores = { cuota_social: C.rCuota, actividades: C.rActividades, otros: C.rOtros };
+    var apilado = estado.rubroModo === "apilado";
+
+    dibujar("g-rubros", {
+      type: "bar",
+      data: {
+        labels: d.etiquetas.map(etiquetaEje),
+        datasets: rubros.map(function (r) {
+          return {
+            label: r.etiqueta,
+            data: r.importe,
+            backgroundColor: colores[r.clave] || C.rOtros
+          };
+        })
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { position: "bottom" },
+          tooltip: { callbacks: {
+            label: function (c) { return c.dataset.label + ": " + pesosExacto(c.parsed.y); },
+            footer: function (items) {
+              var t = 0;
+              for (var i = 0; i < items.length; i++) { t += items[i].parsed.y; }
+              return "Total del mes: " + pesosExacto(t);
+            }
+          } }
+        },
+        scales: {
+          x: { stacked: apilado },
+          y: { stacked: apilado,
+               ticks: { callback: function (v) { return pesos(v); } } }
+        }
+      }
+    });
+
+    var total = 0;
+    for (var i = 0; i < rubros.length; i++) { total += rubros[i].total; }
+    var html = "";
+    for (var j = 0; j < rubros.length; j++) {
+      var r = rubros[j];
+      var pct = total ? (r.total * 100 / total) : 0;
+      html += '<tr class="tab-clic" tabindex="0" role="button" data-rubro="' +
+              r.clave + '">' +
+              '<td><span style="display:inline-block;width:.65rem;height:.65rem;' +
+              'border-radius:2px;margin-right:.4rem;background:' +
+              (colores[r.clave] || C.rOtros) + '"></span>' + r.etiqueta + "</td>" +
+              '<td class="text-end">' + pesos(r.total) + "</td>" +
+              '<td class="text-end">' +
+              pct.toLocaleString("es-AR", { maximumFractionDigits: 1 }) + " %</td></tr>";
+    }
+    html += '<tr class="fw-semibold"><td>Total</td>' +
+            '<td class="text-end">' + pesos(total) + "</td>" +
+            '<td class="text-end">100 %</td></tr>';
+    $("ru-tabla").innerHTML = html;
+
+    dibujarActividades(d);
+  }
+
+  function dibujarActividades(d) {
+    var acts = (d && d.actividades) || [];
+    if (!acts.length) {
+      if (graficos["g-actividades"]) {
+        graficos["g-actividades"].destroy();
+        delete graficos["g-actividades"];
+      }
+      $("ac-tabla").innerHTML =
+        '<tr><td colspan="4" class="text-muted">' +
+        'No hay deuda de actividades en el período.</td></tr>';
+      return;
+    }
+
+    // Barras horizontales: los nombres son largos ("HOCKEY S/ CESPED",
+    // "GIMNASIA ARTISTICA") y en vertical quedan girados e ilegibles.
+    dibujar("g-actividades", {
+      type: "bar",
+      data: {
+        labels: acts.map(function (a) { return a.actividad; }),
+        datasets: [{
+          label: "Deuda",
+          data: acts.map(function (a) { return a.importe; }),
+          backgroundColor: acts.map(function (a, i) {
+            return a.agrupada ? C.rOtros : PALETA[i % PALETA.length];
+          })
+        }]
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: {
+            label: function (c) { return pesosExacto(c.parsed.x); },
+            afterLabel: function (c) {
+              return numero(acts[c.dataIndex].cupones) + " comprobante(s)";
+            }
+          } }
+        },
+        scales: { x: { ticks: { callback: function (v) { return pesos(v); } } } },
+        onClick: function (evt, elementos) {
+          if (!elementos.length) { return; }
+          var a = acts[elementos[0].index];
+          if (a.agrupada) {
+            avisar("«" + a.actividad + "» junta varias actividades chicas: " +
+                   "no tiene un detalle propio.");
+            return;
+          }
+          abrirDetalle({ actividad: a.actividad }, a.actividad);
+        },
+        onHover: function (evt, elementos) {
+          evt.native.target.style.cursor = elementos.length ? "pointer" : "default";
+        }
+      }
+    });
+
+    var total = 0;
+    for (var i = 0; i < acts.length; i++) { total += acts[i].importe; }
+    var html = "";
+    for (var j = 0; j < acts.length; j++) {
+      var a = acts[j];
+      var pct = total ? (a.importe * 100 / total) : 0;
+      html += "<tr" + (a.agrupada ? ' class="text-muted"' :
+               ' class="tab-clic" tabindex="0" role="button" data-actividad="' +
+                 a.actividad + '"') + "><td>" +
+              '<span style="display:inline-block;width:.65rem;height:.65rem;' +
+              'border-radius:2px;margin-right:.4rem;background:' +
+              (a.agrupada ? C.rOtros : PALETA[j % PALETA.length]) + '"></span>' +
+              a.actividad + "</td>" +
+              '<td class="text-end">' + pesos(a.importe) + "</td>" +
+              '<td class="text-end">' +
+              pct.toLocaleString("es-AR", { maximumFractionDigits: 1 }) + " %</td>" +
+              '<td class="text-end">' + numero(a.cupones) + "</td></tr>";
+    }
+    html += '<tr class="fw-semibold"><td>Total actividades</td>' +
+            '<td class="text-end">' + pesos(total) + "</td>" +
+            '<td class="text-end">100 %</td><td class="text-end">' +
+            numero(acts.reduce(function (s, a) { return s + a.cupones; }, 0)) +
+            "</td></tr>";
+    $("ac-tabla").innerHTML = html;
+  }
+
+  // El recálculo corre en el servidor, en segundo plano. La pantalla no espera:
+  // dispara, avisa que va a demorar y después pregunta el estado cada 10 s hasta
+  // que termina. Antes esperaba la respuesta y, con el cálculo en cuatro
+  // minutos, la petición moría por timeout: el usuario veía un error y el
+  // cálculo igual terminaba bien por detrás.
+  var vigilante = null;
+
+  // "hasta N minutos" y no "unos N": el estimado es el de la corrida más lenta
+  // guardada, así que es un techo. Prometer de menos y tardar más es lo que hace
+  // que la gente apriete el botón dos veces.
+  function minutos(seg) {
+    var m = Math.max(1, Math.round((seg || 300) / 60));
+    return "hasta " + m + (m === 1 ? " minuto" : " minutos");
+  }
+
+  function pintarEstado(e) {
+    var b = $("d-actualizar");
+    if (e.en_curso) {
+      b.disabled = true;
+      b.textContent = "Calculando…";
+      $("d-progreso").className = "small mt-2 text-primary";
+      $("d-progreso").textContent =
+        "Recalculando en segundo plano: van " +
+        Math.round(e.corriendo_hace_s / 60) + " min de " +
+        minutos(e.estimado_s) + ". Podés seguir usando la pantalla; " +
+        "los números se actualizan solos al terminar.";
+    } else {
+      b.disabled = false;
+      b.textContent = "Actualizar datos";
+      if (e.error) {
+        $("d-progreso").className = "small mt-2 text-danger";
+        $("d-progreso").textContent = "El último recálculo falló: " + e.error;
+      } else {
+        $("d-progreso").className = "small mt-2 d-none";
+        $("d-progreso").textContent = "";
+      }
+    }
+  }
+
+  function vigilar() {
+    if (vigilante) { return; }
+    vigilante = setInterval(function () {
+      traer("/api/xsys/tableros/deuda/estado/").then(function (e) {
+        pintarEstado(e);
+        if (!e.en_curso) {
+          clearInterval(vigilante);
+          vigilante = null;
+          cargarDeuda();
+          if (!e.error && e.ultima) {
+            avisar("Deuda actualizada: " + numero(e.ultima.socios) +
+                   " personas, " + pesosExacto(e.ultima.importe));
+          }
+        }
+      }).catch(function () { /* si falla una consulta, se reintenta a los 10 s */ });
+    }, 10000);
+  }
+
+  function recalcularDeuda() {
+    var b = $("d-actualizar");
+    b.disabled = true;
+    b.textContent = "Calculando…";
+    fetch("/api/xsys/tableros/deuda/recalcular/", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "X-CSRFToken": CSRF, "Content-Type": "application/json" },
+      body: "{}"
+    }).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, cuerpo: j }; });
+    }).then(function (r) {
+      pintarEstado(r.cuerpo);
+      if (r.ok) {
+        avisar("El recálculo arrancó en segundo plano y demora " +
+               minutos(r.cuerpo.estimado_s) +
+               ". Podés seguir trabajando: la pantalla se actualiza sola.");
+      } else {
+        avisar("Ya hay un recálculo en curso, arrancado hace " +
+               Math.round(r.cuerpo.corriendo_hace_s / 60) + " min.");
+      }
+      vigilar();
+    }).catch(function (e) {
+      avisar("No se pudo arrancar el recálculo: " + e.message);
+      b.disabled = false;
+      b.textContent = "Actualizar datos";
+    });
+  }
+
+  function bajarExcel() {
+    var p = new URLSearchParams();
+    p.set("solo", estado.deudaSolo);
+    p.set("cuotas_min", estado.deudaCuotas);
+    var ids = categoriasElegidas();
+    if (ids) { p.set("categorias", ids); }
+
+    // Se baja por fetch y no con window.location a propósito. Asignar location
+    // convierte la descarga en una NAVEGACIÓN, y una navegación la puede
+    // interceptar el service worker de la PWA: en las máquinas donde estaba
+    // registrado, la página parecía recargarse y no bajaba nada. Además, así se
+    // puede leer el error del servidor y mostrarlo, en vez de dejar al usuario
+    // mirando una pantalla que no hizo nada.
+    var b = $("d-excel");
+    var texto = b.textContent;
+    b.disabled = true;
+    b.textContent = "Generando…";
+
+    fetch("/api/xsys/tableros/deuda/excel/?" + p.toString(), {
+      credentials: "same-origin",
+      headers: { "X-Requested-With": "XMLHttpRequest" }
+    }).then(function (r) {
+      if (!r.ok) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          throw new Error(j.detail || ("El servidor respondió " + r.status));
+        });
+      }
+      var nombre = "deuda_socios.xlsx";
+      var cd = r.headers.get("Content-Disposition") || "";
+      var m = cd.match(/filename="?([^";]+)"?/);
+      if (m) { nombre = m[1]; }
+      return r.blob().then(function (blob) { return { blob: blob, nombre: nombre }; });
+    }).then(function (d) {
+      var url = URL.createObjectURL(d.blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = d.nombre;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Sin revoke el blob queda en memoria hasta recargar; con un archivo de
+      // 3 MB por descarga eso se nota. El timeout es porque Safari necesita que
+      // la URL siga viva un instante después del click.
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    }).catch(function (e) {
+      avisar("No se pudo descargar el Excel: " + e.message);
+    }).then(function () {
+      b.disabled = false;
+      b.textContent = texto;
+    });
+  }
+
+  // ------------------------------------------- modal: quiénes deben y desde cuándo
+  var modalDetalle = null;
+  var disparador = null;
+  // Filtros del detalle abierto. Se guardan para poder reordenar y descargar
+  // sin volver a preguntar qué se estaba mirando.
+  var detalleActual = { params: null, titulo: "", orden: "importe", desc: true };
+
+  function prepararModal() {
+    var el = $("modal-detalle");
+    modalDetalle = new bootstrap.Modal(el);
+
+    // Al empezar a cerrar hay que sacar el foco de adentro del modal ANTES de
+    // que Bootstrap le ponga aria-hidden. Si no, el navegador bloquea el
+    // atributo —no se puede ocultar de un lector de pantalla algo que tiene el
+    // foco— y el cierre queda a medias.
+    el.addEventListener("hide.bs.modal", function () {
+      if (el.contains(document.activeElement)) { document.activeElement.blur(); }
+      // El foco vuelve a la fila que abrió el modal, que es donde estaba el
+      // usuario. Si vino de un clic en el gráfico el foco estaba en <body>, y
+      // ahí no hay nada a lo que volver.
+      if (disparador && disparador !== document.body &&
+          document.body.contains(disparador) && disparador.focus) {
+        disparador.focus();
+      }
+    });
+
+    // Red de seguridad: si por lo que sea el cierre no limpió, se limpia acá.
+    // Un backdrop olvidado es una capa transparente sobre toda la pantalla y
+    // deja la aplicación entera sin responder a los clics, que es mucho peor
+    // que el problema que resuelve el modal.
+    el.addEventListener("hidden.bs.modal", limpiarModal);
+
+    // Y si `hidden` nunca llega, se limpia igual medio segundo después de
+    // pedir el cierre. Es la diferencia entre un modal que no cierra —molesto—
+    // y una aplicación entera que no responde a los clics —inusable—.
+    el.addEventListener("hide.bs.modal", function () {
+      setTimeout(function () {
+        if (!el.classList.contains("show")) { limpiarModal(); }
+      }, 500);
+    });
+    return modalDetalle;
+  }
+
+  function limpiarModal() {
+    var el = $("modal-detalle");
+    // Lo que de verdad tapa la pantalla: el propio div del modal en
+    // display:block con opacity 0. El backdrop es sólo la mitad del problema.
+    if (!el.classList.contains("show")) {
+      el.style.display = "none";
+      el.removeAttribute("role");
+    }
+    var sobrantes = document.querySelectorAll(".modal-backdrop");
+    for (var i = 0; i < sobrantes.length; i++) { sobrantes[i].remove(); }
+    document.body.classList.remove("modal-open");
+    document.body.style.removeProperty("overflow");
+    document.body.style.removeProperty("padding-right");
+    disparador = null;
+  }
+
+  function abrirDetalle(params, titulo) {
+    disparador = document.activeElement;
+    if (!modalDetalle) { prepararModal(); }
+    detalleActual.params = params;
+    detalleActual.titulo = titulo;
+    detalleActual.orden = "importe";
+    detalleActual.desc = true;
+    $("md-titulo").textContent = titulo;
+    $("md-resumen").innerHTML = "&nbsp;";
+    $("md-antiguedad").innerHTML = "";
+    $("md-filas").innerHTML =
+      '<tr><td colspan="8" class="text-muted">Cargando…</td></tr>';
+    $("md-pie").innerHTML = "&nbsp;";
+
+    modalDetalle.show();
+    pedirDetalle();
+  }
+
+  function paramsDetalle() {
+    // Arranca del mismo querystring que los gráficos —qs() lleva el período— y
+    // encima le suma lo propio del modal. Así el detalle no puede hablar de un
+    // período distinto al de la barra que se tocó.
+    var p = new URLSearchParams(qs());
+    var extra = detalleActual.params || {};
+    for (var k in extra) { p.set(k, extra[k]); }
+    var ids = categoriasElegidas();
+    if (ids) { p.set("categorias", ids); }
+    p.set("orden", detalleActual.orden);
+    p.set("desc", detalleActual.desc ? "1" : "0");
+    return p;
+  }
+
+  function pedirDetalle() {
+    // Reordenar vuelve a pedir al servidor y no reordena las filas que ya están
+    // en pantalla: en pantalla hay 200 filas de un conjunto que puede tener
+    // miles, y ordenar sólo esas daría un "mayor deudor" que no lo es.
+    marcarCabecera();
+    traer("/api/xsys/tableros/deuda/detalle/?" + paramsDetalle().toString())
+      .then(function (d) {
+      if (d.sin_foto || !d.total) {
+        $("md-filas").innerHTML =
+          '<tr><td colspan="8" class="text-muted">Sin deuda con estos filtros.</td></tr>';
+        return;
+      }
+      $("md-resumen").textContent =
+        numero(d.total) + " socios activos · " + numero(d.cuotas) +
+        " cuotas · " + pesosExacto(d.importe) +
+        (d.rango ? "  ·  " + d.rango.etiqueta + " (" + d.rango.desde +
+                   " a " + d.rango.hasta + ")" : "");
+
+      // Tarjetitas de antigüedad: es el dato que decide la gestión de cobranza.
+      var tarjetas = "";
+      for (var i = 0; i < d.antiguedad.length; i++) {
+        var t = d.antiguedad[i];
+        tarjetas += '<div class="col-6 col-lg"><div class="card h-100"><div class="card__body py-2">' +
+                    '<div class="tab-kpi__label">' + t.tramo + "</div>" +
+                    '<div class="fw-semibold">' + numero(t.socios) + " socios</div>" +
+                    '<div class="small text-muted">' + pesos(t.importe) + "</div>" +
+                    "</div></div></div>";
+      }
+      $("md-antiguedad").innerHTML = tarjetas;
+
+      var html = "";
+      for (var j = 0; j < d.socios.length; j++) {
+        var s = d.socios[j];
+        // Más de un año en rojo: es la mora que ya no se recupera sola.
+        var clase = s.meses >= 12 ? ' class="text-danger fw-semibold"' : "";
+        html += "<tr><td>" + (s.nro_socio || "—") + "</td>" +
+                "<td>" + (s.doc_nro || "—") + "</td>" +
+                "<td>" + s.nombre + "</td>" +
+                "<td>" + s.categoria + "</td>" +
+                '<td class="text-end">' + numero(s.cuotas) + "</td>" +
+                '<td class="text-end">' + pesosExacto(s.importe) + "</td>" +
+                "<td>" + (s.desde ? etiquetaEje(s.desde.slice(0, 7)) : "—") + "</td>" +
+                "<td" + clase + ">" + s.antiguedad + "</td></tr>";
+      }
+      $("md-filas").innerHTML = html;
+      $("md-pie").textContent = d.socios.length < d.total
+        ? "Se muestran los " + numero(d.socios.length) + " de mayor deuda, de " +
+          numero(d.total) + ". El listado completo sale en el Excel."
+        : "Se muestran los " + numero(d.total) + ".";
+    }).catch(function (e) {
+      $("md-filas").innerHTML =
+        '<tr><td colspan="8" class="text-danger">' + e.message + "</td></tr>";
+    });
+  }
+
+  function marcarCabecera() {
+    var ths = $("md-cabeceras").querySelectorAll("th[data-orden]");
+    for (var i = 0; i < ths.length; i++) {
+      if (ths[i].getAttribute("data-orden") === detalleActual.orden) {
+        ths[i].setAttribute("data-activo", detalleActual.desc ? "desc" : "asc");
+      } else {
+        ths[i].setAttribute("data-activo", "");
+      }
+    }
+  }
+
+  function bajarDetalleExcel() {
+    var b = $("md-excel");
+    var texto = b.textContent;
+    b.disabled = true;
+    b.textContent = "Generando…";
+    // Mismo camino que el otro Excel: fetch + blob, nunca window.location, para
+    // que el service worker no se coma la descarga.
+    fetch("/api/xsys/tableros/deuda/detalle/excel/?" + paramsDetalle().toString(),
+          { credentials: "same-origin" })
+      .then(function (r) {
+        if (!r.ok) {
+          return r.json().catch(function () { return {}; }).then(function (j) {
+            throw new Error(j.detail || ("El servidor respondió " + r.status));
+          });
+        }
+        var nombre = "detalle_deuda.xlsx";
+        var m = (r.headers.get("Content-Disposition") || "").match(/filename="?([^";]+)"?/);
+        if (m) { nombre = m[1]; }
+        return r.blob().then(function (blob) { return { blob: blob, nombre: nombre }; });
+      }).then(function (d) {
+        var url = URL.createObjectURL(d.blob);
+        var a = document.createElement("a");
+        a.href = url; a.download = d.nombre;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+      }).catch(function (e) {
+        avisar("No se pudo descargar: " + e.message);
+      }).then(function () {
+        b.disabled = false;
+        b.textContent = texto;
+      });
+  }
+
+  // ------------------------------------------------------------- cableado
+  function reloj(d) {
+    // Con la fecha sólo si no es de hoy: en el 99% de los casos es de hace un
+    // rato y "14:32" se lee más rápido que "08/09/2026 14:32".
+    var hoy = new Date();
+    var hora = d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+    if (d.toDateString() === hoy.toDateString()) { return hora; }
+    return d.toLocaleDateString("es-AR") + " " + hora;
+  }
+
+  function cargarTodo() {
+    var b = $("btn-refrescar");
+    b.disabled = true;
+    var texto = b.textContent;
+    b.textContent = "Actualizando…";
+
+    // Se marca la hora cuando TERMINAN las tres consultas en vivo, no cuando
+    // arrancan: si xSys tarda ocho segundos, la hora tiene que ser la del dato
+    // que se está viendo.
+    Promise.all([cargarPadron(), cargarAltasBajas(), cargarCategorias(),
+                 cargarDeuda()]).then(function () {
+      $("frescura-vivo").textContent = reloj(new Date());
+    }).catch(function () {
+      $("frescura-vivo").textContent = "error";
+    }).then(function () {
+      b.disabled = false;
+      b.textContent = texto;
+    });
+  }
+
+  $("rangos").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-rango]");
+    if (!b) { return; }
+    var botones = this.querySelectorAll("button");
+    for (var i = 0; i < botones.length; i++) { botones[i].classList.remove("active"); }
+    b.classList.add("active");
+    estado.rango = b.getAttribute("data-rango");
+    estado.desde = "";
+    estado.hasta = "";
+    $("f-desde").value = "";
+    $("f-hasta").value = "";
+    cargarPadron();
+    cargarAltasBajas();
+    cargarDeuda();
+  });
+
+  $("btn-aplicar").addEventListener("click", function () {
+    estado.desde = $("f-desde").value;
+    estado.hasta = $("f-hasta").value;
+    if (!estado.desde && !estado.hasta) {
+      avisar("Elegí al menos una de las dos fechas, o usá los botones de período.");
+      return;
+    }
+    var botones = $("rangos").querySelectorAll("button");
+    for (var i = 0; i < botones.length; i++) { botones[i].classList.remove("active"); }
+    cargarPadron();
+    cargarAltasBajas();
+    cargarDeuda();
+  });
+
+  $("ab-tipo").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-tipo]");
+    if (!b) { return; }
+    var botones = this.querySelectorAll("button");
+    for (var i = 0; i < botones.length; i++) { botones[i].classList.remove("active"); }
+    b.classList.add("active");
+    estado.abTipo = b.getAttribute("data-tipo");
+    cargarAltasBajas();
+  });
+
+  $("cat-solo").addEventListener("change", function () {
+    estado.catSolo = this.value;
+    cargarCategorias();
+  });
+  $("cat-umbral").addEventListener("change", function () {
+    estado.catUmbral = this.value;
+    cargarCategorias();
+  });
+  $("cat-lista").addEventListener("change", function () {
+    cargarCategorias();
+    cargarDeuda();
+  });
+  $("cat-todas").addEventListener("click", function () { marcarTodas(true); });
+  $("cat-ninguna").addEventListener("click", function () { marcarTodas(false); });
+
+  function marcarTodas(valor) {
+    var chks = document.querySelectorAll(".cat-chk");
+    for (var i = 0; i < chks.length; i++) { chks[i].checked = valor; }
+    cargarCategorias();
+    cargarDeuda();
+  }
+
+  // Enter o Espacio sobre una fila hacen lo mismo que el clic: las filas son
+  // focusables (tabindex 0) para que el detalle se pueda abrir sin mouse.
+  function porTeclado(handler) {
+    return function (e) {
+      if (e.key !== "Enter" && e.key !== " ") { return; }
+      e.preventDefault();
+      handler(e);
+    };
+  }
+
+  function clicActividad(e) {
+    var fila = e.target.closest("tr[data-actividad]");
+    if (!fila) { return; }
+    var a = fila.getAttribute("data-actividad");
+    abrirDetalle({ actividad: a }, a);
+  }
+
+  function clicRubro(e) {
+    var fila = e.target.closest("tr[data-rubro]");
+    if (!fila) { return; }
+    abrirDetalle({ rubro: fila.getAttribute("data-rubro") },
+                 fila.cells[0].textContent.trim());
+  }
+
+  $("ac-tabla").addEventListener("keydown", porTeclado(clicActividad));
+  $("ru-tabla").addEventListener("keydown", porTeclado(clicRubro));
+
+  $("ac-tabla").addEventListener("click", function (e) {
+    var fila = e.target.closest("tr[data-actividad]");
+    if (!fila) { return; }
+    var a = fila.getAttribute("data-actividad");
+    abrirDetalle({ actividad: a }, a);
+  });
+
+  $("ru-tabla").addEventListener("click", function (e) {
+    var fila = e.target.closest("tr[data-rubro]");
+    if (!fila) { return; }
+    var r = fila.getAttribute("data-rubro");
+    abrirDetalle({ rubro: r }, fila.cells[0].textContent.trim());
+  });
+
+  $("ru-modo").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-modo]");
+    if (!b) { return; }
+    var botones = this.querySelectorAll("button");
+    for (var i = 0; i < botones.length; i++) { botones[i].classList.remove("active"); }
+    b.classList.add("active");
+    estado.rubroModo = b.getAttribute("data-modo");
+    // Redibuja con lo que ya está en memoria: cambiar apilado por lado a lado
+    // es una decisión de dibujo, no hace falta volver a pedir los datos.
+    dibujarRubros(ultimaDeuda);
+  });
+
+  // Población y mínimo de cuotas sólo tocan el listado que se baja a Excel: los
+  // gráficos son siempre de socios activos. Por eso no redibujan nada, sólo
+  // actualizan el renglón que dice qué va a bajar.
+  $("d-solo").addEventListener("change", function () {
+    estado.deudaSolo = this.value;
+    cargarDeuda();
+  });
+  $("d-cuotas").addEventListener("change", function () {
+    estado.deudaCuotas = this.value;
+    cargarDeuda();
+  });
+  $("md-cabeceras").addEventListener("click", function (e) {
+    var th = e.target.closest("th[data-orden]");
+    if (!th) { return; }
+    var campo = th.getAttribute("data-orden");
+    // Segundo clic en la misma columna invierte; columna nueva arranca
+    // descendente, que es lo que se quiere mirar primero en deuda y atraso.
+    if (detalleActual.orden === campo) {
+      detalleActual.desc = !detalleActual.desc;
+    } else {
+      detalleActual.orden = campo;
+      detalleActual.desc = true;
+    }
+    pedirDetalle();
+  });
+  $("md-excel").addEventListener("click", bajarDetalleExcel);
+
+  $("btn-refrescar").addEventListener("click", cargarTodo);
+  $("d-actualizar").addEventListener("click", recalcularDeuda);
+  $("d-excel").addEventListener("click", bajarExcel);
+
+  // Sombra en la barra de período mientras está pegada arriba. Se detecta con
+  // un centinela vacío justo encima en vez de escuchar el scroll: el observer
+  // dispara sólo en el cruce, y no en cada píxel de rueda.
+  (function sombraAlPegarse() {
+    var centinela = $("centinela-filtros");
+    var barra = $("filtros");
+    if (!centinela || !barra || !window.IntersectionObserver) { return; }
+    new IntersectionObserver(function (entradas) {
+      barra.classList.toggle("tab-filtros--pegada", !entradas[0].isIntersecting);
+    }).observe(centinela);
+  })();
+
+  cargarTodo();
+
+  // Si al abrir ya hay un cálculo corriendo —lo lanzó la tarea programada o el
+  // que está sentado en la otra máquina—, la pantalla se engancha y avisa.
+  traer("/api/xsys/tableros/deuda/estado/").then(function (e) {
+    pintarEstado(e);
+    if (e.en_curso) { vigilar(); }
+  }).catch(function () { /* sin estado, la pantalla igual sirve */ });
+})();
+</script>
+{% endblock extra_js %}

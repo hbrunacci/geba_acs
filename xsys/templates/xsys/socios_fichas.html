@@ -1,0 +1,763 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Fichas de socios{% endblock page_title %}
+
+{% block header_title %}Fichas de socios{% endblock header_title %}
+
+{% block header_subtitle %}
+  Todos los socios del sistema: datos de la ficha, pasos por las puertas, cuenta corriente,
+  contratos y grupo familiar.
+{% endblock header_subtitle %}
+
+{% block content %}
+<section class="card mb-3">
+  <div class="card__body">
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-lg-4">
+        <label class="form-label small mb-1" for="f-q">Buscar</label>
+        <input id="f-q" class="form-control form-control-sm" type="search" autofocus
+               placeholder="Apellido, nombre, documento, credencial o nº de socio" />
+      </div>
+      <div class="col-6 col-lg-2">
+        <label class="form-label small mb-1" for="f-activo">Estado</label>
+        <select id="f-activo" class="form-select form-select-sm">
+          <option value="1" selected>Activos</option>
+          <option value="0">De baja</option>
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="col-6 col-lg-3">
+        <label class="form-label small mb-1" for="f-categoria">Categoría</label>
+        <select id="f-categoria" class="form-select form-select-sm">
+          <option value="">Todas</option>
+          {% for c in categorias %}
+          <option value="{{ c.id }}">{{ c.nombre }} ({{ c.socios }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-lg-2">
+        <label class="form-label small mb-1" for="f-grupo">Grupo familiar</label>
+        <select id="f-grupo" class="form-select form-select-sm">
+          <option value="">Indistinto</option>
+          <option value="titular">Titulares</option>
+          <option value="integrante">Integrantes</option>
+          <option value="sin_grupo">Sin grupo</option>
+        </select>
+      </div>
+      <div class="col-6 col-lg-1">
+        <label class="form-label small mb-1" for="f-cuota">Cuota</label>
+        <select id="f-cuota" class="form-select form-select-sm">
+          <option value="">Toda</option>
+          <option value="al_dia">Al día</option>
+          <option value="vencida">Vencida</option>
+        </select>
+      </div>
+    </div>
+    <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+      <span id="l-total" class="badge text-bg-secondary">—</span>
+      <span class="text-muted small">Espejo local: {{ total_activos }} activos de {{ total_socios }} fichas</span>
+      <button id="l-limpiar" type="button" class="btn btn-link btn-sm ms-auto">Limpiar filtros</button>
+    </div>
+  </div>
+</section>
+
+<div class="row g-3">
+  <div class="col-12 col-xl-5">
+    <section class="card">
+      <div class="card__body">
+        <div class="table-responsive" style="max-height: 70vh; overflow-y: auto">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="sticky-top bg-body">
+              <tr class="text-muted small">
+                <th>Socio</th><th>Documento</th><th>Categoría</th><th>Cuota</th>
+              </tr>
+            </thead>
+            <tbody id="l-filas"></tbody>
+          </table>
+        </div>
+        <div id="l-vacio" class="text-muted small py-3 d-none">Ningún socio con esos filtros.</div>
+        <div class="d-flex align-items-center gap-2 mt-2">
+          <button id="l-mas" type="button" class="btn btn-outline-secondary btn-sm d-none">Cargar más</button>
+          <span id="l-estado" class="text-muted small"></span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="col-12 col-xl-7">
+    <section id="d-vacio" class="card">
+      <div class="card__body text-muted">Elegí un socio de la lista para ver su ficha.</div>
+    </section>
+
+    <section id="detalle" class="card d-none">
+      <div class="card__body">
+        <div class="d-flex gap-3">
+          <img id="d-foto" alt="" class="rounded border"
+               style="width: 96px; height: 122px; object-fit: cover; background:#f1f3f5" />
+          <div class="flex-grow-1">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <h4 id="d-nombre" class="mb-0"></h4>
+              <span id="d-activo" class="badge"></span>
+              <span id="d-cuota" class="badge"></span>
+            </div>
+            <div id="d-sub" class="text-muted small mt-1"></div>
+          </div>
+        </div>
+
+        <ul class="nav nav-tabs mt-3" role="tablist">
+          <li class="nav-item"><button class="nav-link active" data-tab="tab-ficha" type="button">Ficha</button></li>
+          <li class="nav-item"><button class="nav-link" data-tab="tab-grupo" type="button">Grupo familiar <span id="t-grupo" class="badge text-bg-secondary ms-1 d-none"></span></button></li>
+          <li class="nav-item"><button class="nav-link" data-tab="tab-contratos" type="button">Contratos <span id="t-contratos" class="badge text-bg-secondary ms-1 d-none"></span></button></li>
+          <li class="nav-item"><button class="nav-link" data-tab="tab-ctacte" type="button">Cuenta corriente</button></li>
+          <li class="nav-item"><button class="nav-link" data-tab="tab-pasos" type="button">Pasos</button></li>
+        </ul>
+
+        <div id="tab-ficha" class="tab-panel pt-3">
+          <div id="fi-msg" class="alert d-none" role="alert"></div>
+          <form id="fi-form" autocomplete="off"></form>
+          <div class="d-flex align-items-center gap-2 mt-3">
+            <button id="fi-guardar" type="button" class="btn btn-primary btn-sm" disabled>Guardar cambios</button>
+            <button id="fi-deshacer" type="button" class="btn btn-outline-secondary btn-sm" disabled>Descartar</button>
+            <span id="fi-pendientes" class="text-muted small"></span>
+          </div>
+          <div id="fi-historial" class="mt-4"></div>
+        </div>
+
+        <div id="tab-grupo" class="tab-panel pt-3 d-none"></div>
+
+        <div id="tab-contratos" class="tab-panel pt-3 d-none"></div>
+
+        <div id="tab-ctacte" class="tab-panel pt-3 d-none">
+          <div id="cc-resumen" class="d-flex flex-wrap gap-2 mb-3"></div>
+          <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+            <div>
+              <label class="form-label small mb-1" for="cc-desde">Desde</label>
+              <input id="cc-desde" class="form-control form-control-sm" type="date" />
+            </div>
+            <div>
+              <label class="form-label small mb-1" for="cc-hasta">Hasta</label>
+              <input id="cc-hasta" class="form-control form-control-sm" type="date" />
+            </div>
+            <div class="form-check ms-2 mb-1">
+              <input id="cc-impagos" class="form-check-input" type="checkbox" />
+              <label class="form-check-label small" for="cc-impagos">Sólo impagos</label>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr class="text-muted small">
+                  <th>Fecha</th><th>Comprobante</th><th>Concepto</th>
+                  <th class="text-end">Importe</th><th class="text-end">Saldo</th>
+                </tr>
+              </thead>
+              <tbody id="cc-filas"></tbody>
+            </table>
+          </div>
+          <div id="cc-vacio" class="text-muted small py-3 d-none">Sin movimientos en el período.</div>
+          <div class="d-flex align-items-center gap-2 mt-2">
+            <button id="cc-mas" type="button" class="btn btn-outline-secondary btn-sm d-none">Cargar más</button>
+            <span id="cc-estado" class="text-muted small"></span>
+          </div>
+        </div>
+
+        <div id="tab-pasos" class="tab-panel pt-3 d-none">
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <span id="pa-total" class="badge text-bg-secondary"></span>
+            <span id="pa-ok" class="badge text-bg-success"></span>
+            <span id="pa-no" class="badge text-bg-danger"></span>
+            <select id="pa-origen" class="form-select form-select-sm ms-auto" style="width:auto">
+              <option value="">Toda lectura</option>
+              <option value="credencial">Credencial / DNI / QR</option>
+              <option value="facial">Facial</option>
+            </select>
+            <select id="pa-resultado" class="form-select form-select-sm" style="width:auto">
+              <option value="">Todo resultado</option>
+              <option value="ok">Permitidos</option>
+              <option value="rechazo">Rechazados</option>
+            </select>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr class="text-muted small">
+                  <th>Fecha</th><th>Puerta</th><th>Lectura</th><th>Resultado</th><th>Detalle</th>
+                </tr>
+              </thead>
+              <tbody id="pa-filas"></tbody>
+            </table>
+          </div>
+          <div id="pa-vacio" class="text-muted small py-3 d-none">Sin pasos registrados.</div>
+          <div class="d-flex align-items-center gap-2 mt-2">
+            <button id="pa-mas" type="button" class="btn btn-outline-secondary btn-sm d-none">Cargar más</button>
+            <span id="pa-estado" class="text-muted small"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock content %}
+
+{% block extra_js %}
+<script>
+(function () {
+  "use strict";
+
+  var CSRF = "{{ csrf_token }}";
+  var LIMITE_LISTA = 40;
+  var LIMITE_CC = 50;
+  var LIMITE_PASOS = 50;
+
+  var socioActual = null;   // id_cliente abierto
+  var definicion = null;    // estructura de la ficha (llega con el primer GET)
+  var valores = {};         // valores tal como vinieron de xSys
+  var offsetLista = 0;
+  var offsetCC = 0;
+  var offsetPasos = 0;
+
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function $(id) { return document.getElementById(id); }
+
+  function plata(n) {
+    if (n == null) { return "—"; }
+    return Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function fecha(iso) {
+    if (!iso) { return "—"; }
+    var p = String(iso).slice(0, 10).split("-");
+    return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : iso;
+  }
+
+  function fechaHora(iso) {
+    if (!iso) { return "—"; }
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) { return iso; }
+    return d.toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric",
+                                       hour: "2-digit", minute: "2-digit" });
+  }
+
+  function pedir(url, opciones) {
+    var cfg = opciones || {};
+    cfg.credentials = "same-origin";
+    cfg.headers = cfg.headers || {};
+    cfg.headers["Accept"] = "application/json";
+    return fetch(url, cfg).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) {
+        if (!r.ok) {
+          var err = new Error(data.detail || ("Error " + r.status + " en la consulta."));
+          err.status = r.status;
+          err.datos = data;
+          throw err;
+        }
+        return data;
+      });
+    });
+  }
+
+  // ------------------------------------------------------------------ listado
+
+  function filtros() {
+    return {
+      q: $("f-q").value.trim(),
+      activo: $("f-activo").value,
+      categoria: $("f-categoria").value,
+      grupo: $("f-grupo").value,
+      cuota: $("f-cuota").value
+    };
+  }
+
+  function cargarLista(reset) {
+    if (reset) { offsetLista = 0; $("l-filas").innerHTML = ""; }
+    var f = filtros();
+    var url = "/api/xsys/socios/listado/?limit=" + LIMITE_LISTA + "&offset=" + offsetLista +
+      "&q=" + encodeURIComponent(f.q) + "&activo=" + encodeURIComponent(f.activo) +
+      "&categoria=" + encodeURIComponent(f.categoria) + "&grupo=" + encodeURIComponent(f.grupo) +
+      "&cuota=" + encodeURIComponent(f.cuota);
+    $("l-estado").textContent = "Buscando…";
+    pedir(url).then(function (d) {
+      $("l-total").textContent = d.total === 1 ? "1 socio" : d.total + " socios";
+      $("l-filas").insertAdjacentHTML("beforeend", d.resultados.map(filaLista).join(""));
+      offsetLista = d.offset + d.resultados.length;
+      var quedan = d.total - offsetLista;
+      $("l-mas").classList.toggle("d-none", quedan <= 0);
+      $("l-mas").textContent = "Cargar más (" + quedan + " restantes)";
+      $("l-vacio").classList.toggle("d-none", d.total > 0);
+      $("l-estado").textContent = d.total ? "Mostrando " + offsetLista + " de " + d.total : "";
+    }).catch(function (e) {
+      $("l-estado").textContent = e.message;
+    });
+  }
+
+  function filaLista(s) {
+    var estado = s.activo
+      ? ""
+      : ' <span class="badge text-bg-dark">Baja</span>';
+    var grupo = "";
+    if (s.es_titular) { grupo = ' <span class="badge text-bg-info" title="Tiene integrantes a cargo">Titular</span>'; }
+    else if (s.es_integrante) { grupo = ' <span class="badge text-bg-light text-dark" title="Integra el grupo de ' + esc(s.id_cliente_ref) + '">Integrante</span>'; }
+    var cuota = !s.activo ? '<span class="text-muted">—</span>'
+      : (s.cuota_al_dia
+          ? '<span class="badge text-bg-success">Al día</span>'
+          : '<span class="badge text-bg-warning text-dark">Vencida</span>');
+    return '<tr role="button" data-id="' + esc(s.id_cliente) + '">' +
+      '<td><strong>' + esc(s.nombre || "(sin nombre)") + '</strong>' + estado + grupo +
+      '<br><small class="text-muted">Nº ' + esc(s.nro_socio || s.id_cliente) + '</small></td>' +
+      '<td class="small">' + esc(s.doc_nro || "—") + '</td>' +
+      '<td class="small">' + esc(s.categoria || "—") + '</td>' +
+      '<td>' + cuota + '<br><small class="text-muted">' + fecha(s.ult_cuota_paga) + '</small></td>' +
+      '</tr>';
+  }
+
+  $("l-filas").addEventListener("click", function (ev) {
+    var tr = ev.target.closest("tr[data-id]");
+    if (tr) { abrirSocio(parseInt(tr.getAttribute("data-id"), 10)); }
+  });
+
+  $("l-mas").addEventListener("click", function () { cargarLista(false); });
+  $("l-limpiar").addEventListener("click", function () {
+    $("f-q").value = ""; $("f-activo").value = "1"; $("f-categoria").value = "";
+    $("f-grupo").value = ""; $("f-cuota").value = ""; cargarLista(true);
+  });
+
+  var debounce = null;
+  $("f-q").addEventListener("input", function () {
+    clearTimeout(debounce);
+    debounce = setTimeout(function () { cargarLista(true); }, 300);
+  });
+  ["f-activo", "f-categoria", "f-grupo", "f-cuota"].forEach(function (id) {
+    $(id).addEventListener("change", function () { cargarLista(true); });
+  });
+
+  // ------------------------------------------------------------------- pestañas
+
+  document.querySelectorAll("[data-tab]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll("[data-tab]").forEach(function (b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      document.querySelectorAll(".tab-panel").forEach(function (p) { p.classList.add("d-none"); });
+      $(btn.getAttribute("data-tab")).classList.remove("d-none");
+    });
+  });
+
+  // --------------------------------------------------------------------- socio
+
+  function abrirSocio(id) {
+    socioActual = id;
+    $("d-vacio").classList.add("d-none");
+    $("detalle").classList.remove("d-none");
+    document.querySelectorAll("#l-filas tr").forEach(function (tr) {
+      tr.classList.toggle("table-active", tr.getAttribute("data-id") === String(id));
+    });
+    cargarFicha(id);
+    cargarGrupo(id);
+    cargarContratos(id);
+    offsetCC = 0; $("cc-filas").innerHTML = ""; cargarCtaCte(id, true);
+    offsetPasos = 0; $("pa-filas").innerHTML = ""; cargarPasos(id, true);
+    var foto = $("d-foto");
+    foto.src = "/api/xsys/socios/" + id + "/foto/";
+    foto.style.visibility = "visible";
+    foto.onerror = function () { foto.style.visibility = "hidden"; };
+  }
+
+  function encabezado() {
+    var nombre = [valores.Apellido, valores.Nombre].filter(Boolean).join(", ") || valores.Razon_Social || "";
+    $("d-nombre").textContent = nombre || ("Cliente " + socioActual);
+    var activo = valores.Activo;
+    $("d-activo").textContent = activo ? "Activo" : "De baja";
+    $("d-activo").className = "badge " + (activo ? "text-bg-success" : "text-bg-dark");
+    $("d-sub").innerHTML = "Nº de socio " + esc(valores.Id_Cliente_Externo || "—") +
+      " · Id " + esc(socioActual) +
+      " · Doc " + esc(valores.Doc_Nro || "—") +
+      " · Credencial " + esc(valores.Credencial_Nro || "—") +
+      " · Últ. cuota paga " + esc(fecha(valores.Ult_Cuota_Paga));
+  }
+
+  // --------------------------------------------------------------------- ficha
+
+  function cargarFicha(id) {
+    $("fi-form").innerHTML = '<div class="text-muted small">Leyendo la ficha en xSys…</div>';
+    pedir("/api/xsys/socios/" + id + "/ficha/").then(function (d) {
+      definicion = d.definicion;
+      valores = d.valores;
+      encabezado();
+      dibujarFicha();
+      dibujarEdiciones(d.ediciones);
+    }).catch(function (e) {
+      $("fi-form").innerHTML = '<div class="alert alert-danger">' + esc(e.message) + "</div>";
+    });
+  }
+
+  function control(c) {
+    var v = valores[c.col];
+    var id = "campo-" + c.col;
+    var comun = 'id="' + id + '" data-col="' + esc(c.col) + '" class="form-control form-control-sm"';
+    if (!c.editable) {
+      var texto = c.tipo === "fecha" ? fecha(v) : (v == null ? "—" : String(v));
+      return '<div class="form-control form-control-sm bg-body-secondary">' + esc(texto) + "</div>";
+    }
+    if (c.tipo === "opcion") {
+      var opts = '<option value="">(sin especificar)</option>' + (c.opciones || []).map(function (o) {
+        var sel = String(v == null ? "" : v) === o.valor ? " selected" : "";
+        return '<option value="' + esc(o.valor) + '"' + sel + ">" + esc(o.texto) + "</option>";
+      }).join("");
+      return '<select id="' + id + '" data-col="' + esc(c.col) + '" class="form-select form-select-sm">' + opts + "</select>";
+    }
+    if (c.tipo === "bool") {
+      return '<select id="' + id + '" data-col="' + esc(c.col) + '" class="form-select form-select-sm">' +
+        '<option value=""' + (v == null ? " selected" : "") + ">(sin especificar)</option>" +
+        '<option value="1"' + (v === true ? " selected" : "") + ">Sí</option>" +
+        '<option value="0"' + (v === false ? " selected" : "") + ">No</option></select>";
+    }
+    if (c.tipo === "fecha") {
+      return '<input type="date" ' + comun + ' value="' + esc(v || "") + '" />';
+    }
+    if (c.tipo === "entero") {
+      return '<input type="text" inputmode="numeric" ' + comun + ' value="' + esc(v == null ? "" : v) + '" />';
+    }
+    if (c.maxlen && c.maxlen > 300) {
+      return '<textarea id="' + id + '" data-col="' + esc(c.col) + '" rows="3" class="form-control form-control-sm">' +
+        esc(v || "") + "</textarea>";
+    }
+    return '<input type="text" ' + comun + ' maxlength="' + (c.maxlen || 255) + '" value="' + esc(v || "") + '" />';
+  }
+
+  function dibujarFicha() {
+    $("fi-form").innerHTML = definicion.map(function (g) {
+      var campos = g.campos.map(function (c) {
+        var ayuda = c.ayuda ? '<div class="form-text small">' + esc(c.ayuda) + "</div>" : "";
+        var riesgo = c.riesgo
+          ? '<div class="form-text small text-warning-emphasis">⚠ ' + esc(c.riesgo) + "</div>"
+          : "";
+        var ancho = (c.maxlen && c.maxlen > 300) ? "col-12" : "col-12 col-md-6 col-xxl-4";
+        return '<div class="' + ancho + '"><label class="form-label small mb-1" for="campo-' + esc(c.col) + '">' +
+          esc(c.label) + "</label>" + control(c) + ayuda + riesgo + "</div>";
+      }).join("");
+      return '<fieldset class="mb-4"><legend class="h6 text-muted border-bottom pb-1">' + esc(g.grupo) +
+        '</legend><div class="row g-3">' + campos + "</div></fieldset>";
+    }).join("");
+    $("fi-form").querySelectorAll("[data-col]").forEach(function (el) {
+      el.addEventListener("input", marcarPendientes);
+      el.addEventListener("change", marcarPendientes);
+    });
+    marcarPendientes();
+  }
+
+  function valorDelControl(el) {
+    var v = el.value;
+    return v == null ? "" : String(v).trim();
+  }
+
+  function valorOriginal(col) {
+    var v = valores[col];
+    if (v === true) { return "1"; }
+    if (v === false) { return "0"; }
+    return v == null ? "" : String(v);
+  }
+
+  function cambios() {
+    var out = {};
+    $("fi-form").querySelectorAll("[data-col]").forEach(function (el) {
+      var col = el.getAttribute("data-col");
+      var nuevo = valorDelControl(el);
+      if (nuevo !== valorOriginal(col)) { out[col] = nuevo; }
+    });
+    return out;
+  }
+
+  function marcarPendientes() {
+    var c = cambios();
+    var n = Object.keys(c).length;
+    $("fi-form").querySelectorAll("[data-col]").forEach(function (el) {
+      el.classList.toggle("border-warning", Object.prototype.hasOwnProperty.call(c, el.getAttribute("data-col")));
+    });
+    $("fi-guardar").disabled = n === 0;
+    $("fi-deshacer").disabled = n === 0;
+    $("fi-pendientes").textContent = n === 0 ? "" : (n === 1 ? "1 campo modificado" : n + " campos modificados");
+  }
+
+  function mensajeFicha(html, clase) {
+    var box = $("fi-msg");
+    box.className = "alert alert-" + clase;
+    box.innerHTML = html;
+    box.classList.remove("d-none");
+  }
+
+  $("fi-deshacer").addEventListener("click", function () {
+    $("fi-msg").classList.add("d-none");
+    dibujarFicha();
+  });
+
+  $("fi-guardar").addEventListener("click", function () {
+    var c = cambios();
+    if (!Object.keys(c).length) { return; }
+    var riesgosos = [];
+    definicion.forEach(function (g) {
+      g.campos.forEach(function (campo) {
+        if (campo.riesgo && Object.prototype.hasOwnProperty.call(c, campo.col)) {
+          riesgosos.push(campo.label);
+        }
+      });
+    });
+    if (riesgosos.length && !window.confirm(
+        "Vas a cambiar " + riesgosos.join(", ") + " en la ficha de xSys.\n\n" +
+        "Estos campos afectan el acceso y la facturación del socio. ¿Confirmás?")) {
+      return;
+    }
+    guardarFicha(c, false);
+  });
+
+  function guardarFicha(c, confirmado) {
+    $("fi-guardar").disabled = true;
+    $("fi-msg").classList.add("d-none");
+    pedir("/api/xsys/socios/" + socioActual + "/ficha/", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+      body: JSON.stringify({ cambios: c, confirmar: !!confirmado })
+    }).then(function (d) {
+      valores = d.ficha;
+      encabezado();
+      dibujarFicha();
+      dibujarEdiciones(d.ediciones);
+      var partes = d.aplicados.map(function (a) {
+        return "<li>" + esc(a.etiqueta) + ": <s>" + esc(a.anterior || "vacío") + "</s> → <strong>" +
+          esc(a.nuevo || "vacío") + "</strong></li>";
+      }).join("");
+      var avisos = (d.avisos || []).map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("");
+      if (!d.aplicados.length) {
+        mensajeFicha("No había nada que cambiar.", "secondary");
+      } else {
+        mensajeFicha("<strong>Guardado en xSys.</strong><ul class='mb-0 mt-2'>" + partes + "</ul>" +
+          (avisos ? "<hr><strong>Tener en cuenta:</strong><ul class='mb-0 mt-2'>" + avisos + "</ul>" : ""),
+          avisos ? "warning" : "success");
+      }
+      cargarLista(true);
+      cargarGrupo(socioActual);
+    }).catch(function (e) {
+      if (e.status === 409 && e.datos && e.datos.confirmar) {
+        marcarPendientes();
+        if (window.confirm(e.datos.confirmar.join("\n\n") + "\n\n¿Guardar igual?")) {
+          guardarFicha(c, true);
+        }
+        return;
+      }
+      mensajeFicha(esc(e.message), "danger");
+      marcarPendientes();
+    });
+  }
+
+  function dibujarEdiciones(ediciones) {
+    if (!ediciones || !ediciones.length) { $("fi-historial").innerHTML = ""; return; }
+    $("fi-historial").innerHTML = '<h6 class="text-muted">Cambios hechos desde esta pantalla</h6>' +
+      '<div class="table-responsive"><table class="table table-sm mb-0"><thead><tr class="text-muted small">' +
+      "<th>Cuándo</th><th>Quién</th><th>Campo</th><th>Antes</th><th>Después</th></tr></thead><tbody>" +
+      ediciones.map(function (e) {
+        return "<tr><td class='small'>" + esc(fechaHora(e.cuando)) + "</td><td class='small'>" + esc(e.usuario) +
+          "</td><td class='small'>" + esc(e.etiqueta || e.campo) + "</td><td class='small text-muted'>" +
+          esc(e.anterior || "—") + "</td><td class='small'>" + esc(e.nuevo || "—") + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
+  }
+
+  // ------------------------------------------------------------- grupo familiar
+
+  function cargarGrupo(id) {
+    pedir("/api/xsys/socios/" + id + "/grupo-familiar/").then(function (d) {
+      var badge = $("t-grupo");
+      badge.classList.toggle("d-none", !d.tiene_grupo);
+      badge.textContent = d.cantidad;
+      if (!d.tiene_grupo) {
+        $("tab-grupo").innerHTML = '<div class="alert alert-secondary mb-0">' +
+          "Este socio <strong>no integra ningún grupo familiar</strong>: no tiene titular ni integrantes a cargo." +
+          "</div>";
+        return;
+      }
+      var titulo = d.es_titular
+        ? "Es el <strong>titular</strong> del grupo. La cuota de los integrantes se factura en su cupón."
+        : "Es <strong>integrante</strong> del grupo. Su cuota se factura en el cupón del titular.";
+      if (d.titular_desconocido) {
+        titulo = "Apunta al titular " + esc(d.id_titular) + ", que no está en el espejo local.";
+      }
+      $("tab-grupo").innerHTML = '<p class="small text-muted">' + titulo + "</p>" +
+        '<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead>' +
+        '<tr class="text-muted small"><th>Rol</th><th>Socio</th><th>Documento</th><th>Categoría</th>' +
+        "<th>Nacimiento</th><th>Últ. cuota</th></tr></thead><tbody>" +
+        d.miembros.map(filaGrupo).join("") + "</tbody></table></div>";
+      $("tab-grupo").querySelectorAll("[data-ir]").forEach(function (el) {
+        el.addEventListener("click", function () { abrirSocio(parseInt(el.getAttribute("data-ir"), 10)); });
+      });
+    }).catch(function (e) {
+      $("tab-grupo").innerHTML = '<div class="alert alert-danger mb-0">' + esc(e.message) + "</div>";
+    });
+  }
+
+  function filaGrupo(m) {
+    var rol = m.rol === "titular"
+      ? '<span class="badge text-bg-info">Titular</span>'
+      : '<span class="badge text-bg-light text-dark">Integrante</span>';
+    var baja = m.activo ? "" : ' <span class="badge text-bg-dark">Baja</span>';
+    var nombre = m.es_consultado
+      ? "<strong>" + esc(m.nombre) + "</strong> <span class='text-muted small'>(en pantalla)</span>"
+      : '<button type="button" class="btn btn-link btn-sm p-0" data-ir="' + esc(m.id_cliente) + '">' +
+        esc(m.nombre) + "</button>";
+    return "<tr" + (m.es_consultado ? ' class="table-active"' : "") + "><td>" + rol + "</td>" +
+      "<td>" + nombre + baja + "<br><small class='text-muted'>Nº " + esc(m.nro_socio || m.id_cliente) + "</small></td>" +
+      "<td class='small'>" + esc(m.doc_nro || "—") + "</td>" +
+      "<td class='small'>" + esc(m.categoria || "—") + "</td>" +
+      "<td class='small'>" + esc(fecha(m.fecha_nac)) + "</td>" +
+      "<td class='small'>" + esc(fecha(m.ult_cuota_paga)) + "</td></tr>";
+  }
+
+  // ----------------------------------------------------------------- contratos
+
+  function cargarContratos(id) {
+    pedir("/api/xsys/socios/" + id + "/contratos/").then(function (d) {
+      var badge = $("t-contratos");
+      badge.classList.toggle("d-none", !d.contratos.length);
+      badge.textContent = d.contratos.length;
+      $("d-cuota").textContent = d.cuota_al_dia ? "Cuota al día" : "Cuota vencida";
+      $("d-cuota").className = "badge " + (d.cuota_al_dia ? "text-bg-success" : "text-bg-warning text-dark");
+      if (!d.contratos.length) {
+        $("tab-contratos").innerHTML = '<div class="alert alert-secondary mb-0">Sin contratos activos.</div>';
+        return;
+      }
+      var limite = d.cuota_limite
+        ? '<p class="small text-muted">Puede ingresar hasta el <strong>' + esc(fecha(d.cuota_limite)) +
+          "</strong> con la cuota que tiene paga.</p>"
+        : "";
+      $("tab-contratos").innerHTML = limite +
+        '<div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead>' +
+        '<tr class="text-muted small"><th>Contrato</th><th>Actividad</th><th>Desde</th>' +
+        '<th class="text-end">Deuda</th><th>Último pago</th></tr></thead><tbody>' +
+        d.contratos.map(function (c) {
+          var deuda = (c.deuda && c.deuda > 0)
+            ? '<span class="text-danger fw-semibold">' + plata(c.deuda) + "</span>"
+            : '<span class="text-muted">—</span>';
+          var pago = c.ultimo_pago_fecha
+            ? fecha(c.ultimo_pago_fecha) + "<br><small class='text-muted'>" + plata(c.ultimo_pago_importe) + "</small>"
+            : "<span class='text-muted'>—</span>";
+          return "<tr><td><strong>" + esc(c.descripcion) + "</strong></td>" +
+            "<td class='small'>" + esc(c.actividad || "—") + "</td>" +
+            "<td class='small'>" + esc(fecha(c.desde)) + "</td>" +
+            "<td class='text-end small'>" + deuda + "</td>" +
+            "<td class='small'>" + pago + "</td></tr>";
+        }).join("") + "</tbody></table></div>";
+    }).catch(function (e) {
+      $("tab-contratos").innerHTML = '<div class="alert alert-danger mb-0">' + esc(e.message) + "</div>";
+    });
+  }
+
+  // ----------------------------------------------------------- cuenta corriente
+
+  function cargarCtaCte(id, reset) {
+    if (reset) { offsetCC = 0; $("cc-filas").innerHTML = ""; }
+    var url = "/api/xsys/socios/" + id + "/cuenta-corriente/?limit=" + LIMITE_CC + "&offset=" + offsetCC +
+      "&desde=" + encodeURIComponent($("cc-desde").value) +
+      "&hasta=" + encodeURIComponent($("cc-hasta").value) +
+      ($("cc-impagos").checked ? "&impagos=1" : "");
+    $("cc-estado").textContent = "Consultando xSys…";
+    pedir(url).then(function (d) {
+      if (d.resumen) { dibujarResumenCC(d.resumen); }
+      if (!$("cc-desde").value && d.desde) { $("cc-desde").value = d.desde; }
+      $("cc-filas").insertAdjacentHTML("beforeend", d.movimientos.map(filaCC).join(""));
+      offsetCC = d.offset + d.movimientos.length;
+      var quedan = d.total - offsetCC;
+      $("cc-mas").classList.toggle("d-none", quedan <= 0);
+      $("cc-mas").textContent = "Cargar más (" + quedan + " restantes)";
+      $("cc-vacio").classList.toggle("d-none", d.total > 0);
+      $("cc-estado").textContent = d.total
+        ? "Mostrando " + offsetCC + " de " + d.total + " · cargos " + plata(d.cargos) + " · pagos " + plata(d.pagos)
+        : "";
+    }).catch(function (e) { $("cc-estado").textContent = e.message; });
+  }
+
+  function dibujarResumenCC(r) {
+    var partes = [];
+    partes.push('<span class="badge ' + (r.deuda_vencida > 0 ? "text-bg-danger" : "text-bg-success") +
+      '">Deuda vencida: ' + plata(r.deuda_vencida) + "</span>");
+    if (r.deuda_por_vencer > 0) {
+      partes.push('<span class="badge text-bg-secondary">Por vencer: ' + plata(r.deuda_por_vencer) + "</span>");
+    }
+    if (r.proforma_opcional > 0) {
+      partes.push('<span class="badge text-bg-light text-dark border" ' +
+        'title="Cupón opcional de cuota social voluntaria: se emite todos los meses y se paga sólo si el socio quiere. No es deuda.">' +
+        "Proforma opcional: " + plata(r.proforma_opcional) + "</span>");
+    }
+    if (r.ultimo_pago) {
+      partes.push('<span class="badge text-bg-secondary">Último pago: ' + plata(r.ultimo_pago.importe) +
+        " el " + fecha(r.ultimo_pago.fecha) + "</span>");
+    }
+    $("cc-resumen").innerHTML = partes.join("");
+  }
+
+  function filaCC(m) {
+    var clase = m.es_pago ? "table-success" : (m.opcional ? "text-muted" : "");
+    var importe = (m.es_pago ? "" : "") + plata(m.importe);
+    var saldo = m.saldo > 0
+      ? '<span class="' + (m.opcional ? "text-muted" : "text-danger") + '">' + plata(m.saldo) + "</span>"
+      : '<span class="text-muted">—</span>';
+    var etiqueta = m.opcional
+      ? ' <span class="badge text-bg-light text-dark border" title="Cuota voluntaria: se paga sólo si el socio quiere">opcional</span>'
+      : "";
+    return '<tr class="' + clase + '"><td class="small">' + esc(fecha(m.fecha)) + "</td>" +
+      "<td class='small'>" + esc(m.comprobante || "—") + etiqueta + "</td>" +
+      "<td class='small'>" + esc(m.concepto || "—") +
+      (m.periodo ? " <span class='text-muted'>(" + esc(m.periodo) + ")</span>" : "") + "</td>" +
+      "<td class='text-end small'>" + importe + "</td>" +
+      "<td class='text-end small'>" + saldo + "</td></tr>";
+  }
+
+  $("cc-mas").addEventListener("click", function () { cargarCtaCte(socioActual, false); });
+  ["cc-desde", "cc-hasta", "cc-impagos"].forEach(function (id) {
+    $(id).addEventListener("change", function () { cargarCtaCte(socioActual, true); });
+  });
+
+  // --------------------------------------------------------------------- pasos
+
+  function cargarPasos(id, reset) {
+    if (reset) { offsetPasos = 0; $("pa-filas").innerHTML = ""; }
+    var url = "/api/xsys/socios/" + id + "/accesos/?limit=" + LIMITE_PASOS + "&offset=" + offsetPasos +
+      "&origen=" + encodeURIComponent($("pa-origen").value) +
+      "&resultado=" + encodeURIComponent($("pa-resultado").value);
+    $("pa-estado").textContent = "Cargando…";
+    pedir(url).then(function (d) {
+      $("pa-total").textContent = d.total + " pasos";
+      $("pa-ok").textContent = d.permitidos + " permitidos";
+      $("pa-no").textContent = d.rechazados + " rechazados";
+      $("pa-filas").insertAdjacentHTML("beforeend", d.resultados.map(filaPaso).join(""));
+      offsetPasos = d.offset + d.resultados.length;
+      var quedan = d.total - offsetPasos;
+      $("pa-mas").classList.toggle("d-none", quedan <= 0);
+      $("pa-mas").textContent = "Cargar más (" + quedan + " restantes)";
+      $("pa-vacio").classList.toggle("d-none", d.total > 0);
+      $("pa-estado").textContent = d.total ? "Mostrando " + offsetPasos + " de " + d.total : "";
+    }).catch(function (e) { $("pa-estado").textContent = e.message; });
+  }
+
+  function filaPaso(a) {
+    var res = a.permitido
+      ? '<span class="badge text-bg-success">Permitido</span>'
+      : '<span class="badge text-bg-danger">Rechazado</span>';
+    var lectura = a.origen === "facial" ? "Facial" : "Credencial";
+    var lugar = [a.puerta, a.molinete].filter(Boolean).join(" · ") || "—";
+    return "<tr><td class='small'>" + esc(fechaHora(a.fecha)) + "</td>" +
+      "<td class='small'>" + esc(lugar) + "</td>" +
+      "<td class='small'>" + esc(lectura) + "</td>" +
+      "<td>" + res + "</td>" +
+      "<td class='small text-muted'>" + esc(a.mensaje || a.detalle || "") + "</td></tr>";
+  }
+
+  $("pa-mas").addEventListener("click", function () { cargarPasos(socioActual, false); });
+  ["pa-origen", "pa-resultado"].forEach(function (id) {
+    $(id).addEventListener("change", function () { cargarPasos(socioActual, true); });
+  });
+
+  cargarLista(true);
+})();
+</script>
+{% endblock extra_js %}

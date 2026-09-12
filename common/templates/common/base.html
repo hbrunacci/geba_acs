@@ -38,95 +38,31 @@
       </div>
       <nav class="sidebar__nav">
         {% block sidebar %}
-        {% with request.resolver_match.url_name as current_url %}
+        {# La estructura del menú vive en common/nav.py: acá sólo se dibuja. #}
         <ul class="nav__list">
-          {% if nav_is_admin %}
-          <li class="nav__item{% if current_url == 'dashboard' %} nav__item--active{% endif %}">
-            <a href="{% url 'common:dashboard' %}">Resumen</a>
+          {% for entrada in nav_menu %}
+          {% if entrada.tipo == "item" %}
+          <li class="nav__item{% if entrada.activo %} nav__item--active{% endif %}">
+            <a href="{% url entrada.url %}"
+               {% if entrada.nueva_pestania %}target="_blank" rel="noopener"{% endif %}>{{ entrada.titulo }}</a>
           </li>
-          <li class="nav__item nav__item--expandable{% if current_url == 'biostar_devices_console' or current_url == 'biostar_users_console' %} nav__item--active{% endif %}">
-            <details{% if current_url == 'biostar_devices_console' or current_url == 'biostar_users_console' %} open{% endif %}>
-              <summary>Biostar</summary>
+          {% else %}
+          <li class="nav__item nav__item--expandable{% if entrada.abierto %} nav__item--active{% endif %}">
+            <details{% if entrada.abierto %} open{% endif %}>
+              <summary>{{ entrada.titulo }}</summary>
               <ul class="nav__sublist">
-                <li class="nav__subitem">
-                  <a href="{% url 'biostar_devices_console' %}">Dispositivos</a>
+                {% for item in entrada.items %}
+                <li class="nav__subitem{% if item.activo %} nav__subitem--active{% endif %}">
+                  <a href="{% url item.url %}"
+                     {% if item.nueva_pestania %}target="_blank" rel="noopener"{% endif %}>{{ item.titulo }}</a>
                 </li>
-                <li class="nav__subitem">
-                  <a href="{% url 'biostar_users_console' %}">Personas</a>
-                </li>
-              </ul>
-            </details>
-          </li>
-          <li class="nav__item{% if current_url == 'events_console' %} nav__item--active{% endif %}">
-            <a href="{% url 'events_console' %}">Eventos</a>
-          </li>
-          <li class="nav__item{% if current_url == 'people_configuration_console' %} nav__item--active{% endif %}">
-            <a href="{% url 'people_configuration_console' %}">Personas y documentación</a>
-          </li>
-          <li class="nav__item{% if current_url == 'access_topology_console' %} nav__item--active{% endif %}">
-            <a href="{% url 'access_topology_console' %}">Puertas y zonas</a>
-          </li>
-          <li class="nav__item{% if current_url == 'access_reports_console' %} nav__item--active{% endif %}">
-            <a href="{% url 'access_reports_console' %}">Reportes de accesos</a>
-          </li>
-          <li class="nav__item{% if current_url == 'external_access_console' %} nav__item--active{% endif %}">
-            <a href="{% url 'external_access_console' %}">Movimientos externos</a>
-          </li>
-          <li class="nav__item{% if current_url == 'xsys_socio_console' %} nav__item--active{% endif %}">
-            <a href="{% url 'xsys_socio_console' %}">Socios (espejo xSys)</a>
-          </li>
-          {% endif %}
-          {% if nav_can_puertas %}
-          <li class="nav__item{% if current_url == 'xsys_diagnostico' %} nav__item--active{% endif %}">
-            <a href="{% url 'xsys_diagnostico' %}">¿Por qué no entra?</a>
-          </li>
-          <li class="nav__item{% if current_url == 'xsys_molinetes_config' %} nav__item--active{% endif %}">
-            <a href="{% url 'xsys_molinetes_config' %}">Molinetes por puerta</a>
-          </li>
-          <li class="nav__item">
-            <a href="{% url 'xsys_puerta_monitor' %}" target="_blank" rel="noopener">Visor de puerta</a>
-          </li>
-          <li class="nav__item{% if current_url == 'diag_facial_console' %} nav__item--active{% endif %}">
-            <a href="{% url 'diag_facial_console' %}">Diagnóstico de facial</a>
-          </li>
-          {% endif %}
-          {% if nav_can_socios %}
-          <li class="nav__item{% if current_url == 'avisos_pendientes' %} nav__item--active{% endif %}">
-            <a href="{% url 'avisos_pendientes' %}">Avisos a socios</a>
-          </li>
-          {% endif %}
-          {% if nav_can_concesionarios %}
-          <li class="nav__item nav__item--expandable{% if current_url == 'concesionarios_listado' or current_url == 'concesionarios_ingresos' or current_url == 'concesionarios_empresas' or current_url == 'concesionarios_horarios' %} nav__item--active{% endif %}">
-            <details{% if current_url == 'concesionarios_listado' or current_url == 'concesionarios_ingresos' or current_url == 'concesionarios_empresas' or current_url == 'concesionarios_horarios' %} open{% endif %}>
-              <summary>Concesionarios</summary>
-              <ul class="nav__sublist">
-                <li class="nav__subitem"><a href="{% url 'concesionarios_listado' %}">Listado</a></li>
-                <li class="nav__subitem"><a href="{% url 'concesionarios_ingresos' %}">Ingresos al club</a></li>
-                <li class="nav__subitem"><a href="{% url 'concesionarios_empresas' %}">Empresas y documentos</a></li>
-                <li class="nav__subitem"><a href="{% url 'concesionarios_horarios' %}">Horarios de ingreso</a></li>
+                {% endfor %}
               </ul>
             </details>
           </li>
           {% endif %}
-          {% if nav_is_admin %}
-          <li class="nav__item{% if current_url == 'parking_movements_console' %} nav__item--active{% endif %}">
-            <a href="{% url 'parking_movements_console' %}">Estacionamiento</a>
-          </li>
-          <li class="nav__item{% if current_url == 'anses_verification_console' %} nav__item--active{% endif %}">
-            <a href="{% url 'anses_verification_console' %}">Verificar situacion anses</a>
-          </li>
-          <li class="nav__item{% if current_url == 'api3000_test_console' %} nav__item--active{% endif %}">
-            <a href="{% url 'api3000_test_console' %}">Consola API3000</a>
-          </li>
-          <li class="nav__item{% if current_url == 'intelektron_admin' %} nav__item--active{% endif %}">
-            <a href="{% url 'intelektron_admin' %}">Equipos Intelektron</a>
-          </li>
-          <li class="nav__item{% if current_url == 'pollers_dashboard' %} nav__item--active{% endif %}">
-            <a href="{% url 'pollers_dashboard' %}">Salud de pollers</a>
-          </li>
-          {% endif %}
+          {% endfor %}
         </ul>
-        {% endwith %}
         {% endblock sidebar %}
       </nav>
       <div class="sidebar__footer">
@@ -137,7 +73,15 @@
           </span>
           <span class="sidebar__user-role">{{ request.user.get_role_display|default:"Usuario" }}</span>
         </div>
-        <a class="sidebar__logout" href="{% url 'common:logout' %}">Cerrar sesión</a>
+        {% comment %}
+          Por POST y no por enlace: desde Django 5, LogoutView sólo acepta POST
+          (GET quedó deprecado en 4.1 y se removió en 5.0). Con un <a href> la
+          salida devolvía 405 y la sesión seguía abierta.
+        {% endcomment %}
+        <form method="post" action="{% url 'common:logout' %}" class="sidebar__logout-form">
+          {% csrf_token %}
+          <button type="submit" class="sidebar__logout">Cerrar sesión</button>
+        </form>
         {% endblock sidebar_footer %}
       </div>
     </aside>

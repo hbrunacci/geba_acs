@@ -1,5 +1,23 @@
 from django.urls import path
 
+from xsys.api_views_socios import (
+    SocioContratosAPI,
+    SocioCuentaCorrienteAPI,
+    SocioFichaAPI,
+    SocioGrupoFamiliarAPI,
+    SociosListadoAPI,
+)
+from xsys.api_views_tableros import (
+    TableroAltasBajasAPI,
+    TableroCategoriasAPI,
+    TableroDeudaAPI,
+    TableroDeudaDetalleAPI,
+    TableroDeudaDetalleExcelAPI,
+    TableroDeudaEstadoAPI,
+    TableroDeudaExcelAPI,
+    TableroDeudaRecalcularAPI,
+    TableroPadronAPI,
+)
 from xsys.api_views import (
     AccesoResolverAPI,
     AccesosBuscarAPI,
@@ -26,6 +44,23 @@ from xsys.api_views import (
 )
 
 urlpatterns = [
+    # Tableros de gestión (rol tableros).
+    path("xsys/tableros/padron/", TableroPadronAPI.as_view(), name="xsys_tablero_padron_api"),
+    path("xsys/tableros/altas-bajas/", TableroAltasBajasAPI.as_view(),
+         name="xsys_tablero_altas_bajas_api"),
+    path("xsys/tableros/categorias/", TableroCategoriasAPI.as_view(),
+         name="xsys_tablero_categorias_api"),
+    path("xsys/tableros/deuda/", TableroDeudaAPI.as_view(), name="xsys_tablero_deuda_api"),
+    path("xsys/tableros/deuda/recalcular/", TableroDeudaRecalcularAPI.as_view(),
+         name="xsys_tablero_deuda_recalcular_api"),
+    path("xsys/tableros/deuda/estado/", TableroDeudaEstadoAPI.as_view(),
+         name="xsys_tablero_deuda_estado_api"),
+    path("xsys/tableros/deuda/excel/", TableroDeudaExcelAPI.as_view(),
+         name="xsys_tablero_deuda_excel_api"),
+    path("xsys/tableros/deuda/detalle/", TableroDeudaDetalleAPI.as_view(),
+         name="xsys_tablero_deuda_detalle_api"),
+    path("xsys/tableros/deuda/detalle/excel/", TableroDeudaDetalleExcelAPI.as_view(),
+         name="xsys_tablero_deuda_detalle_excel_api"),
     path("xsys/acceso/", AccesoResolverAPI.as_view(), name="xsys_acceso_api"),
     path("xsys/diagnostico/", DiagnosticoAccesoAPI.as_view(), name="xsys_diagnostico_api"),
     path("xsys/puertas/", PuertasListAPI.as_view(), name="xsys_puertas_api"),
@@ -43,6 +78,15 @@ urlpatterns = [
     path("xsys/config/molinetes/auto/", MolinetesAutoAPI.as_view(), name="xsys_config_molinetes_auto_api"),
     path("xsys/config/molinetes/<int:mid>/", MolineteConfigDetailAPI.as_view(), name="xsys_config_molinete_detail_api"),
     path("xsys/socios/lookup/", SocioLookupAPI.as_view(), name="xsys_socio_lookup_api"),
+    # Pantalla de fichas de socios (rol socios).
+    path("xsys/socios/listado/", SociosListadoAPI.as_view(), name="xsys_socios_listado_api"),
+    path("xsys/socios/<int:id_cliente>/ficha/", SocioFichaAPI.as_view(), name="xsys_socio_ficha_api"),
+    path("xsys/socios/<int:id_cliente>/cuenta-corriente/", SocioCuentaCorrienteAPI.as_view(),
+         name="xsys_socio_ctacte_api"),
+    path("xsys/socios/<int:id_cliente>/grupo-familiar/", SocioGrupoFamiliarAPI.as_view(),
+         name="xsys_socio_grupo_api"),
+    path("xsys/socios/<int:id_cliente>/contratos/", SocioContratosAPI.as_view(),
+         name="xsys_socio_contratos_api"),
     path("xsys/socios/", SocioSearchAPI.as_view(), name="xsys_socio_search_api"),
     path("xsys/socios/<int:id_cliente>/detalle/", SocioDetalleAPI.as_view(), name="xsys_socio_detalle_api"),
     path("xsys/socios/<int:id_cliente>/accesos/", SocioAccesosAPI.as_view(), name="xsys_socio_accesos_api"),

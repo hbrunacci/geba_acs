@@ -1,0 +1,798 @@
+<title>Arranque de geba_acs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ground:#eef0f3;
+  --panel:#ffffff;
+  --panel-2:#f6f7f9;
+  --ink:#151a21;
+  --ink-2:#414d5c;
+  --ink-3:#6b7887;
+  --rule:#d5dae1;
+  --rule-2:#e6eaee;
+  --accent:#1f5670;
+  --accent-ink:#1f5670;
+  --accent-soft:#e2edf3;
+  --brass:#8a6a12;
+  --brass-soft:#f6efd9;
+  --ok:#1c6b40;
+  --ok-soft:#e0f0e7;
+  --warn:#8a5a00;
+  --warn-soft:#faeed6;
+  --bad:#992b21;
+  --bad-soft:#f9e4e1;
+  --code-bg:#141a21;
+  --code-ink:#d9e2ec;
+  --code-dim:#7d8e9f;
+  --shadow:0 1px 2px rgba(20,30,45,.06),0 4px 14px rgba(20,30,45,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#10141a;
+    --panel:#171d25;
+    --panel-2:#1d242e;
+    --ink:#e7ecf2;
+    --ink-2:#b3bfcc;
+    --ink-3:#8494a5;
+    --rule:#2c3644;
+    --rule-2:#232b36;
+    --accent:#6fb3d2;
+    --accent-ink:#8ec6e0;
+    --accent-soft:#17303d;
+    --brass:#d3b05a;
+    --brass-soft:#2e2716;
+    --ok:#66c894;
+    --ok-soft:#123626;
+    --warn:#e0b062;
+    --warn-soft:#33270f;
+    --bad:#e8867b;
+    --bad-soft:#391e1a;
+    --code-bg:#0b0f14;
+    --code-ink:#d9e2ec;
+    --code-dim:#6d7d8e;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#10141a; --panel:#171d25; --panel-2:#1d242e;
+  --ink:#e7ecf2; --ink-2:#b3bfcc; --ink-3:#8494a5;
+  --rule:#2c3644; --rule-2:#232b36;
+  --accent:#6fb3d2; --accent-ink:#8ec6e0; --accent-soft:#17303d;
+  --brass:#d3b05a; --brass-soft:#2e2716;
+  --ok:#66c894; --ok-soft:#123626;
+  --warn:#e0b062; --warn-soft:#33270f;
+  --bad:#e8867b; --bad-soft:#391e1a;
+  --code-bg:#0b0f14; --code-ink:#d9e2ec; --code-dim:#6d7d8e;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--ground);color:var(--ink);
+  font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:960px;margin:0 auto;padding-inline:18px;padding-block:0 64px}
+
+/* ---------- barra ---------- */
+.topbar{
+  position:sticky;top:0;z-index:20;background:var(--ground);
+  border-bottom:1px solid var(--rule);
+}
+.topbar-in{
+  max-width:960px;margin:0 auto;padding-inline:18px;padding-block:9px;
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;
+}
+.topbar .mark{
+  font-family:"Archivo",sans-serif;font-weight:700;font-size:13px;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--ink);
+  margin-right:auto;
+}
+.topbar .mark b{color:var(--accent-ink)}
+.jump{display:flex;flex-wrap:wrap;gap:3px}
+.jump a{
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-3);
+  text-decoration:none;padding:3px 7px;border-radius:4px;white-space:nowrap;
+}
+.jump a:hover{background:var(--accent-soft);color:var(--accent-ink)}
+.jump a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+/* ---------- cabecera ---------- */
+header.hero{padding-block:34px 24px;border-bottom:2px solid var(--ink);margin-bottom:26px}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--brass);margin:0 0 12px;font-weight:600;
+}
+h1{
+  font-family:"Archivo",sans-serif;font-weight:700;font-size:clamp(30px,5.6vw,46px);
+  line-height:1.06;letter-spacing:-.017em;margin:0 0 14px;text-wrap:balance;
+}
+.sub{font-size:16.5px;color:var(--ink-2);max-width:64ch;margin:0}
+.sub code{font-size:14.5px}
+
+.facts{
+  display:flex;flex-wrap:wrap;gap:0;margin-top:24px;
+  border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:var(--panel);
+}
+.fact{flex:1 1 168px;padding:13px 16px;border-right:1px solid var(--rule-2)}
+.fact:last-child{border-right:0}
+.fact dt{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);margin:0 0 4px;
+}
+.fact dd{margin:0;font-size:14.5px;font-weight:600;color:var(--ink)}
+.fact dd small{display:block;font-weight:400;font-size:12.5px;color:var(--ink-3);margin-top:1px}
+
+/* ---------- secciones ---------- */
+section{margin-block:38px;scroll-margin-top:56px}
+h2{
+  font-family:"Archivo",sans-serif;font-weight:700;font-size:23px;letter-spacing:-.01em;
+  margin:0 0 6px;text-wrap:balance;
+}
+.h2num{
+  font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--brass);
+  font-weight:600;margin-right:9px;
+}
+.lead{color:var(--ink-2);max-width:72ch;margin:0 0 20px}
+h3{
+  font-family:"Archivo",sans-serif;font-weight:600;font-size:16px;
+  margin:26px 0 8px;letter-spacing:-.005em;
+}
+p{max-width:72ch}
+a{color:var(--accent-ink)}
+
+/* ---------- alerta ---------- */
+.alerta{
+  border:1px solid var(--rule);border-left:4px solid var(--bad);
+  background:var(--panel);border-radius:0 8px 8px 0;padding:18px 20px;
+  box-shadow:var(--shadow);margin-block:22px;
+}
+.alerta.brass{border-left-color:var(--brass)}
+.alerta.ok{border-left-color:var(--ok)}
+.alerta h3{margin:0 0 7px;font-size:15.5px}
+.alerta p{margin:0 0 9px;font-size:14.5px;color:var(--ink-2)}
+.alerta p:last-child{margin-bottom:0}
+.alerta .tag{
+  display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:10.5px;
+  letter-spacing:.1em;text-transform:uppercase;font-weight:600;
+  padding:2px 7px;border-radius:3px;margin-bottom:9px;
+  background:var(--bad-soft);color:var(--bad);
+}
+.alerta.brass .tag{background:var(--brass-soft);color:var(--brass)}
+.alerta.ok .tag{background:var(--ok-soft);color:var(--ok)}
+
+/* ---------- pasos ---------- */
+ol.pasos{list-style:none;counter-reset:p;margin:0;padding:0}
+ol.pasos>li{
+  counter-increment:p;position:relative;padding-left:44px;
+  padding-bottom:26px;margin-bottom:0;border-left:1px solid var(--rule);
+  margin-left:13px;
+}
+ol.pasos>li:last-child{border-left-color:transparent;padding-bottom:4px}
+ol.pasos>li::before{
+  content:counter(p);position:absolute;left:-13px;top:0;
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;
+  width:26px;height:26px;border-radius:50%;
+  background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;
+}
+:root[data-theme="dark"] ol.pasos>li::before,
+:root:not([data-theme="light"]) ol.pasos>li::before{color:#0b1116}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]) ol.pasos>li::before{color:#fff}
+}
+ol.pasos .titulo{
+  font-family:"Archivo",sans-serif;font-weight:600;font-size:16.5px;
+  margin:1px 0 6px;line-height:1.3;
+}
+ol.pasos p{margin:0 0 10px;font-size:14.5px;color:var(--ink-2);max-width:70ch}
+
+/* ---------- código ---------- */
+.cmd{
+  background:var(--code-bg);border-radius:7px;margin:12px 0 14px;
+  overflow:hidden;border:1px solid rgba(125,142,159,.22);
+}
+.cmd-head{
+  display:flex;align-items:center;gap:10px;
+  padding:7px 12px;border-bottom:1px solid rgba(125,142,159,.18);
+}
+.cmd-os{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;font-weight:600;color:var(--code-dim);
+  margin-right:auto;
+}
+.cmd-copy{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.06em;
+  text-transform:uppercase;background:transparent;color:var(--code-dim);
+  border:1px solid rgba(125,142,159,.35);border-radius:4px;
+  padding:3px 8px;cursor:pointer;
+}
+.cmd-copy:hover{color:var(--code-ink);border-color:rgba(217,226,236,.5)}
+.cmd-copy:focus-visible{outline:2px solid #6fb3d2;outline-offset:1px}
+.cmd pre{
+  margin:0;padding:12px 14px;overflow-x:auto;
+  font-family:"IBM Plex Mono",monospace;font-size:12.8px;line-height:1.65;
+  color:var(--code-ink);
+}
+.cmd pre .c{color:var(--code-dim)}
+code{
+  font-family:"IBM Plex Mono",monospace;font-size:.88em;
+  background:var(--panel-2);border:1px solid var(--rule-2);
+  padding:1px 5px;border-radius:4px;color:var(--ink);
+}
+
+/* ---------- selector de pista ---------- */
+.pistas{
+  display:flex;gap:4px;padding:4px;background:var(--panel-2);
+  border:1px solid var(--rule);border-radius:8px;width:fit-content;margin-bottom:20px;
+}
+.pistas button{
+  font-family:"IBM Plex Sans",sans-serif;font-size:13.5px;font-weight:600;
+  padding:7px 16px;border-radius:5px;border:1px solid transparent;
+  background:transparent;color:var(--ink-3);cursor:pointer;
+}
+.pistas button[aria-selected="true"]{
+  background:var(--panel);color:var(--ink);border-color:var(--rule);box-shadow:var(--shadow);
+}
+.pistas button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+/* ---------- tablas ---------- */
+.tabla-wrap{
+  overflow-x:auto;border:1px solid var(--rule);border-radius:8px;
+  background:var(--panel);box-shadow:var(--shadow);margin-block:16px;
+}
+table{border-collapse:collapse;width:100%;font-size:13.8px;min-width:520px}
+th{
+  text-align:left;font-family:"IBM Plex Mono",monospace;font-size:10.5px;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);
+  font-weight:600;padding:10px 14px;border-bottom:1px solid var(--rule);
+  background:var(--panel-2);white-space:nowrap;
+}
+td{padding:10px 14px;border-bottom:1px solid var(--rule-2);vertical-align:top;color:var(--ink-2)}
+tr:last-child td{border-bottom:0}
+td.svc{
+  font-family:"IBM Plex Mono",monospace;font-size:12.8px;color:var(--ink);
+  font-weight:600;white-space:nowrap;
+}
+td.cad{font-family:"IBM Plex Mono",monospace;font-size:12.3px;white-space:nowrap;color:var(--ink-3)}
+td strong{color:var(--ink);font-weight:600}
+
+.pill{
+  display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:10.5px;
+  letter-spacing:.05em;font-weight:600;padding:2px 7px;border-radius:3px;white-space:nowrap;
+}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.off{background:var(--panel-2);color:var(--ink-3);border:1px solid var(--rule)}
+
+/* ---------- checklist ---------- */
+ul.check{list-style:none;margin:0;padding:0}
+ul.check li{
+  position:relative;padding-left:26px;margin-bottom:11px;font-size:14.5px;
+  color:var(--ink-2);max-width:72ch;
+}
+ul.check li::before{
+  content:"";position:absolute;left:2px;top:7px;width:9px;height:9px;
+  border:2px solid var(--accent);border-radius:2px;
+}
+ul.check li strong{color:var(--ink)}
+
+ul.plano{margin:0 0 14px;padding-left:20px}
+ul.plano li{margin-bottom:7px;font-size:14.5px;color:var(--ink-2);max-width:70ch}
+ul.plano li strong{color:var(--ink)}
+
+footer{
+  margin-top:52px;padding-top:20px;border-top:1px solid var(--rule);
+  font-size:12.8px;color:var(--ink-3);
+}
+footer p{max-width:76ch;margin:0 0 7px}
+footer code{font-size:11.8px}
+
+@media (max-width:560px){
+  .fact{flex:1 1 100%;border-right:0;border-bottom:1px solid var(--rule-2)}
+  .fact:last-child{border-bottom:0}
+  .jump{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="topbar">
+  <div class="topbar-in">
+    <div class="mark">geba<b>_acs</b> · runbook</div>
+    <nav class="jump">
+      <a href="#triage">triage</a>
+      <a href="#arranque">arranque</a>
+      <a href="#estado">estado</a>
+      <a href="#verificar">verificar</a>
+      <a href="#fallback">fallback</a>
+      <a href="#fallas">fallas</a>
+      <a href="#nunca">nunca</a>
+      <a href="#pendiente">pendiente</a>
+    </nav>
+  </div>
+</div>
+
+<div class="wrap">
+
+<header class="hero">
+  <p class="eyebrow">Control de accesos GEBA · caída o reinicio</p>
+  <h1>Cómo levantar el sistema</h1>
+  <p class="sub">Los molinetes no dejan pasar a nadie. Esta es la secuencia, en orden, para volver a poner en pie <code>geba_acs</code> — el espejo de xSys que decide quién entra por cada puerta.</p>
+
+  <dl class="facts">
+    <div class="fact"><dt>Máquina</dt><dd>accesos · 10.0.0.20<small>DESKTOP-VNBR0MB</small></dd></div>
+    <div class="fact"><dt>Repo</dt><dd>C:\Users\User\<wbr>desarrollo\geba_acs<small>rama main</small></dd></div>
+    <div class="fact"><dt>Modo actual</dt><dd>Docker Desktop<small>10 contenedores + Postgres local</small></dd></div>
+    <div class="fact"><dt>Visor</dt><dd>http://10.0.0.20/<small>puerto 80 · /xsys/puerta/</small></dd></div>
+  </dl>
+</header>
+
+<section id="triage">
+  <h2><span class="h2num">01</span>Antes de tocar nada</h2>
+  <p class="lead">Tres comandos que separan "se cayó la app" de "se cayó la red" o "se cayó el ERP". Sin esto se termina reiniciando lo que estaba sano.</p>
+
+  <div class="cmd">
+    <div class="cmd-head"><span class="cmd-os">PowerShell · en la máquina accesos</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre><span class="c"># 1. ¿Responde el visor?</span>
+curl.exe -s -o NUL -w "%{http_code}\n" http://127.0.0.1/
+
+<span class="c"># 2. ¿Está vivo el motor de Docker?</span>
+docker ps --format "{{.Names}}`t{{.Status}}"
+
+<span class="c"># 3. ¿Llegamos al SQL Server de xSys?</span>
+Test-NetConnection 192.168.0.6 -Port 49331</pre>
+  </div>
+
+  <div class="tabla-wrap">
+    <table>
+      <thead><tr><th>Lo que ves</th><th>Qué significa</th><th>A dónde ir</th></tr></thead>
+      <tbody>
+        <tr><td><code>200</code> y 10 contenedores arriba</td><td>El sistema está sano. El problema es de la pantalla del puesto o de la red del molinete.</td><td>Paso <strong>04</strong>, verificación punta a punta</td></tr>
+        <tr><td>curl falla, docker responde</td><td>Cayó el contenedor <code>web</code> pero el motor está vivo.</td><td>Paso <strong>03</strong>, arranque</td></tr>
+        <tr><td><code>docker</code> no responde</td><td>Docker Desktop no está corriendo. Es el caso típico después de un reinicio.</td><td>Paso <strong>02</strong> — el que más falla</td></tr>
+        <tr><td><code>TcpTestSucceeded : False</code></td><td>No hay ruteo hasta el ERP. No es la app: es red o firewall.</td><td>Red. Levantar la app igual no arregla nada.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Con el ERP inalcanzable el visor <strong>sigue dejando pasar</strong>: la lista blanca vive en el Postgres local y no depende de xSys en el momento del paso. Lo que se congela es la actualización — quien pague en ese rato no se habilita hasta que vuelva el enlace.</p>
+</section>
+
+<section id="arranque">
+  <h2><span class="h2num">02</span>Arranque</h2>
+  <p class="lead">Elegí la plataforma. La producción de hoy es Windows; la pista Linux es el mismo <code>docker-compose.yml</code> sobre Docker Engine, y resuelve de raíz el problema del paso 1.</p>
+
+  <div class="pistas" role="tablist" aria-label="Plataforma">
+    <button type="button" role="tab" id="tab-win" aria-controls="pista-win" aria-selected="true">Windows</button>
+    <button type="button" role="tab" id="tab-lin" aria-controls="pista-lin" aria-selected="false">Linux</button>
+  </div>
+
+  <!-- ============ WINDOWS ============ -->
+  <div id="pista-win" role="tabpanel" aria-labelledby="tab-win">
+
+    <div class="alerta">
+      <span class="tag">Causa raíz nº 1</span>
+      <h3>Después de un reinicio, nadie levanta nada hasta que alguien inicie sesión</h3>
+      <p>Docker Desktop arranca desde la clave <code>Run</code> del usuario (<code>HKCU\…\CurrentVersion\Run</code>), o sea <strong>al iniciar sesión</strong>, no al encender la máquina. Y el auto-login está apagado (<code>AutoAdminLogon = 0</code>).</p>
+      <p>Consecuencia: si se corta la luz y la máquina vuelve sola, el control de accesos <strong>queda caído indefinidamente</strong> hasta que una persona se siente y loguee como <code>User</code>. Con los contenedores en <code>restart: unless-stopped</code>, todo lo demás se recupera solo — pero recién a partir de ese login.</p>
+      <p>Hay tres formas de sacarse esto de encima; están en <a href="#pendiente">Lo que queda pendiente</a>.</p>
+    </div>
+
+    <ol class="pasos">
+      <li>
+        <p class="titulo">Iniciar sesión en Windows como <code>User</code></p>
+        <p>Presencial o por Escritorio Remoto. No alcanza con que la máquina esté encendida y pingueando: sin sesión iniciada, Docker Desktop no existe.</p>
+      </li>
+      <li>
+        <p class="titulo">Esperar a que el motor de Docker esté listo</p>
+        <p>Docker Desktop tarda entre 30 y 90 segundos. El ícono de la ballena tiene que quedar fijo y decir <em>Engine running</em>. Si no arrancó solo, abrilo desde el menú Inicio.</p>
+        <div class="cmd">
+          <div class="cmd-head"><span class="cmd-os">PowerShell</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>docker version</pre>
+        </div>
+        <p>Si dice <code>error during connect</code>, el motor todavía no levantó: esperá y repetí. No sigas hasta que responda.</p>
+      </li>
+      <li>
+        <p class="titulo">Levantar la pila</p>
+        <p>Un solo comando. <code>compose</code> respeta el orden: primero <code>db</code>, después <code>web</code> —y recién cuando <code>web</code> pasa el healthcheck— todos los pollers.</p>
+        <div class="cmd">
+          <div class="cmd-head"><span class="cmd-os">PowerShell</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>cd C:\Users\User\desarrollo\geba_acs
+docker compose up -d</pre>
+        </div>
+        <p>Es idempotente: si algo ya estaba arriba, no lo toca. Tarda ~40 s por el <code>start_period</code> del healthcheck de <code>web</code>.</p>
+      </li>
+      <li>
+        <p class="titulo">Confirmar que están todos</p>
+        <div class="cmd">
+          <div class="cmd-head"><span class="cmd-os">PowerShell</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>docker compose ps</pre>
+        </div>
+        <p><code>db</code> y <code>web</code> tienen que decir <strong>healthy</strong>. El detalle de qué esperar está en <a href="#estado">Estado esperado</a>.</p>
+      </li>
+    </ol>
+
+    <div class="alerta brass">
+      <span class="tag">Ojo con el DEPLOY.md</span>
+      <p>El <code>DEPLOY.md</code> del repo quedó desactualizado en dos puntos que confunden justo cuando hay apuro: habla del puerto <strong>8000</strong> (hoy <code>compose</code> publica <strong>80</strong>) y da <code>10.0.0.27</code> como IP de esta PC, cuando <code>10.0.0.27</code> es <strong>BioStar</strong> y esta máquina es la <strong>10.0.0.20</strong>. Los comandos de esta página ya están corregidos.</p>
+    </div>
+  </div>
+
+  <!-- ============ LINUX ============ -->
+  <div id="pista-lin" role="tabpanel" aria-labelledby="tab-lin" hidden>
+
+    <div class="alerta ok">
+      <span class="tag">Por qué Linux resuelve el problema</span>
+      <p>En Linux el demonio de Docker es un servicio de systemd: arranca <strong>al bootear</strong>, sin sesión de usuario. Con <code>systemctl enable docker</code> y los contenedores en <code>restart: unless-stopped</code>, un corte de luz se recupera solo, sin que nadie toque la máquina.</p>
+      <p>Esta pista todavía <strong>no está probada en el club</strong> — es el mismo <code>docker-compose.yml</code> que hoy corre en Windows, con los equivalentes de cada comando.</p>
+    </div>
+
+    <ol class="pasos">
+      <li>
+        <p class="titulo">Verificar el demonio</p>
+        <div class="cmd">
+          <div class="cmd-head"><span class="cmd-os">bash</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>systemctl is-active docker   <span class="c"># debe decir: active</span>
+sudo systemctl start docker  <span class="c"># si no lo está</span></pre>
+        </div>
+      </li>
+      <li>
+        <p class="titulo">Levantar la pila</p>
+        <div class="cmd">
+          <div class="cmd-head"><span class="cmd-os">bash</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>cd /opt/geba_acs
+docker compose up -d
+docker compose ps</pre>
+        </div>
+      </li>
+      <li>
+        <p class="titulo">Dejarlo a prueba de cortes (una sola vez)</p>
+        <p>Esto es lo que hace innecesario todo el paso 1 de la pista Windows.</p>
+        <div class="cmd">
+          <div class="cmd-head"><span class="cmd-os">bash · una vez</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>sudo systemctl enable docker
+
+<span class="c"># Y en el BIOS/UEFI: "Restore on AC Power Loss" = Power On,</span>
+<span class="c"># para que la máquina vuelva sola después del corte.</span></pre>
+        </div>
+      </li>
+      <li>
+        <p class="titulo">El puerto 80 y los permisos</p>
+        <p>El contenedor <code>web</code> publica el 80. En Linux eso lo hace el demonio (root), así que no hace falta nada especial — pero sí revisar que no haya un nginx o apache del sistema ocupándolo.</p>
+        <div class="cmd">
+          <div class="cmd-head"><span class="cmd-os">bash</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>sudo ss -lntp | grep ':80 '</pre>
+        </div>
+      </li>
+      <li>
+        <p class="titulo">Reemplazo del watchdog</p>
+        <p>El <code>web_watchdog.ps1</code> es PowerShell y no aplica. En Linux el equivalente es un timer de systemd que pida la home y reinicie si no hay 200:</p>
+        <div class="cmd">
+          <div class="cmd-head"><span class="cmd-os">bash · /etc/systemd/system/geba-watchdog.service</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>[Unit]
+Description=Watchdog del visor geba_acs
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/geba_acs
+ExecStart=/bin/sh -c 'curl -fsS -m 20 -o /dev/null http://127.0.0.1/ \
+  || docker compose up -d web'</pre>
+        </div>
+        <div class="cmd">
+          <div class="cmd-head"><span class="cmd-os">bash · geba-watchdog.timer + activar</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>[Unit]
+Description=Chequeo del visor cada 5 min
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target</pre>
+        </div>
+        <div class="cmd">
+          <div class="cmd-head"><span class="cmd-os">bash</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>sudo systemctl daemon-reload
+sudo systemctl enable --now geba-watchdog.timer</pre>
+        </div>
+      </li>
+    </ol>
+
+    <p>Todo lo demás —estado esperado, verificación, fallas conocidas— es idéntico en las dos plataformas, porque lo que corre adentro de los contenedores es el mismo Linux.</p>
+  </div>
+</section>
+
+<section id="estado">
+  <h2><span class="h2num">03</span>Estado esperado</h2>
+  <p class="lead">Once servicios en total. Si falta alguno, el sistema anda "a medias" de una forma que no siempre se nota: el molinete abre, pero algo dejó de actualizarse.</p>
+
+  <div class="tabla-wrap">
+    <table>
+      <thead><tr><th>Servicio</th><th>Qué hace</th><th>Cada</th><th>Si falta</th></tr></thead>
+      <tbody>
+        <tr><td class="svc">db</td><td>PostgreSQL 16 — el espejo local. Todo lo demás depende de esto.</td><td class="cad">—</td><td>No arranca nada.</td></tr>
+        <tr><td class="svc">web</td><td>Django + gunicorn. Sirve el visor de las puertas y la API.</td><td class="cad">:80 → :8000</td><td><strong>Molinetes ciegos.</strong> Es la caída visible.</td></tr>
+        <tr><td class="svc">poller</td><td>Único cliente que lee <code>CD_ES</code> del MSSQL y lo replica local.</td><td class="cad">1 s</td><td>El visor no muestra pasos nuevos.</td></tr>
+        <tr><td class="svc">cambios-poller</td><td>Compara el padrón completo y detecta cambios de cuota o estado.</td><td class="cad">20 s</td><td>Quien paga tarda ~15 min en poder entrar.</td></tr>
+        <tr><td class="svc">whitelist-full</td><td>Barrida completa de la lista blanca + push a los lectores faciales.</td><td class="cad">15 min</td><td>La lista blanca envejece: gente negada de más.</td></tr>
+        <tr><td class="svc">sync</td><td>Sincronización incremental del espejo (socios, fotos, contratos).</td><td class="cad">6 h</td><td>Altas y bajas no bajan al espejo.</td></tr>
+        <tr><td class="svc">fotos-poller</td><td>Refresco de fotos por marca de agua de fecha; re-enrola el rostro si cambió.</td><td class="cad">8 min</td><td>Fotos viejas en el visor.</td></tr>
+        <tr><td class="svc">biostar-poller</td><td>Log de eventos del facial — única fuente con identidad por equipo.</td><td class="cad">0,5 s</td><td>No se registran los pasos por rostro.</td></tr>
+        <tr><td class="svc">biostar-face-sync</td><td>Enrola en BioStar a los habilitados con foto que quedaron sin rostro.</td><td class="cad">1 h</td><td>Nada, si <code>BIOSTAR_FACE_SYNC_MODE=off</code>.</td></tr>
+        <tr><td class="svc">deuda-actividades</td><td>Libera a los bloqueados por deuda de actividades que ya pagaron.</td><td class="cad">10 min</td><td>Rebotan en el molinete aunque hayan pagado.</td></tr>
+        <tr><td class="svc">deuda-foto</td><td>Foto de deuda del tablero. No es poller: corre a horario fijo.</td><td class="cad">10, 13, 16, 19 h</td><td>El tablero muestra el número de ayer.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Los que <em>no</em> tienen que estar</h3>
+  <p><code>intelektron-server</code> e <code>intelektron-listener</code> están bajo el profile <code>intelektron</code> y quedaron apagados a propósito el 04-08-2026. Verlos como <span class="pill off">exited</span> es lo correcto — no los levantes "para completar". Si alguna vez hacen falta:</p>
+  <div class="cmd">
+    <div class="cmd-head"><span class="cmd-os">solo si se necesita</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>docker compose --profile intelektron up -d intelektron-server</pre>
+  </div>
+
+  <div class="alerta brass">
+    <span class="tag">Hoy falta uno</span>
+    <p>Ahora mismo corren <strong>10 de los 11</strong>: <code>deuda-actividades</code> no existe como contenedor. Está definido en el <code>docker-compose.yml</code> pero en un cambio <strong>sin commitear</strong> que nunca se aplicó con un <code>up -d</code>.</p>
+      <p>Al seguir este runbook se va a crear solo, y eso es lo correcto —es el servicio que desbloquea a los socios que pagaron la deuda de actividades—. Lo digo para que no sorprenda ver aparecer un contenedor nuevo.</p>
+  </div>
+</section>
+
+<section id="verificar">
+  <h2><span class="h2num">04</span>Verificación punta a punta</h2>
+  <p class="lead">Que los contenedores estén "arriba" no quiere decir que un socio pueda entrar. Estas cinco pruebas recorren la cadena completa.</p>
+
+  <ul class="check">
+    <li><strong>La app responde.</strong> <code>curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1/</code> devuelve <code>200</code>.</li>
+    <li><strong>Entran pasos en vivo.</strong> El log del poller muestra líneas <code>+N ingresos</code> cuando alguien cruza un molinete.</li>
+    <li><strong>La cadena está consistente.</strong> El chequeo de consistencia sale con código 0.</li>
+    <li><strong>El visor del puesto pinta.</strong> Desde una PC de molinetes, <code>http://10.0.0.20/xsys/puerta/</code> muestra las columnas con foto, mensaje e ícono de rostro o credencial.</li>
+    <li><strong>Un paso real abre.</strong> La prueba que vale: que alguien pase la credencial o la cara y el molinete gire.</li>
+  </ul>
+
+  <div class="cmd">
+    <div class="cmd-head"><span class="cmd-os">las dos primeras, en vivo</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>docker compose logs --tail 20 poller
+docker compose logs --tail 20 web</pre>
+  </div>
+
+  <div class="cmd">
+    <div class="cmd-head"><span class="cmd-os">auditoría xSys ↔ espejo ↔ BioStar</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre><span class="c"># --rapido: no recalcula contra xSys, mide frescura y BioStar. ~segundos.</span>
+docker compose exec web python manage.py acs_consistencia --rapido
+
+<span class="c"># Informe completo (más lento, recalcula socio por socio contra el ERP).</span>
+docker compose exec web python manage.py acs_consistencia</pre>
+  </div>
+
+  <p>El comando devuelve <strong>exit 1 si encuentra divergencias</strong>: dice, con números, si alguien puede pasar sin poder o no puede pasar pudiendo, y en qué eslabón se rompió. Después de una caída larga es normal que la lista blanca esté vieja; se corrige sola en la próxima barrida (15 min). Si querés forzarla:</p>
+
+  <div class="cmd">
+    <div class="cmd-head"><span class="cmd-os">forzar puesta al día</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>docker compose exec web python manage.py xsys_whitelist_full --push-biostar
+docker compose exec web python manage.py xsys_sync</pre>
+  </div>
+</section>
+
+<section id="fallback">
+  <h2><span class="h2num">05</span>Si Docker no levanta</h2>
+  <p class="lead">El repo trae un modo nativo, sin Docker: waitress sirviendo en el puerto 80 y el poller de <code>CD_ES</code> como procesos de Python, registrados como Tareas Programadas que arrancan con Windows.</p>
+
+  <div class="alerta brass">
+    <span class="tag">Estado hoy</span>
+    <p>Las tareas <code>GEBA-ACS-Web</code> y <code>GEBA-ACS-Poller</code> existen pero están <span class="pill off">Disabled</span> desde el 21-07-2026, cuando se pasó a Docker. Su último resultado fue un error (<code>267014</code> = "la tarea no está corriendo"), coherente con haberlas apagado.</p>
+    <p>Es un <strong>bote salvavidas, no un modo paralelo</strong>: cubre solo <code>web</code> y <code>poller</code>. No corren el sync, la lista blanca, las fotos, el facial ni la deuda. Sirve para que el molinete abra mientras se arregla Docker; no para quedarse ahí.</p>
+  </div>
+
+  <h3>Encenderlo</h3>
+  <div class="cmd">
+    <div class="cmd-head"><span class="cmd-os">PowerShell como Administrador</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre><span class="c"># Docker y el modo nativo pelean por el puerto 80: bajar Docker primero.</span>
+cd C:\Users\User\desarrollo\geba_acs
+docker compose stop web
+
+Enable-ScheduledTask -TaskName "GEBA-ACS-Web","GEBA-ACS-Poller"
+Start-ScheduledTask  -TaskName "GEBA-ACS-Web"
+Start-ScheduledTask  -TaskName "GEBA-ACS-Poller"
+
+Get-ScheduledTask GEBA-ACS-* | Get-ScheduledTaskInfo</pre>
+  </div>
+
+  <p>El modo nativo usa el <code>.venv</code> del repo y el <strong>mismo</strong> <code>.env</code>, pero pega contra un Postgres que tiene que estar accesible. Si el que cayó fue justamente el contenedor <code>db</code>, este camino no te salva: ahí lo que hay que levantar es <code>db</code>.</p>
+
+  <h3>Volver a Docker</h3>
+  <div class="cmd">
+    <div class="cmd-head"><span class="cmd-os">PowerShell como Administrador</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>Stop-ScheduledTask    -TaskName "GEBA-ACS-Web"
+Stop-ScheduledTask    -TaskName "GEBA-ACS-Poller"
+Disable-ScheduledTask -TaskName "GEBA-ACS-Web","GEBA-ACS-Poller"
+
+cd C:\Users\User\desarrollo\geba_acs
+docker compose up -d</pre>
+  </div>
+  <p>Dejarlas deshabilitadas no es opcional: si arrancan solas en el próximo reinicio, se quedan con el puerto 80 y el contenedor <code>web</code> no puede bindear.</p>
+</section>
+
+<section id="fallas">
+  <h2><span class="h2num">06</span>Fallas conocidas</h2>
+  <p class="lead">Cada una de estas ya pasó en este sistema. La columna del medio es lo que realmente la causa, que casi nunca es lo que el error dice.</p>
+
+  <div class="tabla-wrap">
+    <table>
+      <thead><tr><th>Síntoma</th><th>Causa real</th><th>Qué hacer</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>La máquina está prendida y pinguea, pero nada responde en el 80</td>
+          <td>Nadie inició sesión en Windows. Docker Desktop no arrancó.</td>
+          <td>Loguearse como <code>User</code>. Ver paso <strong>02</strong>.</td>
+        </tr>
+        <tr>
+          <td><code>web</code> reinicia en loop: <code>entrypoint.sh: bad interpreter</code></td>
+          <td>Git convirtió el <code>.sh</code> a CRLF al clonar en Windows.</td>
+          <td><code>git config --global core.autocrlf false</code> y volver a clonar.</td>
+        </tr>
+        <tr>
+          <td>Los pollers no conectan al ERP</td>
+          <td>Puerto equivocado: el MSSQL escucha en <strong>49331</strong>, no en 1433.</td>
+          <td>Revisar <code>MSSQL_*_PORT</code> en el <code>.env</code>. Después, credenciales.</td>
+        </tr>
+        <tr>
+          <td>Error de handshake TLS contra el MSSQL</td>
+          <td>El 49331 no negocia cifrado.</td>
+          <td><code>MSSQL_XSYS_ENCRYPT=no</code> y <code>MSSQL_XSYS_TRUST_CERT=yes</code>.</td>
+        </tr>
+        <tr>
+          <td><code>DisallowedHost</code> o <code>Bad Request (400)</code></td>
+          <td>Se entró por una IP o nombre que no está declarado.</td>
+          <td>Agregarlo a <code>DJANGO_ALLOWED_HOSTS</code> y <code>docker compose up -d</code>.</td>
+        </tr>
+        <tr>
+          <td>Postgres: <code>password authentication failed</code></td>
+          <td>El volumen <code>postgres_data</code> se inicializó con otras credenciales. Postgres solo las aplica la primera vez.</td>
+          <td>Cambiar la clave del rol adentro, no borrar el volumen. Ver <a href="#nunca">Nunca</a>.</td>
+        </tr>
+        <tr>
+          <td>El contenedor <code>web</code> no puede tomar el puerto 80</td>
+          <td>Las tareas nativas quedaron habilitadas y waitress se lo llevó.</td>
+          <td><code>Disable-ScheduledTask</code> en las dos. Paso <strong>05</strong>.</td>
+        </tr>
+        <tr>
+          <td>El visor anda pero muestra cuotas viejas</td>
+          <td>Falta <code>cambios-poller</code> o <code>whitelist-full</code>.</td>
+          <td><code>docker compose up -d</code> y verificar con <code>acs_consistencia</code>.</td>
+        </tr>
+        <tr>
+          <td>El visor quedó caído horas sin que nadie se enterara</td>
+          <td>Alguien lo paró a mano: <code>restart: unless-stopped</code> respeta esa decisión y no lo vuelve a levantar nunca.</td>
+          <td>Es exactamente para lo que existe el watchdog. Ver <a href="#pendiente">pendientes</a>.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Diagnóstico rápido de un servicio puntual</h3>
+  <div class="cmd">
+    <div class="cmd-head"><span class="cmd-os">cualquier plataforma</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre><span class="c"># Por qué murió y si fue el OOM killer</span>
+docker inspect geba_acs-web-1 --format "{{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}"
+
+<span class="c"># Sus últimos 100 renglones</span>
+docker compose logs --tail 100 web
+
+<span class="c"># Reiniciar uno solo (el código está montado en vivo: no hace falta rebuild)</span>
+docker compose restart poller</pre>
+  </div>
+  <p>El <code>rebuild</code> solo hace falta si cambiaron <code>requirements.txt</code> o el <code>Dockerfile</code>. Para cambios de <code>.py</code> o de templates alcanza con reiniciar el servicio.</p>
+</section>
+
+<section id="nunca">
+  <h2><span class="h2num">07</span>Lo que nunca hay que hacer</h2>
+
+  <div class="alerta">
+    <span class="tag">Destructivo</span>
+    <h3><code>docker compose down -v</code></h3>
+    <p>La <code>-v</code> borra el volumen <code>geba_acs_postgres_data</code>, que es <strong>todo el espejo local</strong>: socios, fotos, lista blanca, historial de accesos. Recuperarlo es correr <code>xsys_init</code> de cero, que tarda horas y deja los molinetes sin lista blanca mientras tanto.</p>
+    <p>Para bajar todo sin perder datos: <code>docker compose stop</code>. Para bajar y borrar contenedores conservando el volumen: <code>docker compose down</code> — <em>sin</em> la <code>-v</code>.</p>
+  </div>
+
+  <ul class="plano">
+    <li><strong>No cambies <code>POSTGRES_USER</code> / <code>PASSWORD</code> / <code>DB</code> en el <code>.env</code>.</strong> Postgres los aplica solo cuando el volumen está vacío; cambiarlos después rompe el login sin avisar por qué.</li>
+    <li><strong>No levantes los servicios <code>intelektron-*</code></strong> "para que estén todos". Están apagados por decisión, no por olvido.</li>
+    <li><strong>No corras el modo nativo y Docker a la vez.</strong> Se pelean por el puerto 80 y el ganador es impredecible.</li>
+    <li><strong>No pares un contenedor a mano y te vayas.</strong> <code>unless-stopped</code> respeta el freno para siempre; así fue como el visor quedó cinco horas caído el 18-08-2026.</li>
+  </ul>
+</section>
+
+<section id="pendiente">
+  <h2><span class="h2num">08</span>Lo que queda pendiente</h2>
+  <p class="lead">Tres cosas que hoy hacen falta y que este runbook no puede resolver, porque son decisiones, no comandos.</p>
+
+  <h3>1 · Que el sistema vuelva solo después de un corte</h3>
+  <p>Hoy depende de que una persona inicie sesión. Tres caminos, de menos a más trabajo:</p>
+  <ul class="plano">
+    <li><strong>Auto-login de Windows</strong> (<code>AutoAdminLogon=1</code>). Es el cambio más chico y arregla el problema entero. A cambio, la máquina queda con una sesión abierta sin contraseña: hay que evaluarlo con el criterio de seguridad del club.</li>
+    <li><strong>Registrar el modo nativo al arranque</strong> con <code>scripts\register_native_services.ps1</code>. Las tareas usan <code>S4U</code>, así que corren sin sesión iniciada. Pero solo levanta <code>web</code> y <code>poller</code> — el resto de la pila sigue esperando el login.</li>
+    <li><strong>Mover a Linux.</strong> Es la solución de fondo: systemd arranca Docker al bootear y el problema desaparece. Ver la pista Linux del paso <strong>02</strong>.</li>
+  </ul>
+
+  <h3>2 · El watchdog está escrito pero no registrado</h3>
+  <p><code>scripts\web_watchdog.ps1</code> chequea el puerto 80 cada 5 minutos, levanta <code>web</code> con <code>docker compose up -d</code> si no responde y avisa por mail el cambio de estado. Existe justamente porque el 18-08-2026 el visor quedó cinco horas caído sin que nadie se enterara. <strong>No hay ninguna tarea registrada que lo ejecute.</strong> Para activarlo:</p>
+  <div class="cmd">
+    <div class="cmd-head"><span class="cmd-os">PowerShell como Administrador · una vez</span><button class="cmd-copy" type="button">copiar</button></div>
+<pre>cd C:\Users\User\desarrollo\geba_acs
+powershell -ExecutionPolicy Bypass -File scripts\register_web_watchdog_task.ps1
+
+Get-ScheduledTask -TaskName "GEBA-ACS-WebWatchdog" | Get-ScheduledTaskInfo</pre>
+  </div>
+  <p>El mail necesita <code>WATCHDOG_SMTP_HOST</code>, <code>_USER</code> y <code>_PASS</code> en el <code>.env</code> (una app password de 16 caracteres, no la clave de la cuenta). Sin eso el watchdog igual levanta el visor: solo no avisa. Para frenar el auto-levantado durante un mantenimiento, crear el archivo <code>web_watchdog.pause</code> en la raíz del repo y borrarlo al terminar.</p>
+
+  <h3>3 · Hay un cambio sin commitear</h3>
+  <p>El <code>docker-compose.yml</code> tiene 56 líneas sin commitear que agregan <code>deuda-actividades</code>. Mientras estén solo en el disco de esta máquina, un <code>git clone</code> en otro lado —o una restauración— levanta la pila <strong>sin ese servicio</strong>, y los socios que pagan la deuda de actividades siguen rebotando en el molinete. Conviene commitearlo.</p>
+</section>
+
+<footer>
+  <p><strong>Cómo se armó esto.</strong> Los datos salen de la máquina de producción el 10-09-2026: <code>docker compose ps</code>, <code>Get-ScheduledTask</code>, el <code>docker-compose.yml</code> vigente, el <code>.env</code> (sin secretos), la clave <code>Run</code> de Docker Desktop y <code>Winlogon</code>. No es una copia del <code>DEPLOY.md</code> — donde los dos difieren, manda lo que se midió en la máquina.</p>
+  <p><strong>Alcance.</strong> Cubre levantar el sistema, no instalarlo de cero: se asume que el repo, el <code>.env</code> y el volumen de Postgres ya existen. Para una instalación nueva, <code>DEPLOY.md</code> (corrigiendo puerto e IP) y el paso 6, <code>xsys_init</code>.</p>
+  <p><strong>Sin probar.</strong> La pista Linux está derivada del compose real, pero no se ejecutó en ningún servidor del club.</p>
+</footer>
+
+</div>
+
+<script>
+(function(){
+  // --- selector de plataforma ---
+  var tabs = {win: document.getElementById('tab-win'), lin: document.getElementById('tab-lin')};
+  var panels = {win: document.getElementById('pista-win'), lin: document.getElementById('pista-lin')};
+
+  function elegir(k){
+    Object.keys(tabs).forEach(function(x){
+      tabs[x].setAttribute('aria-selected', String(x === k));
+      panels[x].hidden = (x !== k);
+    });
+    try { localStorage.setItem('geba_runbook_pista', k); } catch(e){}
+  }
+  Object.keys(tabs).forEach(function(k){
+    tabs[k].addEventListener('click', function(){ elegir(k); });
+  });
+  try {
+    var guardada = localStorage.getItem('geba_runbook_pista');
+    if (guardada === 'lin' || guardada === 'win') elegir(guardada);
+  } catch(e){}
+
+  // --- copiar comandos ---
+  document.querySelectorAll('.cmd-copy').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var pre = btn.closest('.cmd').querySelector('pre');
+      if (!pre) return;
+      // Los <span class="c"> son comentarios: se copian tal cual, son válidos en sh y en PowerShell.
+      var texto = pre.innerText;
+      var ok = function(){
+        var antes = btn.textContent;
+        btn.textContent = 'copiado';
+        setTimeout(function(){ btn.textContent = antes; }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(ok, function(){ fallback(texto, ok); });
+      } else {
+        fallback(texto, ok);
+      }
+    });
+  });
+
+  function fallback(texto, ok){
+    var ta = document.createElement('textarea');
+    ta.value = texto;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); ok(); } catch(e){}
+    document.body.removeChild(ta);
+  }
+})();
+</script>

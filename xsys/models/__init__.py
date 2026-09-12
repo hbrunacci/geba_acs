@@ -7,11 +7,19 @@ from .foto import XsysSocioFoto
 from .novedad import XsysNovedad
 from .pantalla import PantallaPuerta
 from .socio import XsysSocio
+from .socio_edicion import XsysSocioEdicion
 from .sync_state import SyncState
+from .tablero import (
+    XsysDeudaFoto,
+    XsysDeudaMes,
+    XsysDeudaSocio,
+    XsysDeudaSocioMes,
+)
 from .whitelist import XsysWhitelist
 
 __all__ = [
     "XsysSocio",
+    "XsysSocioEdicion",
     "XsysSocioFoto",
     "XsysWhitelist",
     "XsysNovedad",
@@ -22,5 +30,9 @@ __all__ = [
     "XsysContrato",
     "XsysBajaRevision",
     "XsysDeudaActividades",
+    "XsysDeudaFoto",
+    "XsysDeudaMes",
+    "XsysDeudaSocio",
+    "XsysDeudaSocioMes",
     "PantallaPuerta",
 ]

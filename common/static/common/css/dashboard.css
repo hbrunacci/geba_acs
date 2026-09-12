@@ -191,13 +191,25 @@ body.layout {
   font-size: 0.92rem;
 }
 
+/* La pantalla actual dentro de un grupo. Antes no existía: al abrirse el grupo
+   se marcaba activo el grupo entero y, como `.nav__item--active a` alcanza a
+   los anidados, quedaban resaltados TODOS los hijos y no se veía en cuál se
+   estaba parado. Con submenús de nueve ítems eso ya no se podía leer. */
+.nav__subitem--active a {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-weight: 600;
+}
+
 .nav__item a:hover,
 .nav__item a:focus {
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
 }
 
-.nav__item--active a {
+/* Sólo el enlace propio del ítem, no los de su sublista: sin el `>` esto
+   pintaba activo a todo hijo de un grupo abierto. */
+.nav__item--active > a {
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
 }
@@ -219,12 +231,25 @@ body.layout {
   color: rgba(255, 255, 255, 0.65);
 }
 
+/* Es un <button> dentro de un <form>, no un enlace: Django 5 exige POST para
+   cerrar sesión. Se le sacan los estilos propios del botón para que siga
+   leyéndose igual que antes. */
 .sidebar__logout {
   display: inline-flex;
   margin-top: 1rem;
+  padding: 0;
+  border: 0;
+  background: none;
   color: #fff;
   text-decoration: none;
+  font: inherit;
   font-weight: 600;
+  cursor: pointer;
+}
+
+.sidebar__logout:hover,
+.sidebar__logout:focus-visible {
+  text-decoration: underline;
 }
 
 .layout__main {
@@ -487,7 +512,24 @@ body.layout {
    display:none, queda desplegado a pantalla completa e invisible (el .fade lo
    deja en opacidad 0) y se come los clics de toda la página. Pasó con la
    pantalla de concesionarios. Los modales de la casa no usan .fade, así que
-   esto no los toca. */
+   esto no los toca.
+
+   OJO, la guardia cubre sólo los modales con `.fade`, y `.fade` en Bootstrap es
+   opcional: es la animación, nada más. Un modal de Bootstrap escrito SIN ella
+   vuelve a caer en la trampa. Volvió a pasar con el modal de detalle de
+   Tableros, que quedaba desplegado a pantalla completa e invisible y dejaba
+   toda la aplicación sin responder a los clics.
+
+   No se puede generalizar por `.modal-dialog`: los modales de biostar_devices y
+   de intelektron_admin usan esa clase pero NO son de Bootstrap —se abren
+   sacándoles el atributo `hidden` y nunca llevan `.show`—, así que una regla
+   `:not(.show)` los dejaría invisibles para siempre.
+
+   Regla práctica: un modal de Bootstrap nuevo va CON `.fade`, o se arregla en
+   el CSS de su propia pantalla, acotado por id. Ver `#modal-detalle` en
+   xsys/templates/xsys/tableros.html, que además le devuelve el z-index: el 1000
+   de acá arriba lo deja por debajo del backdrop de Bootstrap (1050) y el modal
+   abierto queda tapado por su propio fondo. */
 .modal.fade:not(.show) {
   display: none;
 }

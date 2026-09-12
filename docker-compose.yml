@@ -206,6 +206,62 @@ services:
 
   # Poller del log de eventos de BioStar (accesos faciales por-equipo): única
   # fuente con identidad de facial, ya que en CD_ES colapsan en un controlador.
+  # Libera a los bloqueados por deuda de actividades que ya pagaron.
+  # Corre cada 10 minutos porque consulta SÓLO a las ~163 personas de la tabla
+  # de bloqueo y vuelve en 0,14 s. Nada en xSys desbloqueaba a nadie: la tabla
+  # se cargó a mano desde una planilla y el pago no la tocaba, así que quien
+  # regularizaba seguía rebotando en el molinete hasta que alguien se acordara.
+  # Sólo afloja: libera y baja de bloqueo a aviso, nunca bloquea a nadie nuevo.
+  deuda-actividades:
+    build: .
+    image: geba_acs-web:latest
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acs}
+      POSTGRES_USER: ${POSTGRES_USER:-acs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acs}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      DJANGO_DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
+    command: ["python", "manage.py", "xsys_deuda_actividades_revisar",
+              "--aplicar", "--silencioso",
+              "--interval", "${DEUDA_ACTIVIDADES_INTERVAL:-600}"]
+    # Código en vivo: `docker compose restart deuda-actividades` aplica cambios.
+    volumes:
+      - .:/app
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Foto de deuda del tablero: a las 10 y cada 3 horas hasta las 19.
+  # No es un poller sino un cierre: recorre la cuenta corriente entera de xSys
+  # (~4 min, ~360.000 filas) y por eso cae en horarios previsibles y no a la
+  # deriva de cuándo se reinició el contenedor. La pantalla igual tiene un botón
+  # para adelantarlo cuando alguien necesita el número fresco.
+  deuda-foto:
+    build: .
+    image: geba_acs-web:latest
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acs}
+      POSTGRES_USER: ${POSTGRES_USER:-acs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acs}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      DJANGO_DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
+    command: ["python", "manage.py", "xsys_deuda_foto",
+              "--horas", "${DEUDA_FOTO_HORAS:-10,13,16,19}"]
+    # Código en vivo: `docker compose restart deuda-foto` aplica cambios sin rebuild.
+    volumes:
+      - .:/app
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
   biostar-poller:
     build: .
     image: geba_acs-web:latest

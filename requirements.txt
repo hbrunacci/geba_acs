@@ -7,6 +7,10 @@ djangorestframework==3.15.2
 # y sin variables sueltas. Ver xsys/tests/test_visor_js.py.
 esprima==4.0.1
 gunicorn==23.0.0
+# Exportación a Excel del detalle de deuda del tablero (xsys/services/tableros_excel.py).
+# Se eligió .xlsx real y no CSV porque el archivo se manda a Tesorería con
+# formato de moneda, filtros y totales, cosa que el CSV no puede llevar.
+openpyxl==3.1.5
 whitenoise==6.8.2
 idna==3.11
 pillow==11.3.0
