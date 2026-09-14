@@ -105,6 +105,51 @@
   0 meses / 40 días es la gracia que ya usaban SanMartin_Noble y las tres barreras de
   autos; el resto quedaba en 0/0 y el acceso 22 y Pileta en 2 meses / 10 días.
 
+  --------------------------------------------------------------------------------------
+  ENMIENDA 2026-09-14 19:10 - el acceso 2 (Aldao_Mitre) queda fuera
+  --------------------------------------------------------------------------------------
+        UPDATE CD_Accesos SET Flag_Ult_Cuota_Paga = 0 WHERE Id_Acceso = 2
+
+  Quedan 26 de 27 accesos exigiendo la cuota. La gracia de esa puerta se deja cargada en
+  0 meses / 40 días aunque la bandera esté apagada: el valor no se usa, y si alguien la
+  vuelve a prender sin mirar, evita reproducir el caso de gracia cero.
+
+  Por qué: el programa cliente de la máquina de Aldao aplica SU PROPIA regla sobre
+  Ult_Cuota_Paga y no conoce la exención de las categorías que no pagan. Desde el 12/09
+  rebotó con "_CUOTA VENCIDA" a 60 personas —59 vitalicios + 71 y 1 empleado, 154
+  eventos— que la base habilita.
+
+  Se descartaron las dos alternativas, en este orden:
+
+    - Bandera en 1 (otra sesión, 11:56 del 14/09): no sirvió y se revirtió a las 12:22.
+      Además abre un hueco: la puerta tiene el producto CS en CD_Accesos_Prod, así que
+      con 1 un moroso podría habilitarse por producto.
+
+    - Reinicio del cliente de Aldao (≈17:40 del 14/09): tampoco. A las 18:57:03, ochenta
+      minutos después, NOVOA RICARDO (VITALICIO + 71, ficha 684396) fue rebotado seis
+      veces en trece segundos con "_CUOTA VENCIDA", mientras
+      CF_SCA_ValidarUltCuotaPaga(684396, 2, GETDATE()) devolvía 1. Fue el único intento
+      de un exento en las tres horas posteriores al reinicio, así que el caso quedó
+      aislado y sin margen de interpretación.
+
+  Lo que esto cuesta: por Mitre pueden entrar socios con la cuota vencida. Las otras 26
+  puertas los siguen frenando.
+
+  Lo que NO resuelve: el programa viejo sigue ahí. Mientras esa máquina no se actualice,
+  cualquier regla de acceso nueva que dependa de una función de xSys puede volver a
+  divergir en esa puerta. Síntoma del mismo build: 3.915 rechazos "_CREDENCIAL INVALIDA"
+  en 30 días. Es tema del proveedor.
+
+  Para volver a exigirla, si algún día se actualiza el cliente:
+
+        UPDATE CD_Accesos SET Flag_Ult_Cuota_Paga = 2, Meses_Gracia = 0, Dias_Gracia = 40
+         WHERE Id_Acceso = 2
+
+  y verificar con un vitalicio + 71 EN LA PUERTA antes de darlo por bueno: la bandera
+  sola no prueba nada, porque quien decide ahí es el cliente.
+
+  --------------------------------------------------------------------------------------
+
   Estado anterior, para volver atrás:
 
       flag=2, 0 meses, 40 días : 5, 18, 19, 25
