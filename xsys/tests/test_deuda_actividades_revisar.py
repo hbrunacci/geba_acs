@@ -30,6 +30,7 @@ class _Cursor:
         self._nombres = nombres or {}
         self._actual = []
         self.updates = []
+        self.consultas_deuda = []
         self.rowcount = 1
 
     def execute(self, sql, params=()):
@@ -37,6 +38,7 @@ class _Cursor:
         if limpio.startswith("SELECT Id_Cliente, Cuotas, Bloquea"):
             self._actual = self._bloqueados
         elif "FROM Clientes_CtaCte" in limpio:
+            self.consultas_deuda.append((limpio, list(params)))
             self._actual = self._deuda
         elif "FROM Clientes WHERE Id_Cliente" in limpio:
             self._actual = [(k, v) for k, v in self._nombres.items()]
@@ -127,11 +129,56 @@ class VencidoTests(TestCase):
     def test_la_consulta_filtra_por_fecha_y_por_tipo_de_contrato(self):
         sql = da._sql_cuotas_vencidas(3)
         self.assertIn("CC.Fecha < ?", sql)
+        self.assertIn("CC.Fecha >= ?", sql)
         self.assertIn("Saldo > 0", sql)
         # El mismo mapeo de actividades que el tablero, no una copia propia.
         for tipo in (9, 12, 25):
             self.assertIn(str(tipo), sql)
-        self.assertEqual(sql.count("?"), 4)      # la fecha + los 3 ids
+        self.assertEqual(sql.count("?"), 5)      # las 2 fechas + los 3 ids
+
+
+class EjercicioTests(TestCase):
+    """Sólo cuenta la deuda del ejercicio en curso."""
+
+    def test_el_default_es_el_primero_de_2026(self):
+        self.assertEqual(da.desde_ejercicio(), dt.date(2026, 1, 1))
+
+    def test_se_puede_correr_por_settings(self):
+        with self.settings(XSYS_DEUDA_ACT_DESDE="2027-01-01"):
+            self.assertEqual(da.desde_ejercicio(), dt.date(2027, 1, 1))
+
+    def test_acepta_una_fecha_ya_construida(self):
+        with self.settings(XSYS_DEUDA_ACT_DESDE=dt.date(2025, 3, 1)):
+            self.assertEqual(da.desde_ejercicio(), dt.date(2025, 3, 1))
+
+    def test_la_consulta_recibe_las_dos_fechas_en_orden(self):
+        # Primero el piso del ejercicio, después el corte de lo vencido: si se
+        # invirtieran, la ventana quedaría vacía y nadie tendría deuda nunca.
+        cur, conn, patch = _mock([(100, 4, 1, "")], [], {100: "PEREZ, ANA"})
+        with patch:
+            with self.settings(XSYS_DEUDA_ACT_DESDE="2026-01-01"):
+                da.revisar(aplicar=False)
+        sql, params = cur.consultas_deuda[0]
+        self.assertEqual(params[0], dt.datetime(2026, 1, 1))
+        self.assertGreater(params[1], params[0])
+        self.assertEqual(params[2], 100)
+
+    def test_una_cuota_vieja_ya_no_arrastra_al_bloqueo(self):
+        # El caso que lo destapó: 3 cuotas del año + 1 de 2024 daban 4 y
+        # frenaban. Contando sólo el ejercicio quedan 3 y pasa a aviso.
+        cur, conn, patch = _mock([(896498, 4, 1, "")],
+                                 [(896498, 3, 205600.0, None)],
+                                 {896498: "MEDRANO GUTIERREZ, ESTEBAN"})
+        with patch:
+            inf = da.revisar(aplicar=False)
+        self.assertEqual([c["id_cliente"] for c in inf["bajados_a_aviso"]], [896498])
+        self.assertEqual(inf["siguen_bloqueados"], 0)
+
+    def test_el_informe_dice_desde_cuando_cuenta(self):
+        cur, conn, patch = _mock([], [], {})
+        with patch:
+            inf = da.revisar()
+        self.assertEqual(inf["desde"], "2026-01-01")
 
 
 # --------------------------------------------------------------------------- #

@@ -34,10 +34,19 @@ contrato sale de ``xsys.services.tableros`` en vez de repetirse acá. Si el
 tablero dice que alguien no debe actividades y el molinete lo sigue frenando,
 alguien va a tener razón y no se va a poder saber cuál.
 
-Con una diferencia que sí corresponde: **sólo cuenta lo vencido**. El club
-factura por adelantado, así que el cupón del mes que viene ya existe y figura
-impago sin que nadie deba nada todavía. Bloquear por eso sería frenar a alguien
-por una cuota que aún no venció.
+Con dos diferencias que sí corresponden.
+
+**Sólo cuenta lo vencido.** El club factura por adelantado, así que el cupón del
+mes que viene ya existe y figura impago sin que nadie deba nada todavía.
+Bloquear por eso sería frenar a alguien por una cuota que aún no venció.
+
+**Y sólo cuenta el ejercicio en curso** (``XSYS_DEUDA_ACT_DESDE``, hoy
+01/01/2026). Lo anterior son saldos viejos sin depurar, y arrastraban gente al
+bloqueo por una cuota de hace años mezclada entre las del año. El caso que lo
+destapó: la ficha 896498 tenía cuatro cuotas de hockey —julio, agosto y
+septiembre de 2026, más una suelta de mayo de 2024— y ese cuarto cupón viejo la
+dejaba justo en el umbral. Medido al 15/09/2026, la regla vieja bloqueaba de más
+a 35 personas: 22 no debían nada del año y 13 debían menos de cuatro cuotas.
 
 QUÉ HACE CON CADA CASO
 ----------------------
@@ -88,12 +97,27 @@ def _corte_vencido(hoy: _dt.date) -> _dt.date:
     return _dt.date(hoy.year, hoy.month + 1, 1)
 
 
+def desde_ejercicio() -> _dt.date:
+    """Primer día del ejercicio que se le cobra al socio en el molinete.
+
+    Lo anterior no suma al umbral de bloqueo. Sale de ``settings`` para poder
+    correrla al empezar el ejercicio siguiente sin tocar el código.
+    """
+    crudo = getattr(settings, "XSYS_DEUDA_ACT_DESDE", "2026-01-01")
+    if isinstance(crudo, _dt.date):
+        return crudo
+    return _dt.date.fromisoformat(str(crudo).strip())
+
+
 def _sql_cuotas_vencidas(cantidad_ids: int) -> str:
     """Cuenta comprobantes de ACTIVIDADES impagos y vencidos, por socio.
 
     El JOIN con Contratos es interno y no externo justamente al revés que en el
     tablero: acá sólo interesan los comprobantes que salieron de un contrato de
     actividad, y un comprobante sin contrato nunca lo es.
+
+    La ventana es ``[desde_ejercicio, corte_vencido)``: lo anterior al ejercicio
+    no cuenta para el bloqueo y lo posterior al corte todavía no venció.
     """
     actividades = ",".join(str(i) for i in TIPOS_CON_ACTIVIDADES)
     opcionales = ",".join("'%s'" % t for t in TIPOS_OPCIONALES)
@@ -109,6 +133,7 @@ def _sql_cuotas_vencidas(cantidad_ids: int) -> str:
         WHERE   CC.Importe > 0 AND CC.Saldo > 0
           AND   B.Id_Tipo_Cbte NOT IN ({opcionales})
           AND   O.Id_Tipo_Con IN ({actividades})
+          AND   CC.Fecha >= ?
           AND   CC.Fecha < ?
           AND   CC.Id_Cliente IN ({marcadores})
         GROUP BY CC.Id_Cliente
@@ -133,6 +158,7 @@ def revisar(aplicar: bool = False) -> dict:
     """
     hoy = timezone.localdate()
     corte = _corte_vencido(hoy)
+    desde = desde_ejercicio()
 
     conn = _conectar()
     try:
@@ -148,7 +174,8 @@ def revisar(aplicar: bool = False) -> dict:
 
         ids = [f[0] for f in filas]
         cur.execute(_sql_cuotas_vencidas(len(ids)),
-                    [_dt.datetime(corte.year, corte.month, corte.day)] + ids)
+                    [_dt.datetime(desde.year, desde.month, desde.day),
+                     _dt.datetime(corte.year, corte.month, corte.day)] + ids)
         vivo = {int(r[0]): {"cuotas": int(r[1]), "importe": float(r[2] or 0),
                             "mas_vieja": r[3]} for r in cur.fetchall()}
 
@@ -171,11 +198,11 @@ def revisar(aplicar: bool = False) -> dict:
                 "estado": _decidir(bloquea, hoy_debe["cuotas"]),
             })
 
-        aplicados = _aplicar(cur, conn, casos, hoy) if aplicar else 0
+        aplicados = _aplicar(cur, conn, casos, hoy, desde) if aplicar else 0
     finally:
         conn.close()
 
-    return _informe(hoy, casos, aplicar, aplicados)
+    return _informe(hoy, casos, aplicar, aplicados, desde)
 
 
 def _decidir(bloqueaba: bool, cuotas_hoy: int) -> str:
@@ -195,7 +222,7 @@ def _nombres(cur, ids: list[int]) -> dict:
     return {int(r[0]): (r[1] or "").strip(", ") for r in cur.fetchall()}
 
 
-def _aplicar(cur, conn, casos: list[dict], hoy: _dt.date) -> int:
+def _aplicar(cur, conn, casos: list[dict], hoy: _dt.date, desde: _dt.date) -> int:
     """Escribe los cambios en xSys, todo o nada.
 
     Cada UPDATE lleva su propia condición de seguridad en el WHERE (el estado
@@ -214,7 +241,11 @@ def _aplicar(cur, conn, casos: list[dict], hoy: _dt.date) -> int:
     try:
         for c in a_tocar:
             if c["estado"] == ESTADO_REGULARIZADO:
-                nota = f"{MARCA}: regularizado {sello}, sin deuda de actividades vencida"
+                # Se aclara el ejercicio: puede seguir debiendo cupones viejos,
+                # que no cuentan para el bloqueo. Sin esa palabra, la fila diría
+                # que no debe nada y no siempre es cierto.
+                nota = (f"{MARCA}: regularizado {sello}, "
+                        f"sin deuda de actividades vencida desde {desde.year}")
                 # Fecha_Baja además de Activo: la columna existe justamente para
                 # esto y hasta ahora estaba vacía en las 163 filas. Sin ella, la
                 # tabla dice que alguien está regularizado pero no desde cuándo.
@@ -225,7 +256,7 @@ def _aplicar(cur, conn, casos: list[dict], hoy: _dt.date) -> int:
                     (_nota(c["observacion"], nota), c["id_cliente"]))
             else:
                 nota = (f"{MARCA}: baja a aviso {sello}, "
-                        f"quedan {c['cuotas_hoy']} cuota(s) vencida(s)")
+                        f"quedan {c['cuotas_hoy']} cuota(s) de {desde.year} vencida(s)")
                 cur.execute(
                     "UPDATE CD_Clientes_Deuda_Actividades "
                     "SET Bloquea = 0, Observacion = ? "
@@ -253,12 +284,13 @@ def _nota(anterior: str, nueva: str, tope: int = 200) -> str:
     return texto[:tope]
 
 
-def _informe(hoy, casos, aplicar, aplicados) -> dict:
+def _informe(hoy, casos, aplicar, aplicados, desde=None) -> dict:
     por_estado: dict[str, list] = {}
     for c in casos:
         por_estado.setdefault(c["estado"], []).append(c)
     return {
         "fecha": hoy.isoformat(),
+        "desde": (desde or desde_ejercicio()).isoformat(),
         "aplicar": bool(aplicar),
         "revisados": len(casos),
         "regularizados": por_estado.get(ESTADO_REGULARIZADO, []),

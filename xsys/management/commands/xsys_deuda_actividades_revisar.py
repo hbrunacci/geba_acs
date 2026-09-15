@@ -76,9 +76,10 @@ class Command(BaseCommand):
             return
 
         self.stdout.write(
-            "Revisados %s con bloqueo activo | siguen bloqueados: %s | "
-            "sin cambio: %s" % (inf["revisados"], inf["siguen_bloqueados"],
-                                inf["sin_cambio"]))
+            "Revisados %s con bloqueo activo | cuenta la deuda desde %s | "
+            "siguen bloqueados: %s | sin cambio: %s"
+            % (inf["revisados"], inf.get("desde", "?"), inf["siguen_bloqueados"],
+               inf["sin_cambio"]))
 
         for c in inf["regularizados"]:
             self.stdout.write(self.style.SUCCESS(

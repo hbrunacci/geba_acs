@@ -256,3 +256,14 @@ MSSQL_XSYS = {
 # 0 meses y 40 días.
 XSYS_CUOTA_DIAS_GRACIA = _get_int_env("XSYS_CUOTA_DIAS_GRACIA", 40)
 XSYS_CUOTA_MESES_GRACIA = _get_int_env("XSYS_CUOTA_MESES_GRACIA", 0)
+
+# Desde cuándo cuenta la deuda de actividades para frenar en el molinete. Lo
+# anterior a esta fecha no suma al umbral de bloqueo: son saldos viejos que
+# quedaron sin depurar y que arrastraban a gente al bloqueo por una cuota de
+# hace años mezclada entre las del ejercicio en curso.
+#
+# Es una fecha fija y no "el año en curso" a propósito: con el año en curso,
+# cada 1 de enero la deuda de diciembre dejaría de contar y se liberaría a todo
+# el mundo de golpe. Cuando arranque el ejercicio siguiente hay que moverla a
+# mano, o por la variable de entorno sin necesidad de desplegar.
+XSYS_DEUDA_ACT_DESDE = os.environ.get("XSYS_DEUDA_ACT_DESDE", "2026-01-01")
