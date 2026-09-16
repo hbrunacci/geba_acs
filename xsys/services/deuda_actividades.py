@@ -274,14 +274,21 @@ def _aplicar(cur, conn, casos: list[dict], hoy: _dt.date, desde: _dt.date) -> in
 
 
 def _nota(anterior: str, nueva: str, tope: int = 200) -> str:
-    """Agrega la marca sin perder lo que ya había, y sin pasarse del campo."""
-    anterior = (anterior or "").strip()
-    # Si ya hay una marca automática previa, se reemplaza: interesa la última,
-    # no la historia, que igual queda en el log del proceso.
-    if anterior.startswith(MARCA + ":"):
-        anterior = ""
-    texto = f"{anterior} | {nueva}".strip(" |") if anterior else nueva
-    return texto[:tope]
+    """Agrega la marca sin perder lo que escribió una persona, y sin apilarse.
+
+    Las marcas automáticas previas se descartan estén donde estén, no sólo al
+    principio: interesa la última, y la historia queda en el log del proceso.
+
+    Antes se descartaba sólo la del principio, y como las filas arrancan con el
+    texto de la planilla ("4 cuota(s) de actividades al 25/08/2026 | ...") la
+    marca nunca quedaba primera y se iba apilando. Medido el 15/09/2026, 14
+    filas ya tenían dos marcas y la más larga estaba en 178 de los 200
+    caracteres del campo: la tercera se truncaba.
+    """
+    partes = [p.strip() for p in (anterior or "").split("|")]
+    partes = [p for p in partes if p and not p.lower().startswith(MARCA + ":")]
+    partes.append(nueva)
+    return " | ".join(partes)[:tope]
 
 
 def _informe(hoy, casos, aplicar, aplicados, desde=None) -> dict:

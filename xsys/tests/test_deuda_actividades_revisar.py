@@ -305,6 +305,27 @@ class ObservacionTests(TestCase):
         self.assertEqual(segunda.count("auto:"), 1)
         self.assertIn("regularizado", segunda)
 
+    def test_no_apila_marcas_detras_del_texto_de_la_planilla(self):
+        # La forma real de las filas: el texto de la planilla primero y la marca
+        # después. Como la marca no queda primera, la versión anterior no la
+        # reconocía y se iban sumando hasta desbordar los 200 caracteres.
+        planilla = "4 cuota(s) de actividades al 25/08/2026"
+        con_una = da._nota(planilla, "auto: baja a aviso 12/09/2026, quedan 1 cuota(s)")
+        con_dos = da._nota(con_una, "auto: regularizado 15/09/2026, sin deuda del ejercicio")
+        self.assertEqual(con_dos.count("auto:"), 1)
+        self.assertIn(planilla, con_dos)
+        self.assertIn("regularizado", con_dos)
+        self.assertNotIn("baja a aviso", con_dos)
+
+    def test_las_filas_que_ya_quedaron_apiladas_se_normalizan_solas(self):
+        # Las 14 filas con dos marcas no se tocan a mano: la próxima escritura
+        # las deja con una sola.
+        sucia = ("4 cuota(s) de actividades al 25/08/2026 | auto: baja a aviso 12/09 | "
+                 "auto: regularizado 15/09")
+        salida = da._nota(sucia, "auto: baja a aviso 20/09/2026")
+        self.assertEqual(salida.count("auto:"), 1)
+        self.assertTrue(salida.startswith("4 cuota(s)"))
+
     def test_nunca_desborda_el_campo_de_la_base(self):
         # Observacion es varchar(200) en xSys.
         salida = da._nota("x" * 190, "auto: " + "y" * 120)
