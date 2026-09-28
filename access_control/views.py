@@ -410,6 +410,32 @@ class ParkingClienteLookupView(APIView):
         except (TypeError, ValueError):
             return Response({"detail": "El parámetro 'dni' debe ser numérico."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Decide xSys, con la misma cascada que las barreras de auto, y busca a
+        # la persona ahí mismo: la tabla local de clientes no tiene a todos
+        # (DNI 8426131 no estaba) y el lookup MSSQL de respaldo puede fallar.
+        try:
+            cochera = habilitacion_cochera(doc=str(dni_value))
+        except Exception:
+            logger.warning("parking lookup: xSys no respondió, se usa Ult_Cuota_Paga", exc_info=True)
+            cochera = None
+        if cochera is not None:
+            socio = cochera["socio"]
+            return Response({
+                "found": True,
+                "source": "xsys",
+                "dni": dni_value,
+                "id_cliente": socio["id_cliente"],
+                # Sólo informativo: es el campo manual que ya no decide.
+                "ult_cuota_paga": socio.get("ult_cuota_paga"),
+                "can_enter": cochera["puede_entrar"],
+                "criterio": "xsys",
+                "motivo": cochera["motivo"],
+                "access_until": None,
+            })
+
+        # Respaldo: la regla vieja de Ult_Cuota_Paga + 60 días. Ese campo no
+        # refleja los pagos y rechaza a socios al día, por eso sólo se usa si
+        # xSys no respondió o no tiene a la persona.
         cliente = Cliente.objects.filter(doc_nro=dni_value).values("id_cliente", "doc_nro", "ult_cuota_paga").first()
         source = "local"
 
@@ -425,35 +451,16 @@ class ParkingClienteLookupView(APIView):
 
         ult_cuota_paga = cliente.get("ult_cuota_paga")
         access_status = _parking_quota_access_status(ult_cuota_paga)
-
-        # Decide xSys, con la misma cascada que las barreras de auto. La regla
-        # de Ult_Cuota_Paga + 60 días queda sólo de respaldo si xSys no responde:
-        # ese campo no refleja los pagos y rechazaba a socios al día.
-        criterio, motivo = "ucp", None
-        can_enter = access_status["can_enter"]
-        try:
-            cochera = habilitacion_cochera(doc=str(dni_value))
-        except Exception:
-            logger.warning("parking lookup: xSys no respondió, se usa Ult_Cuota_Paga", exc_info=True)
-            cochera = None
-        if cochera is not None:
-            criterio, motivo = "xsys", cochera["motivo"]
-            can_enter = cochera["puede_entrar"]
-
         return Response({
             "found": True,
             "source": source,
             "dni": cliente.get("doc_nro"),
             "id_cliente": cliente.get("id_cliente"),
             "ult_cuota_paga": ult_cuota_paga.isoformat() if ult_cuota_paga else None,
-            "can_enter": can_enter,
-            "criterio": criterio,
-            "motivo": motivo,
-            # Sólo tiene sentido con la regla de respaldo: xSys no da una fecha.
-            "access_until": (
-                access_status["access_until"].isoformat()
-                if criterio == "ucp" and access_status["access_until"] else None
-            ),
+            "can_enter": access_status["can_enter"],
+            "criterio": "ucp",
+            "motivo": None,
+            "access_until": access_status["access_until"].isoformat() if access_status["access_until"] else None,
         })
 
 

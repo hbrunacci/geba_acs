@@ -425,7 +425,7 @@ class ParkingMovementAPITestCase(BaseAPITestCase):
         )
         self.cochera_mock.side_effect = None
         self.cochera_mock.return_value = {
-            "socio": {"id_cliente": 1},
+            "socio": {"id_cliente": 1, "ult_cuota_paga": "2021-11-01"},
             "puede_entrar": True,
             "motivo": "Producto comprado: COCHERA OMBUES Nro. 67",
             "accesos": [],
@@ -439,11 +439,32 @@ class ParkingMovementAPITestCase(BaseAPITestCase):
         self.assertIsNone(response.data["access_until"])
         self.cochera_mock.assert_called_once_with(doc="30111222")
 
+    def test_lookup_encuentra_en_xsys_aunque_no_este_en_la_tabla_local(self):
+        # DNI 8426131 no estaba en people.Cliente y el lookup MSSQL fallaba:
+        # la consola decía "cliente no encontrado".
+        self.authenticate()
+        Cliente.objects.all().delete()
+        self.cochera_mock.side_effect = None
+        self.cochera_mock.return_value = {
+            "socio": {"id_cliente": 452746, "ult_cuota_paga": "2021-11-01"},
+            "puede_entrar": True,
+            "motivo": "Producto comprado: COCHERA OMBUES Nro. 67",
+            "accesos": [],
+        }
+        with patch("access_control.views.MSSQLClientLookupService.fetch_by_dni") as fallback:
+            response = self.client.get(self.lookup_url, {"dni": 8426131})
+
+        self.assertTrue(response.data["found"])
+        self.assertEqual(response.data["source"], "xsys")
+        self.assertEqual(response.data["id_cliente"], 452746)
+        self.assertTrue(response.data["can_enter"])
+        fallback.assert_not_called()
+
     def test_lookup_xsys_rechaza_aunque_la_cuota_manual_este_al_dia(self):
         self.authenticate()
         self.cochera_mock.side_effect = None
         self.cochera_mock.return_value = {
-            "socio": {"id_cliente": 1},
+            "socio": {"id_cliente": 1, "ult_cuota_paga": "2026-09-01"},
             "puede_entrar": False,
             "motivo": "Cuota social vencida (obligatoria en este acceso)",
             "accesos": [],

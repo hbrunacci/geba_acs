@@ -183,6 +183,11 @@ class MSSQLClientLookupService:
             "DATABASE": self.config["DATABASE"],
             "UID": self.config["USER"],
             "PWD": self.config["PASSWORD"],
+            # El MSSQL usa un certificado autofirmado: con los defaults del
+            # driver 18 el handshake falla ("certificate verify failed"), igual
+            # que en MSSQL_XSYS.
+            "Encrypt": self.config.get("ENCRYPT", "no"),
+            "TrustServerCertificate": self.config.get("TRUST_SERVER_CERTIFICATE", "yes"),
         }
         return ";".join(f"{key}={value}" for key, value in params.items() if value) + ";"
 
