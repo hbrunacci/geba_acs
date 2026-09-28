@@ -247,6 +247,12 @@ MSSQL_XSYS = {
     # procesa en lotes con una pausa breve entre lotes para no saturar la base.
     "WHITELIST_BATCH_SIZE": _get_int_env("MSSQL_XSYS_WHITELIST_BATCH_SIZE", 250),
     "WHITELIST_BATCH_PAUSE": _get_float_env("MSSQL_XSYS_WHITELIST_BATCH_PAUSE", 0.15),
+    # Accesos de xSys que son barreras de AUTO (cochera). La consola de cochera
+    # decide con la misma cascada que esas barreras, no con Ult_Cuota_Paga.
+    # Default: 18 San Martin Auto, 19 SM-Ombues Autos, 25 San Martin Auto2.
+    "COCHERA_ACCESOS": [
+        int(x) for x in os.getenv("MSSQL_XSYS_COCHERA_ACCESOS", "18,19,25").split(",") if x.strip()
+    ],
 }
 
 # Gracia de la cuota para el visor. Tiene que coincidir con Dias_Gracia y

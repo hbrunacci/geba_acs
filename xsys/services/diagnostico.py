@@ -564,6 +564,52 @@ def _conclusion(socio: dict, accesos: list[dict], alertas: list[dict], id_acceso
 
 
 # ------------------------------------------------------------------- entrypoint
+def habilitacion_cochera(*, doc: str | None = None, id_cliente: int | None = None) -> dict[str, Any] | None:
+    """Si la persona entra con el auto, decidido como lo deciden las barreras.
+
+    La consola de cochera usaba ``Clientes.Ult_Cuota_Paga`` + 60 días, y ese
+    campo no refleja los pagos (ver punto 1 del docstring del módulo): un
+    VITALICIO + 71 al día, con cochera comprada, quedaba "sin cuota desde 2021".
+    Acá se corre la cascada de ``CP_SCA_RegistrarAcceso`` sólo sobre los accesos
+    de auto (``MSSQL_XSYS['COCHERA_ACCESOS']``) y entra si alguno lo habilita.
+
+    Devuelve None si la persona no existe en xSys.
+    """
+    if not doc and not id_cliente:
+        raise ValueError("Hay que indicar un documento o un número de socio.")
+    ids_cochera = set(settings.MSSQL_XSYS.get("COCHERA_ACCESOS") or ())
+
+    conn = xsys_connect(settings.MSSQL_XSYS)
+    try:
+        cur = conn.cursor()
+        ahora = server_now(cur)
+        socio = _elegir(_buscar_candidatos(cur, doc=doc, id_cliente=id_cliente))
+        if socio is None:
+            return None
+        accesos = [
+            a for a in _evaluar_accesos(cur, socio["id_cliente"], ahora, socio["activo"])
+            if a["id_acceso"] in ids_cochera
+        ]
+    finally:
+        try:
+            conn.close()
+        except Exception:  # pragma: no cover - cierre best-effort
+            logger.debug("habilitacion_cochera: no se pudo cerrar la conexión", exc_info=True)
+
+    habilitantes = [a for a in accesos if a["habilitado"]]
+    decisivo = habilitantes[0] if habilitantes else (accesos[0] if accesos else None)
+    if decisivo is None:
+        motivo = "No hay accesos de cochera configurados"
+    else:
+        motivo = decisivo["motivo"] + (f": {decisivo['detalle']}" if decisivo["detalle"] else "")
+    return {
+        "socio": socio,
+        "puede_entrar": bool(habilitantes),
+        "motivo": motivo,
+        "accesos": accesos,
+    }
+
+
 def diagnosticar(*, doc: str | None = None, id_cliente: int | None = None) -> dict[str, Any]:
     """Diagnóstico completo de por qué una persona entra o no.
 

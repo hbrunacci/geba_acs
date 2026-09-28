@@ -255,3 +255,43 @@ class EntradaTests(TestCase):
     def test_exige_documento_o_id(self):
         with self.assertRaises(ValueError):
             dx.diagnosticar()
+
+
+class HabilitacionCocheraTests(TestCase):
+    """La consola de cochera decide con la cascada de las barreras de auto."""
+
+    def _correr(self, accesos, socio=None):
+        from unittest.mock import MagicMock, patch
+
+        socio = socio if socio is not None else _socio()
+        with patch.object(dx, "xsys_connect", return_value=MagicMock()), \
+                patch.object(dx, "server_now", return_value=datetime(2026, 9, 28, 16, 0)), \
+                patch.object(dx, "_buscar_candidatos", return_value=[socio] if socio else []), \
+                patch.object(dx, "_evaluar_accesos", return_value=accesos), \
+                self.settings(MSSQL_XSYS={"COCHERA_ACCESOS": [18, 19, 25]}):
+            return dx.habilitacion_cochera(doc="8426131")
+
+    def test_entra_si_alguna_barrera_de_auto_lo_habilita(self):
+        # DNI 8426131: San Martin Auto lo habilita por la cochera comprada,
+        # las otras dos barreras de auto no.
+        r = self._correr([
+            _acceso(id_acceso=18, habilitado=True, motivo="Producto comprado",
+                    detalle="COCHERA OMBUES Nro. 67"),
+            _acceso(id_acceso=19),
+            _acceso(id_acceso=25),
+        ])
+        self.assertTrue(r["puede_entrar"])
+        self.assertEqual(r["motivo"], "Producto comprado: COCHERA OMBUES Nro. 67")
+
+    def test_ignora_los_accesos_peatonales(self):
+        # Habilitado en el molinete de Cuota Social no alcanza para el auto.
+        r = self._correr([
+            _acceso(id_acceso=22, habilitado=True, motivo="Categoría habilitante"),
+            _acceso(id_acceso=18, motivo="Cuota social vencida (obligatoria en este acceso)"),
+        ])
+        self.assertFalse(r["puede_entrar"])
+        self.assertEqual([a["id_acceso"] for a in r["accesos"]], [18])
+        self.assertEqual(r["motivo"], "Cuota social vencida (obligatoria en este acceso)")
+
+    def test_persona_inexistente_devuelve_none(self):
+        self.assertIsNone(self._correr([], socio={}))

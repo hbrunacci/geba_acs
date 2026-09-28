@@ -245,8 +245,14 @@
         return;
       }
       const statusText = result.can_enter ? 'Puede ingresar a la institución.' : 'No puede ingresar a la institución.';
-      const accessUntil = result.access_until ? ' (Vigente hasta: ' + formatDate(result.access_until) + ')' : '';
-      setQuotaStatus('Última cuota paga: ' + formatDate(result.ult_cuota_paga) + ' · ' + statusText + accessUntil, result.can_enter);
+      if (result.criterio === 'xsys') {
+        // Decide xSys como las barreras de auto; la cuota manual ya no manda.
+        setQuotaStatus(statusText + (result.motivo ? ' (' + result.motivo + ')' : ''), result.can_enter);
+      } else {
+        const accessUntil = result.access_until ? ' (Vigente hasta: ' + formatDate(result.access_until) + ')' : '';
+        setQuotaStatus('Última cuota paga: ' + formatDate(result.ult_cuota_paga) + ' · ' + statusText + accessUntil
+          + ' · xSys no respondió, verificar manualmente.', result.can_enter);
+      }
       showMessage('Cliente encontrado.', result.can_enter ? 'success' : 'warning');
     } catch (error) {
       showMessage(error.message, 'danger');

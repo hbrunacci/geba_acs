@@ -410,6 +410,56 @@ class ParkingMovementAPITestCase(BaseAPITestCase):
         self.movements_url = reverse("parking_movements_api")
         self.mark_exit_url_name = "parking_movement_mark_exit_api"
         Cliente.objects.create(id_cliente=1, doc_nro=30111222, ult_cuota_paga=timezone.now())
+        # Por defecto xSys "no responde": los tests de la regla de respaldo no
+        # salen a la red. Los de xSys reemplazan el side_effect.
+        patcher = patch("access_control.views.habilitacion_cochera", side_effect=OSError("sin red"))
+        self.cochera_mock = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_lookup_decide_xsys_aunque_la_cuota_manual_este_vencida(self):
+        # Caso real (DNI 8426131): VITALICIO + 71 con Ult_Cuota_Paga 2021-11-01
+        # y cochera comprada. La barrera lo deja pasar; la consola no debía frenarlo.
+        self.authenticate()
+        Cliente.objects.filter(doc_nro=30111222).update(
+            ult_cuota_paga=timezone.make_aware(datetime(2021, 11, 1))
+        )
+        self.cochera_mock.side_effect = None
+        self.cochera_mock.return_value = {
+            "socio": {"id_cliente": 1},
+            "puede_entrar": True,
+            "motivo": "Producto comprado: COCHERA OMBUES Nro. 67",
+            "accesos": [],
+        }
+        response = self.client.get(self.lookup_url, {"dni": 30111222})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["can_enter"])
+        self.assertEqual(response.data["criterio"], "xsys")
+        self.assertEqual(response.data["motivo"], "Producto comprado: COCHERA OMBUES Nro. 67")
+        self.assertIsNone(response.data["access_until"])
+        self.cochera_mock.assert_called_once_with(doc="30111222")
+
+    def test_lookup_xsys_rechaza_aunque_la_cuota_manual_este_al_dia(self):
+        self.authenticate()
+        self.cochera_mock.side_effect = None
+        self.cochera_mock.return_value = {
+            "socio": {"id_cliente": 1},
+            "puede_entrar": False,
+            "motivo": "Cuota social vencida (obligatoria en este acceso)",
+            "accesos": [],
+        }
+        response = self.client.get(self.lookup_url, {"dni": 30111222})
+
+        self.assertFalse(response.data["can_enter"])
+        self.assertEqual(response.data["criterio"], "xsys")
+
+    def test_lookup_usa_la_cuota_si_xsys_no_responde(self):
+        self.authenticate()
+        response = self.client.get(self.lookup_url, {"dni": 30111222})
+
+        self.assertEqual(response.data["criterio"], "ucp")
+        self.assertTrue(response.data["can_enter"])
+        self.assertIsNotNone(response.data["access_until"])
 
     def test_lookup_requires_dni(self):
         self.authenticate()

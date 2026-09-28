@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import timedelta
 
@@ -27,6 +28,9 @@ from people.models import Cliente
 
 from access_control.services import ClientLookupError, MSSQLClientLookupService
 from access_control.services.diag_facial import DiagFacialError, diagnosticar
+from xsys.services.diagnostico import habilitacion_cochera
+
+logger = logging.getLogger(__name__)
 from access_control.services.intelectron.api3000_console import COMMAND_CATALOG
 from xsys.models import XsysAcceso, XsysControlador, XsysMotivo, XsysSocio
 
@@ -421,14 +425,35 @@ class ParkingClienteLookupView(APIView):
 
         ult_cuota_paga = cliente.get("ult_cuota_paga")
         access_status = _parking_quota_access_status(ult_cuota_paga)
+
+        # Decide xSys, con la misma cascada que las barreras de auto. La regla
+        # de Ult_Cuota_Paga + 60 días queda sólo de respaldo si xSys no responde:
+        # ese campo no refleja los pagos y rechazaba a socios al día.
+        criterio, motivo = "ucp", None
+        can_enter = access_status["can_enter"]
+        try:
+            cochera = habilitacion_cochera(doc=str(dni_value))
+        except Exception:
+            logger.warning("parking lookup: xSys no respondió, se usa Ult_Cuota_Paga", exc_info=True)
+            cochera = None
+        if cochera is not None:
+            criterio, motivo = "xsys", cochera["motivo"]
+            can_enter = cochera["puede_entrar"]
+
         return Response({
             "found": True,
             "source": source,
             "dni": cliente.get("doc_nro"),
             "id_cliente": cliente.get("id_cliente"),
             "ult_cuota_paga": ult_cuota_paga.isoformat() if ult_cuota_paga else None,
-            "can_enter": access_status["can_enter"],
-            "access_until": access_status["access_until"].isoformat() if access_status["access_until"] else None,
+            "can_enter": can_enter,
+            "criterio": criterio,
+            "motivo": motivo,
+            # Sólo tiene sentido con la regla de respaldo: xSys no da una fecha.
+            "access_until": (
+                access_status["access_until"].isoformat()
+                if criterio == "ucp" and access_status["access_until"] else None
+            ),
         })
 
 
