@@ -124,6 +124,42 @@ def enroll_one(
             "reason": f"rechazo persistente por tamaño hasta {sizes[-1]}px (code {last[0]})"}
 
 
+def _aware(fecha):
+    """``Clientes_Fotos.Fecha`` / ``LSTMODDT`` vienen naive en hora local."""
+    from django.utils import timezone
+
+    if fecha is None or timezone.is_aware(fecha):
+        return fecha
+    return timezone.make_aware(fecha)
+
+
+def registrar_enrolamiento(id_cliente: int, foto_fecha) -> None:
+    """Anota qué foto quedó cargada, para detectar después si quedó vieja."""
+    from django.utils import timezone
+
+    from access_control.models import FaceEnrollment
+
+    FaceEnrollment.objects.update_or_create(
+        id_cliente=int(id_cliente),
+        defaults={"foto_fecha": _aware(foto_fecha), "enrolado_at": timezone.now()},
+    )
+
+
+def _foto_desactualizada(foto_fecha, enrolada, lstmoddt) -> bool:
+    """¿La foto vigente de xSys es más nueva que el rostro que tiene BioStar?
+
+    Si geba_acs lo enroló, se compara contra la foto que cargó (exacto). Si no
+    (lo enroló CleverSoft, o antes de existir el registro), contra la última
+    modificación del usuario en BioStar: no es sólo el rostro, así que puede
+    dejar pasar alguno, pero nunca re-enrola uno que está al día.
+    """
+    if foto_fecha is None:
+        return False
+    if enrolada is not None:
+        return foto_fecha > enrolada
+    return lstmoddt is not None and foto_fecha > lstmoddt
+
+
 def build_candidates(cur, prefix: str) -> dict:
     """Arma la lista de trabajo consultando xSys + el linked server de BioStar.
 
@@ -131,24 +167,32 @@ def build_candidates(cur, prefix: str) -> dict:
     menos una foto en ``Clientes_Fotos``. Se clasifican contra ``T_USR``/``T_CRDT``:
       - no existe en BioStar → crear + enrolar
       - existe sin rostro (o DEL='Y') → enrolar
-      - existe con rostro → se excluye (ya está)
-    Devuelve {universe, to_create:[...], to_enroll:[...]} (cada item {id_cliente,name,exists}).
+      - existe con rostro pero la foto de xSys es más nueva → re-enrolar
+      - existe con rostro al día → se excluye (ya está)
+    Devuelve {universe, to_create, to_enroll, to_refresh} (cada item
+    {id_cliente, name, exists, foto_fecha}).
     """
+    from access_control.models import FaceEnrollment
     from access_control.services.diag_facial import _rows
 
     universe: dict[int, str] = {}
+    fotos: dict[int, object] = {}
     for r in _rows(
         cur,
         """SELECT LB.Id_Cliente AS cid,
-                  LTRIM(RTRIM(C.Apellido)) + ' ' + LTRIM(RTRIM(C.Nombre)) AS nombre
+                  LTRIM(RTRIM(C.Apellido)) + ' ' + LTRIM(RTRIM(C.Nombre)) AS nombre,
+                  F.foto_fecha
            FROM CD_Lista_Blanca_Suprema LB
            JOIN Clientes C ON C.Id_Cliente = LB.Id_Cliente
-           WHERE EXISTS (SELECT 1 FROM Clientes_Fotos F WHERE F.Id_Cliente = LB.Id_Cliente)""",
+           JOIN (SELECT Id_Cliente, MAX(Fecha) AS foto_fecha FROM Clientes_Fotos
+                 GROUP BY Id_Cliente) F ON F.Id_Cliente = LB.Id_Cliente""",
     ):
         try:
-            universe[int(r["cid"])] = (r.get("nombre") or "").strip()
+            cid = int(r["cid"])
         except (TypeError, ValueError):
             continue
+        universe[cid] = (r.get("nombre") or "").strip()
+        fotos[cid] = _aware(r.get("foto_fecha"))
 
     rostros_by_uid: dict[int, int] = {}
     for r in _rows(cur, f"SELECT USRUID, COUNT(*) AS n FROM {prefix}.T_CRDT GROUP BY USRUID"):
@@ -158,7 +202,7 @@ def build_candidates(cur, prefix: str) -> dict:
             continue
 
     state: dict[int, dict] = {}
-    for u in _rows(cur, f"SELECT USRID, USRUID, DEL FROM {prefix}.T_USR"):
+    for u in _rows(cur, f"SELECT USRID, USRUID, DEL, LSTMODDT FROM {prefix}.T_USR"):
         try:
             cid = int(u["USRID"])
         except (TypeError, ValueError):
@@ -170,28 +214,44 @@ def build_candidates(cur, prefix: str) -> dict:
         state[cid] = {
             "rostros": rostros_by_uid.get(uid, 0),
             "del": str(u.get("DEL") or "").upper() == "Y",
+            "lstmoddt": _aware(u.get("LSTMODDT")),
         }
 
-    to_create, to_enroll = [], []
+    enroladas = dict(
+        FaceEnrollment.objects.filter(id_cliente__in=list(universe))
+        .values_list("id_cliente", "foto_fecha")
+    )
+
+    to_create, to_enroll, to_refresh = [], [], []
     for cid, nombre in universe.items():
         st = state.get(cid)
+        item = {"id_cliente": cid, "name": nombre, "foto_fecha": fotos.get(cid)}
         if st is None:
-            to_create.append({"id_cliente": cid, "name": nombre, "exists": False})
+            to_create.append({**item, "exists": False})
         elif st["del"] or st["rostros"] == 0:
-            to_enroll.append({"id_cliente": cid, "name": nombre, "exists": True})
+            to_enroll.append({**item, "exists": True})
+        elif _foto_desactualizada(fotos.get(cid), enroladas.get(cid), st["lstmoddt"]):
+            to_refresh.append({**item, "exists": True})
 
-    return {"universe": len(universe), "to_create": to_create, "to_enroll": to_enroll}
+    return {"universe": len(universe), "to_create": to_create,
+            "to_enroll": to_enroll, "to_refresh": to_refresh}
 
 
 def fetch_photo(cur, id_cliente: int) -> bytes | None:
     """Última foto (más reciente) del socio desde Clientes_Fotos, como bytes crudos."""
+    foto, _fecha = fetch_photo_y_fecha(cur, id_cliente)
+    return foto
+
+
+def fetch_photo_y_fecha(cur, id_cliente: int) -> tuple[bytes | None, object]:
+    """Como ``fetch_photo``, más la ``Fecha`` de esa foto (para registrarla)."""
     cur.execute(
-        f"SELECT TOP 1 Foto FROM Clientes_Fotos WHERE Id_Cliente = {int(id_cliente)} ORDER BY Fecha DESC"
+        f"SELECT TOP 1 Foto, Fecha FROM Clientes_Fotos WHERE Id_Cliente = {int(id_cliente)} ORDER BY Fecha DESC"
     )
     row = cur.fetchone()
     if not row or row[0] is None:
-        return None
-    return bytes(row[0])
+        return None, None
+    return bytes(row[0]), row[1]
 
 
 def push_faces_affected(changed_ids, *, mode: str | None = None, max_per_run: int = 200) -> dict:
@@ -260,6 +320,8 @@ def push_faces_affected(changed_ids, *, mode: str | None = None, max_per_run: in
                 result["creados"] += 1
             else:
                 result["errores"] += 1
+            if action in ("enrolled", "created"):
+                registrar_enrolamiento(cid, foto.fecha)
         except Exception as exc:  # pragma: no cover - red/BioStar
             result["errores"] += 1
             logger.warning("biostar_face_sync[on]: %s falló: %s", cid, str(exc)[:120])

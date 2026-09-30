@@ -49,12 +49,17 @@ class DiagFacialError(RuntimeError):
 
 
 def conectar() -> tuple[Any, str]:
-    """Devuelve (conexión, driver_usado). Prueba pyodbc y cae a pymssql."""
+    """Devuelve (conexión, driver_usado). Prueba pyodbc y cae a pymssql.
 
+    Usa ``MSSQL_XSYS_BIOSTAR``: todo lo de este módulo lee el linked server de
+    BioStar, y el login general de la app no tiene permiso ahí.
+    """
+
+    cfg = getattr(settings, "MSSQL_XSYS_BIOSTAR", None) or getattr(settings, "MSSQL_XSYS", {}) or {}
     try:
         from xsys.services.mssql import connect as _pyodbc_connect
 
-        return _pyodbc_connect(), "pyodbc"
+        return _pyodbc_connect(cfg), "pyodbc"
     except Exception as exc_pyodbc:
         try:
             import pymssql
@@ -63,7 +68,6 @@ def conectar() -> tuple[Any, str]:
                 f"No hay pyodbc utilizable ({exc_pyodbc}) ni pymssql instalado."
             ) from exc_pyodbc
 
-        cfg = getattr(settings, "MSSQL_XSYS", {}) or {}
         faltan = [k for k in ("HOST", "DATABASE", "USER", "PASSWORD") if not cfg.get(k)]
         if faltan:
             raise DiagFacialError("Faltan parámetros en MSSQL_XSYS: " + ", ".join(faltan))

@@ -2,7 +2,10 @@
 
 Toma los socios habilitados (lista blanca Suprema / Cuota Social) con foto que NO
 tienen rostro en BioStar, y los enrola (creándolos si no existen), redimensionando la
-imagen para esquivar el 500 'stack space' de BioStar con fotos grandes.
+imagen para esquivar el 500 'stack space' de BioStar con fotos grandes. También
+re-enrola a los que tienen rostro pero cuya foto en xSys es más nueva: el cambio de
+foto se empuja en vivo desde ``xsys_fotos_poll``, pero si ese intento se pierde
+(socio todavía no habilitado, BioStar caído) este backfill lo recupera.
 
 Reemplaza el enrolamiento de CleverSoft (detenido). Es reanudable: cada corrida
 recalcula quién falta, así que los ya hechos se excluyen solos.
@@ -76,18 +79,22 @@ class Command(BaseCommand):
 
         to_enroll = cand["to_enroll"]
         to_create = cand["to_create"]
+        to_refresh = cand["to_refresh"]
         if only is not None:
             to_enroll = [w for w in to_enroll if w["id_cliente"] == only]
             to_create = [w for w in to_create if w["id_cliente"] == only]
+            to_refresh = [w for w in to_refresh if w["id_cliente"] == only]
 
-        # Existentes-sin-rostro primero (más rápido), después las altas.
-        work = to_enroll + to_create
+        # Existentes-sin-rostro primero (más rápido), después las altas y al final
+        # los que tienen un rostro viejo (ésos al menos ya entran con algo).
+        work = to_enroll + to_create + to_refresh
         if limit and limit > 0:
             work = work[:limit]
 
         self.stdout.write(self.style.SUCCESS(
             f"[{driver}] universo habilitados+foto={cand['universe']} | "
             f"a enrolar (existen sin rostro)={len(to_enroll)} | a crear (no existen)={len(to_create)} | "
+            f"foto nueva (rostro viejo)={len(to_refresh)} | "
             f"esta corrida={len(work)} (mode={mode})"
         ))
 
@@ -95,7 +102,8 @@ class Command(BaseCommand):
             muestra = work[:15]
             for w in muestra:
                 self.stdout.write("  %-8s %-6s %s" % (
-                    w["id_cliente"], "enrol" if w["exists"] else "crear", w["name"][:40]))
+                    w["id_cliente"], ("refresh" if w in to_refresh else "enrol") if w["exists"] else "crear",
+                    w["name"][:40]))
             if len(work) > len(muestra):
                 self.stdout.write(f"  ... y {len(work) - len(muestra)} más")
             self.stdout.write("DRYRUN: no se escribió nada.")
@@ -115,7 +123,7 @@ class Command(BaseCommand):
             nonlocal conn, cur
             for intento in (1, 2):
                 try:
-                    return fs.fetch_photo(cur, cid)
+                    return fs.fetch_photo_y_fecha(cur, cid)
                 except Exception as exc:
                     if intento == 2:
                         raise
@@ -131,7 +139,7 @@ class Command(BaseCommand):
         for i, w in enumerate(work, 1):
             cid = w["id_cliente"]
             try:
-                foto = foto_resiliente(cid)
+                foto, foto_fecha = foto_resiliente(cid)
             except Exception as exc:
                 counts["failed"] += 1
                 fails.append((cid, f"foto: {exc}"))
@@ -154,6 +162,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(
                     "  [%d/%d] %s FALLÓ: %s" % (i, total, cid, res.get("reason", ""))))
             else:
+                fs.registrar_enrolamiento(cid, foto_fecha)
                 self.stdout.write("  [%d/%d] %s %s (px %s)" % (
                     i, total, cid, action, res.get("maxside")))
             self.stdout.flush()

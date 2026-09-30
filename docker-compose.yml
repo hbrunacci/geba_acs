@@ -299,11 +299,8 @@ services:
       POSTGRES_PORT: "5432"
       DJANGO_DEBUG: "0"
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
-      # Este servicio lee el linked server de BioStar ([10.0.0.27]) desde xSys y
-      # el login geba_acs no tiene login-mapping ahí (error 7416): desde que el
-      # .env pasó a geba_acs (07/09/2026) no enrolaba a nadie. Usa sa sólo acá.
-      MSSQL_XSYS_USER: ${MSSQL_XSYS_FACE_SYNC_USER:-sa}
-      MSSQL_XSYS_PASSWORD: ${MSSQL_XSYS_FACE_SYNC_PASSWORD:?falta MSSQL_XSYS_FACE_SYNC_PASSWORD en .env}
+      # Lee el linked server de BioStar con MSSQL_XSYS_BIOSTAR_USER/PASSWORD del
+      # .env (settings.MSSQL_XSYS_BIOSTAR): geba_acs no tiene login-mapping ahí.
     # OJO: bloque `>` folded. Todas las lineas van al MISMO nivel de indentacion,
     # si no YAML conserva los saltos y sh revienta ("Syntax error: || unexpected").
     command: >

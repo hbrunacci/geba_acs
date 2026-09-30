@@ -255,6 +255,19 @@ MSSQL_XSYS = {
     ],
 }
 
+# Misma conexión, pero con un login que puede leer el linked server de BioStar
+# ([10.0.0.27].[BIOSTAR_AC]) desde xSys. geba_acs no tiene login-mapping ahí
+# (error 7416), así que el diagnóstico facial y el enrolamiento de rostros usan
+# éste. Sin MSSQL_XSYS_BIOSTAR_USER cae al login general.
+MSSQL_XSYS_BIOSTAR = {
+    **MSSQL_XSYS,
+    "USER": os.getenv("MSSQL_XSYS_BIOSTAR_USER") or MSSQL_XSYS["USER"],
+    "PASSWORD": (
+        os.getenv("MSSQL_XSYS_BIOSTAR_PASSWORD") if os.getenv("MSSQL_XSYS_BIOSTAR_USER")
+        else MSSQL_XSYS["PASSWORD"]
+    ),
+}
+
 # Gracia de la cuota para el visor. Tiene que coincidir con Dias_Gracia y
 # Meses_Gracia de CD_Accesos en los accesos que exigen cuota, porque
 # xsys/services/cuota.py replica la fórmula de CF_SCA_ValidarUltCuotaPaga: fin
