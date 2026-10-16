@@ -68,6 +68,8 @@
     .caviso { font-weight: 700; font-size: clamp(11px, 1.05vw, 16px); padding: 4px 12px; border-radius: 8px; max-width: 100%; align-self: flex-start; background: rgba(88,166,255,.18); color: #79c0ff; border: 1px solid #58a6ff; }
     /* Ámbar, como el estado "anomalía": la persona pasa, pero hay algo que
        corregir. No es rojo porque no es un rechazo. */
+    .capto { font-weight: 700; font-size: clamp(11px, 1.05vw, 16px); padding: 4px 12px; border-radius: 8px; max-width: 100%; align-self: flex-start; background: rgba(219,97,162,.16); color: #f778ba; border: 1px solid #db61a2; }
+    .hapto { color: #f778ba; font-weight: 700; }
     .crevision { font-weight: 700; font-size: clamp(11px, 1.05vw, 16px); padding: 4px 12px; border-radius: 8px; max-width: 100%; align-self: flex-start; background: rgba(210,153,34,.18); color: #d29922; border: 1px solid #d29922; }
     /* Contratos vigentes del socio + estado de pago de cada uno. */
     .cctr { margin-top: 7px; width: 100%; display: flex; flex-direction: column; gap: 3px; }
@@ -499,6 +501,12 @@
       var revisionHtml = ev.baja_en_revision
         ? '<div class="crevision">&#9888; Ficha con la baja mal cargada — indicarle que pase por oficina de socios</div>'
         : "";
+      // Deportista sin el apto físico al día. Es una etiqueta y no cambia el
+      // color del marco: el amarillo queda para la deuda y las anomalías. El de
+      // la puerta lo invita a pasar por Socios a regularizarlo.
+      var aptoHtml = (ev.apto_fisico && ev.apto_fisico.texto)
+        ? '<div class="capto">&#9877; ' + esc(ev.apto_fisico.texto) + ' — invitar a pasar por Socios</div>'
+        : "";
       // Barreras de auto: cuántas veces entró hoy con ESTA misma habilitación.
       // Sólo se muestra ahí; en los molinetes peatonales no aporta.
       var ingresosHtml = (ev.es_barrera && ev.ingresos_hoy)
@@ -513,6 +521,7 @@
             '<div class="cmsg ' + clase + '">' + esc(ev.mensaje || (ev.permitido ? "Permitido" : "Denegado")) + '</div>' +
             cocheraHTML(ev, "ccoch") +
             revisionHtml +
+            aptoHtml +
             avisoHtml +
           '</div>' +
         '</div>' +
@@ -540,7 +549,9 @@
           '<div class="hsub">' + sub + '</div>' +
           '<div class="hcat' + (cat ? '' : ' vacia') + '">' + esc(cat || "SIN CATEGORÍA") + '</div>' +
           cocheraHTML(ev, "hcoch") +
-          '<div class="hmsg ' + clase + '">' + esc(ev.mensaje || "") + '</div></div>' +
+          '<div class="hmsg ' + clase + '">' + esc(ev.mensaje || "") +
+            ((ev.apto_fisico && ev.apto_fisico.texto) ? ' <span class="hapto" title="' + esc(ev.apto_fisico.texto) + '">&middot; ' + (ev.apto_fisico.estado === "vencido" ? "Apto vencido" : "Sin apto") + '</span>' : "") +
+          '</div></div>' +
           '<div class="htime">' + esc(fechaCorta(ev.fecha)) + '<br>' + esc(hora(ev.fecha)) + '</div></div>';
       }).join("");
     }

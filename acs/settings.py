@@ -286,3 +286,20 @@ XSYS_CUOTA_MESES_GRACIA = _get_int_env("XSYS_CUOTA_MESES_GRACIA", 0)
 # el mundo de golpe. Cuando arranque el ejercicio siguiente hay que moverla a
 # mano, o por la variable de entorno sin necesidad de desplegar.
 XSYS_DEUDA_ACT_DESDE = os.environ.get("XSYS_DEUDA_ACT_DESDE", "2026-01-01")
+
+# Apto físico: familias de producto (``Prod_Familias.Id_Familia``) cuyos
+# inscriptos tienen que tener el apto al día. A quien tenga un contrato vigente
+# de alguna de ellas, el monitor de la puerta le muestra la etiqueta "Sin Apto
+# Físico" o "Apto Físico vencido". No frena a nadie: sólo avisa.
+#
+# Son todas las familias deportivas (decisión del 15/10/2026): tenis, golf,
+# natación, fútbol, paleta, hockey, escuela multideportiva, gimnasia societaria,
+# artes marciales, rugby, básquet, waterpolo, vóley, esgrima, atletismo,
+# gimnasia artística, escuelas deportivas, paddle, patín y natatorio. Falta el
+# gimnasio: hoy en xSys no hay contrato vigente que identifique a quien lo usa.
+XSYS_APTO_FAMILIAS = tuple(
+    int(f) for f in os.environ.get(
+        "XSYS_APTO_FAMILIAS",
+        "20,21,22,23,25,27,28,30,31,33,34,35,36,37,38,39,40,41,42,43,44,60,63",
+    ).split(",") if f.strip()
+)

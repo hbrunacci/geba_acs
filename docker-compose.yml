@@ -235,6 +235,31 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Apto físico de los deportistas (contrato vigente en una familia deportiva),
+  # para la etiqueta del monitor de la puerta. Sólo lee de xSys: ~6.700 personas
+  # en 0,13 s, así que cada 10 minutos alcanza y sobra.
+  apto-fisico:
+    build: .
+    image: geba_acs-web:latest
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acs}
+      POSTGRES_USER: ${POSTGRES_USER:-acs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acs}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      DJANGO_DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
+    command: ["python", "manage.py", "xsys_apto_fisico", "--silencioso",
+              "--interval", "${APTO_FISICO_INTERVAL:-600}"]
+    # Código en vivo: `docker compose restart apto-fisico` aplica cambios.
+    volumes:
+      - .:/app
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Foto de deuda del tablero: a las 10 y cada 3 horas hasta las 19.
   # No es un poller sino un cierre: recorre la cuenta corriente entera de xSys
   # (~4 min, ~360.000 filas) y por eso cae en horarios previsibles y no a la

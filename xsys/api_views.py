@@ -27,6 +27,7 @@ from xsys.models import (
     XsysContrato,
     XsysControlador,
     XsysMotivo,
+    XsysAptoFisico,
     XsysDeudaActividades,
     XsysSocio,
     XsysSocioFoto,
@@ -484,6 +485,28 @@ def _deuda_actividades(cids) -> dict:
     }
 
 
+def _apto_fisico(cids) -> dict:
+    """Deportistas sin el apto físico al día, para la etiqueta del visor.
+
+    Sólo figuran en la copia los que tienen un deporte vigente: al resto no se
+    le controla. Los que lo tienen al día no vuelven, así el payload no carga
+    nada para ellos. Es una etiqueta y no cambia el color: el amarillo queda
+    para la deuda y las anomalías (decisión del 15/10/2026, porque 9 de cada 10
+    deportistas que entran todavía no lo presentaron).
+    """
+    ids = {int(c) for c in cids if c}
+    if not ids:
+        return {}
+    hoy = timezone.localdate()
+    return {
+        a.id_cliente: {"estado": a.estado(hoy), "texto": a.texto(hoy),
+                       "vence": a.vence.isoformat() if a.vence else None,
+                       "deportes": a.deportes}
+        for a in XsysAptoFisico.objects.filter(id_cliente__in=ids)
+        if a.estado(hoy) != "vigente"
+    }
+
+
 def _bajas_en_revision(cids) -> set[int]:
     """Socios que pasan pese a figurar dados de baja, porque la baja está en duda.
 
@@ -599,7 +622,7 @@ def _mensaje_no_registrado(id_tarjeta: str) -> str:
     return f"Credencial no registrada: {tag}"
 
 
-def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None, deuda_act: dict | None = None) -> dict:
+def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None, deuda_act: dict | None = None, apto: dict | None = None) -> dict:
     socio = socios.get(ev.id_cliente)
     tiene_foto = ev.id_cliente in fotos
     # Mensaje original de xSys (motivo de pantalla u observación).
@@ -719,6 +742,8 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         "baja_en_revision": revision,
         "concesionario_alerta": (conc or {}).get("motivo", ""),
         "deuda_actividades": (deuda.cuotas if deuda else None),
+        # Deportista sin el apto al día: etiqueta aparte, no toca estado ni mensaje.
+        "apto_fisico": (apto or {}).get(ev.id_cliente),
         "concesionario_empresa": (conc or {}).get("empresa", ""),
         "es_barrera": bool(barreras and ev.id_acceso in barreras),
         # En una barrera el producto que habilita es la cochera. Se manda sólo
@@ -734,7 +759,7 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
     }
 
 
-def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None, deuda_act: dict | None = None) -> dict:
+def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None, deuda_act: dict | None = None, apto: dict | None = None) -> dict:
     """Payload de un acceso facial BioStar, con la MISMA forma que _evento_payload
     para poder fusionarlo en la misma columna del visor. La identidad del equipo
     (``facial_equipo``) es el dato que xSys no tiene: viene del log de BioStar."""
@@ -808,6 +833,8 @@ def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avi
         "baja_en_revision": revision,
         "concesionario_alerta": (conc or {}).get("motivo", ""),
         "deuda_actividades": (deuda.cuotas if deuda else None),
+        # Deportista sin el apto al día: etiqueta aparte, no toca estado ni mensaje.
+        "apto_fisico": (apto or {}).get(ev.id_cliente),
         "concesionario_empresa": (conc or {}).get("empresa", ""),
     }
 
@@ -948,6 +975,7 @@ def _contexto_eventos(todos_x, todos_f) -> dict:
     en_revision = _bajas_en_revision(cids)
     conc_estado = _estado_concesionarios(cids)
     deuda_act = _deuda_actividades(cids)
+    apto = _apto_fisico(cids)
     barreras = _accesos_barrera()
     ingresos_hoy = (
         _ingresos_hoy_por_habilitacion(todos_x, barreras)
@@ -955,9 +983,9 @@ def _contexto_eventos(todos_x, todos_f) -> dict:
     )
     return {
         "xsys": (socios, fotos, motivos, ctrls, avisos_por_socio, contratos_por_socio,
-                 barreras, ingresos_hoy, sin_cuota, en_revision, conc_estado, deuda_act),
+                 barreras, ingresos_hoy, sin_cuota, en_revision, conc_estado, deuda_act, apto),
         "facial": (socios, fotos, avisos_por_socio, contratos_por_socio, sin_cuota,
-                   en_revision, conc_estado, deuda_act),
+                   en_revision, conc_estado, deuda_act, apto),
     }
 
 
