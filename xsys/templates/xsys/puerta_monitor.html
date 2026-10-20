@@ -670,7 +670,9 @@
       if (ev) openModal(ev, cd.nombre);
     });
 
-    function fechaHora(iso) { try { return new Date(iso).toLocaleString("es-AR"); } catch (e) { return ""; } }
+    // Misma regla que hora(): 24 h fijas. Con toLocaleString el kiosco mostraba
+    // "08:36:38" para un evento de las 20:36 (formato de 12 h sin "p. m.").
+    function fechaHora(iso) { var f = fechaCorta(iso), h = hora(iso); return f && h ? f + ", " + h : ""; }
 
     function openModal(ev, molinete) {
       var cls = claseEstado(ev);
