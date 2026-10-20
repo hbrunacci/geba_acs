@@ -1,0 +1,681 @@
+{% extends "common/base.html" %}
+{% load static %}
+
+{% block page_title %}Elecciones · GEBA{% endblock page_title %}
+{% block header_title %}Elecciones{% endblock header_title %}
+{% block header_subtitle %}Participación en vivo.{% endblock header_subtitle %}
+
+{% block extra_head %}
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Teko:wght@500;600;700&display=swap" />
+{% endblock extra_head %}
+
+{% block extra_css %}
+<style>
+  /* La pantalla trae su propio encabezado con el escudo: el genérico sobra. */
+  .layout__header { display: none; }
+
+  /* Paleta del sitio del club (geba.host): celeste GEBA, azul profundo y el
+     dorado del escudo como acento. El gris de la elección anterior es neutro a
+     propósito: es contexto, no protagonista. */
+  .elx {
+    --celeste: #2596be;
+    --celeste-2: #66b4ec;
+    --celeste-3: #d4ecf7;
+    --azul: #004887;
+    --azul-2: #0a2f57;
+    --acento: #1e7e9f;
+    --oro: #f2c230;
+    --tinta: #102033;
+    --tinta-2: #4b5b6e;
+    --apagado: #7c8a9a;
+    --linea: #e2e8ef;
+    --fondo: #f3f6f9;
+    --tarjeta: #ffffff;
+    --previa: #a7b1bd;
+    --ok: #1f9d6b;
+    --alerta: #d9822b;
+    --num: "Teko", "Arial Narrow", sans-serif;
+    --txt: "Poppins", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family: var(--txt);
+    color: var(--tinta);
+    display: grid;
+    gap: 18px;
+    max-width: 1360px;
+    padding: 20px 24px 0;
+  }
+  @media (max-width: 700px) { .elx { padding: 12px 12px 0; } }
+  .elx * { box-sizing: border-box; }
+
+  /* ---------- Encabezado ---------- */
+  .elx-hero {
+    position: relative; overflow: hidden; border-radius: 18px; color: #fff;
+    background: radial-gradient(120% 140% at 0% 0%, var(--celeste) 0%, var(--acento) 45%, var(--azul) 100%);
+    padding: 22px 26px; display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+    box-shadow: 0 10px 30px rgba(0, 72, 135, .22);
+  }
+  .elx-hero::after {
+    /* Franja diagonal suave: da profundidad sin pelearse con el contenido. */
+    content: ""; position: absolute; inset: -40% -10% auto auto; width: 55%; height: 220%;
+    background: linear-gradient(115deg, rgba(255,255,255,.10), rgba(255,255,255,0));
+    transform: rotate(18deg); pointer-events: none;
+  }
+  .elx-escudo {
+    width: 76px; height: 82px; flex: none; background: #fff; border-radius: 16px; padding: 6px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.18);
+  }
+  .elx-escudo img { width: 100%; height: 100%; object-fit: contain; }
+  .elx-titulo { flex: 1 1 260px; min-width: 0; position: relative; z-index: 1; }
+  .elx-titulo .eyebrow { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; opacity: .85; font-weight: 500; }
+  .elx-titulo h2 {
+    font-family: var(--num); font-weight: 600; font-style: italic; text-transform: uppercase;
+    font-size: clamp(36px, 5vw, 56px); line-height: .9; margin: 4px 0 2px; letter-spacing: .01em;
+  }
+  .elx-titulo .sub { font-size: 14px; opacity: .9; }
+  .elx-controles { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; position: relative; z-index: 1; }
+  .elx-estado {
+    display: inline-flex; align-items: center; gap: 10px; background: rgba(255,255,255,.14);
+    border: 1px solid rgba(255,255,255,.28); border-radius: 999px; padding: 6px 14px; font-weight: 600; font-size: 13px;
+    backdrop-filter: blur(4px);
+  }
+  .elx-estado .reloj { font-family: var(--num); font-size: 22px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .elx-punto { width: 9px; height: 9px; border-radius: 50%; background: #9fb3c8; }
+  .elx-estado[data-estado="en_curso"] .elx-punto { background: #ff5a5f; animation: elx-pulso 1.8s infinite; }
+  .elx-estado[data-estado="cerrada"] .elx-punto { background: var(--oro); }
+  @keyframes elx-pulso { 0% { box-shadow: 0 0 0 0 rgba(255,90,95,.7); } 70% { box-shadow: 0 0 0 9px rgba(255,90,95,0); } 100% { box-shadow: 0 0 0 0 rgba(255,90,95,0); } }
+  .elx-select {
+    font: inherit; font-size: 13px; color: var(--tinta); background: #fff; border: 0; border-radius: 10px;
+    padding: 7px 34px 7px 12px; min-width: 230px; box-shadow: 0 2px 8px rgba(0,0,0,.12); cursor: pointer;
+  }
+  .elx-act { font-size: 12px; opacity: .8; }
+
+  /* ---------- Selector de sector ---------- */
+  .elx-tabs {
+    display: flex; gap: 6px; padding: 6px; background: var(--tarjeta); border: 1px solid var(--linea);
+    border-radius: 14px; overflow-x: auto; position: sticky; top: 8px; z-index: 5;
+    box-shadow: 0 4px 14px rgba(16, 32, 51, .06);
+  }
+  .elx-tab {
+    flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+    font: inherit; font-weight: 600; font-size: 14px; color: var(--tinta-2); background: transparent;
+    border: 0; border-radius: 10px; padding: 10px 18px; cursor: pointer; white-space: nowrap;
+    transition: background .15s, color .15s;
+  }
+  .elx-tab svg { width: 18px; height: 18px; flex: none; }
+  .elx-tab:hover { background: var(--fondo); color: var(--tinta); }
+  .elx-tab[aria-selected="true"] { background: var(--azul); color: #fff; box-shadow: 0 4px 12px rgba(0,72,135,.25); }
+  .elx-tab:focus-visible, .elx-select:focus-visible, .elx-chip:focus-visible { outline: 3px solid var(--oro); outline-offset: 2px; }
+
+  /* ---------- Tarjetas ---------- */
+  .elx-panel { display: none; gap: 18px; }
+  .elx-panel.activo { display: grid; animation: elx-entra .25s ease-out; }
+  @keyframes elx-entra { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .elx-card {
+    background: var(--tarjeta); border: 1px solid var(--linea); border-radius: 16px; padding: 18px 20px; min-width: 0;
+    box-shadow: 0 2px 10px rgba(16, 32, 51, .04);
+  }
+  .elx-card h3 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--tinta-2); margin: 0; font-weight: 600; }
+  .elx-card .nota { font-size: 12.5px; color: var(--apagado); margin: 2px 0 12px; }
+  .elx-grid-2 { display: grid; grid-template-columns: minmax(300px, 420px) 1fr; gap: 18px; }
+  .elx-grid-2b { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 980px) { .elx-grid-2, .elx-grid-2b { grid-template-columns: 1fr; } }
+
+  .elx-grande { font-family: var(--num); font-weight: 600; font-size: clamp(76px, 10vw, 120px); line-height: .85; color: var(--azul); font-variant-numeric: tabular-nums; }
+  .elx-grande-cap { font-size: 14px; color: var(--tinta-2); margin-top: 4px; }
+  .elx-grande-cap b { color: var(--tinta); }
+  .elx-barra { position: relative; height: 16px; border-radius: 999px; background: var(--celeste-3); margin-top: 18px; }
+  .elx-barra .lleno { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: linear-gradient(90deg, var(--celeste), var(--azul)); transition: width .6s ease; }
+  .elx-barra .marca { position: absolute; top: -6px; bottom: -6px; width: 3px; border-radius: 2px; background: var(--oro); box-shadow: 0 0 0 2px #fff; }
+  .elx-leyenda { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--tinta-2); margin-top: 10px; }
+  .elx-leyenda b { color: var(--tinta); font-variant-numeric: tabular-nums; }
+  .elx-sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+  .elx-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .elx-kpis--dentro { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--linea); }
+  .elx-kpis--dentro .elx-kpi { border: 0; background: var(--fondo); padding: 12px 14px; }
+  .elx-kpis--dentro .elx-kpi .v { font-size: 34px; }
+  @media (max-width: 980px) { .elx-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .elx-kpi { background: var(--tarjeta); border: 1px solid var(--linea); border-radius: 14px; padding: 14px 16px; position: relative; overflow: hidden; }
+  .elx-kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--celeste); }
+  .elx-kpi:nth-child(2)::before { background: var(--acento); }
+  .elx-kpi:nth-child(3)::before { background: var(--azul); }
+  .elx-kpi:nth-child(4)::before { background: var(--oro); }
+  .elx-kpi .k { font-size: 12px; color: var(--apagado); font-weight: 500; }
+  .elx-kpi .v { font-family: var(--num); font-size: 40px; font-weight: 600; line-height: 1; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .elx-kpi .v small { font-family: var(--txt); font-size: 12px; font-weight: 500; color: var(--tinta-2); margin-left: 4px; }
+  .elx-kpi .d { font-size: 12px; color: var(--tinta-2); margin-top: 2px; }
+  .elx-sube { color: var(--ok); font-weight: 600; }
+  .elx-baja { color: var(--alerta); font-weight: 600; }
+
+  .elx-graf { position: relative; height: 300px; }
+  .elx-graf--alto { height: 340px; }
+  .elx-graf--vel { height: 420px; }
+  .elx-graf--act { height: 460px; }
+
+  /* Mesas: una tarjeta por mesa con su anillo de avance. */
+  .elx-mesas { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .elx-mesa { border: 1px solid var(--linea); border-radius: 14px; padding: 12px; display: flex; align-items: center; gap: 12px; background: #fff; }
+  .elx-anillo { --p: 0; width: 58px; height: 58px; border-radius: 50%; flex: none; display: grid; place-items: center;
+    background: conic-gradient(var(--celeste) calc(var(--p) * 1%), var(--celeste-3) 0); }
+  .elx-anillo span { width: 44px; height: 44px; border-radius: 50%; background: #fff; display: grid; place-items: center;
+    font-family: var(--num); font-size: 19px; font-weight: 600; color: var(--azul); }
+  .elx-mesa .n { font-family: var(--num); font-size: 24px; font-weight: 600; line-height: 1; white-space: nowrap; }
+  .elx-mesa .det { white-space: nowrap; }
+  .elx-mesa .det { font-size: 12px; color: var(--tinta-2); font-variant-numeric: tabular-nums; }
+  .elx-mesa.quieta { border-color: var(--alerta); }
+
+  .elx-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .elx-chip { font: inherit; font-size: 12.5px; font-weight: 600; border: 1px solid var(--linea); background: #fff; color: var(--tinta-2);
+    border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+  .elx-chip[aria-pressed="true"] { background: var(--celeste); border-color: var(--celeste); color: #fff; }
+  .elx-cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+
+  .elx-tabla { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .elx-tabla th { text-align: left; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--apagado); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--linea); }
+  .elx-tabla td { padding: 9px 10px; border-bottom: 1px solid var(--linea); }
+  .elx-tabla td.num, .elx-tabla th.num { text-align: right; }
+  .elx-tabla tr:hover td { background: var(--fondo); }
+  .elx-mini { height: 6px; border-radius: 999px; background: var(--celeste-3); position: relative; min-width: 80px; }
+  .elx-mini i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--celeste); }
+  .elx-tag { font-size: 11px; font-weight: 600; border-radius: 6px; padding: 2px 7px; background: var(--celeste-3); color: var(--azul); }
+  .elx-tag.servicio { background: #fbefcc; color: #7a5a00; }
+  .elx-tag.ninguna { background: #eef1f4; color: var(--tinta-2); }
+
+  .elx-aviso { border-radius: 14px; padding: 14px 18px; background: #fff7e6; border: 1px solid #f3d9a4; color: #6b4b00; font-size: 14px; display: none; }
+  .elx-aviso.visible { display: block; }
+  .elx-vacio { color: var(--apagado); font-size: 14px; text-align: center; padding: 40px 10px; }
+  .elx-pie { font-size: 12px; color: var(--apagado); }
+  @media (prefers-reduced-motion: reduce) { .elx-panel.activo, .elx-barra .lleno { animation: none; transition: none; } .elx-estado .elx-punto { animation: none !important; } }
+</style>
+{% endblock extra_css %}
+
+{% block content %}
+<div class="elx">
+  <section class="elx-hero">
+    <div class="elx-escudo"><img src="{% static 'xsys/img/geba-escudo.png' %}" alt="Escudo de GEBA" /></div>
+    <div class="elx-titulo">
+      <div class="eyebrow">Gimnasia y Esgrima de Buenos Aires</div>
+      <h2 id="elx-nombre">Elecciones</h2>
+      <div class="sub" id="elx-sub">Cargando…</div>
+    </div>
+    <div class="elx-controles">
+      <span class="elx-estado" id="elx-estado"><span class="elx-punto"></span><span id="elx-estado-txt">—</span><span class="reloj" id="elx-reloj">--:--</span></span>
+      <select class="elx-select" id="elx-eleccion" aria-label="Elección"></select>
+      <span class="elx-act" id="elx-act"></span>
+    </div>
+  </section>
+
+  <nav class="elx-tabs" role="tablist" aria-label="Sectores">
+    {% for s in secciones %}
+    <button class="elx-tab" role="tab" type="button" data-seccion="{{ s }}" id="tab-{{ s }}" aria-controls="panel-{{ s }}" aria-selected="false">
+      {% if s == "participacion" %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>Participación
+      {% elif s == "mesas" %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Mesas
+      {% elif s == "horarios" %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Horarios
+      {% elif s == "actividades" %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>Actividades
+      {% endif %}
+    </button>
+    {% endfor %}
+  </nav>
+
+  <div class="elx-aviso" id="elx-aviso" role="status"></div>
+
+  {% if "participacion" in secciones %}
+  <section class="elx-panel" id="panel-participacion" role="tabpanel" aria-labelledby="tab-participacion">
+    <div class="elx-grid-2">
+      <div class="elx-card">
+        <h3>Votaron</h3>
+        <div class="elx-grande" id="p-votaron">0</div>
+        <div class="elx-grande-cap">de <b id="p-padron">0</b> empadronados · <b id="p-pct">0 %</b> de participación</div>
+        <div class="elx-barra" role="img" id="p-barra">
+          <div class="lleno" id="p-lleno" style="width:0"></div>
+          <div class="marca" id="p-marca" title="Elección anterior a esta hora" hidden></div>
+        </div>
+        <div class="elx-leyenda">
+          <span><i class="elx-sw" style="background:var(--celeste)"></i>Votaron <b id="p-lv">0</b></span>
+          <span><i class="elx-sw" style="background:var(--celeste-3)"></i>Restan <b id="p-lr">0</b></span>
+          <span id="p-lprev" hidden><i class="elx-sw" style="background:var(--oro)"></i><span id="p-lprev-txt"></span></span>
+        </div>
+    <div class="elx-kpis elx-kpis--dentro">
+      <div class="elx-kpi"><div class="k">Restan votar</div><div class="v" id="k-restan">0</div><div class="d" id="k-restan-d"></div></div>
+      <div class="elx-kpi"><div class="k">Ritmo de la última hora</div><div class="v" id="k-ritmo">0<small>votos / 10 min</small></div><div class="d" id="k-ritmo-d"></div></div>
+      <div class="elx-kpi"><div class="k">Proyección al cierre</div><div class="v" id="k-proy">0</div><div class="d" id="k-proy-d"></div></div>
+      <div class="elx-kpi"><div class="k" id="k-dif-k">Contra la elección anterior</div><div class="v" id="k-dif">—</div><div class="d" id="k-dif-d"></div></div>
+    </div>
+      </div>
+      <div class="elx-card">
+        <div class="elx-cab">
+          <div><h3>Velocidad de votación</h3><p class="nota">Votos cada 10 minutos, toda la jornada</p></div>
+          <div class="elx-leyenda" style="margin:0">
+            <span><i class="elx-sw" style="background:var(--azul)"></i>Esta elección</span>
+            <span><i class="elx-sw" style="background:var(--celeste-2)"></i>Tramo en curso</span>
+            <span id="p-ley-prev"><i class="elx-sw" style="background:var(--previa)"></i><span id="p-ley-prev-txt">Anterior</span></span>
+          </div>
+        </div>
+        <div class="elx-graf elx-graf--vel"><canvas id="g-velocidad" aria-label="Votos cada 10 minutos"></canvas></div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if "mesas" in secciones %}
+  <section class="elx-panel" id="panel-mesas" role="tabpanel" aria-labelledby="tab-mesas">
+    <div class="elx-card">
+      <div class="elx-cab">
+        <div><h3>Avance por mesa</h3><p class="nota" id="m-nota">Porcentaje de su padrón que ya votó</p></div>
+        <div class="elx-leyenda" style="margin:0"><span><i class="elx-sw" style="background:var(--alerta)"></i>Más de 30 min sin votos</span></div>
+      </div>
+      <div class="elx-mesas" id="m-tarjetas"></div>
+    </div>
+    <div class="elx-card">
+      <h3>Votos por mesa</h3>
+      <p class="nota">La línea dorada es el promedio general</p>
+      <div class="elx-graf"><canvas id="g-mesas" aria-label="Votos por mesa"></canvas></div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if "horarios" in secciones %}
+  <section class="elx-panel" id="panel-horarios" role="tabpanel" aria-labelledby="tab-horarios">
+    <div class="elx-grid-2b">
+      <div class="elx-card">
+        <div class="elx-cab">
+          <div><h3>Votos por hora</h3><p class="nota" id="h-nota">Cada barra es una franja de una hora</p></div>
+        </div>
+        <div class="elx-graf elx-graf--alto"><canvas id="g-horas" aria-label="Votos por hora"></canvas></div>
+      </div>
+      <div class="elx-card">
+        <div class="elx-cab">
+          <div><h3>Participación acumulada</h3><p class="nota">Porcentaje del padrón que votó hasta cada momento</p></div>
+        </div>
+        <div class="elx-graf elx-graf--alto"><canvas id="g-acumulado" aria-label="Participación acumulada"></canvas></div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if "actividades" in secciones %}
+  <section class="elx-panel" id="panel-actividades" role="tabpanel" aria-labelledby="tab-actividades">
+    <div class="elx-kpis">
+      <div class="elx-kpi"><div class="k">Votaron</div><div class="v" id="a-votaron">0</div><div class="d" id="a-votaron-d"></div></div>
+      <div class="elx-kpi"><div class="k">Con alguna actividad</div><div class="v" id="a-con">0</div><div class="d" id="a-con-d"></div></div>
+      <div class="elx-kpi"><div class="k">Sin actividad contratada</div><div class="v" id="a-sin">0</div><div class="d" id="a-sin-d"></div></div>
+      <div class="elx-kpi"><div class="k">Actividad que más votó</div><div class="v" id="a-top" style="font-size:30px">—</div><div class="d" id="a-top-d"></div></div>
+    </div>
+    <div class="elx-card">
+      <div class="elx-cab">
+        <div><h3>Participación por actividad</h3><p class="nota">Qué porcentaje de los que tienen cada actividad ya votó, entre las que tienen 10 socios o más en el padrón (el resto está en el detalle). La línea dorada es la participación general.</p></div>
+        <div class="elx-chips" role="group" aria-label="Filtrar actividades">
+          <button class="elx-chip" type="button" data-filtro="todas" aria-pressed="true">Todas</button>
+          <button class="elx-chip" type="button" data-filtro="deporte" aria-pressed="false">Deportes</button>
+          <button class="elx-chip" type="button" data-filtro="servicio" aria-pressed="false">Servicios</button>
+        </div>
+      </div>
+      <div class="elx-graf elx-graf--act" id="a-graf-cont"><canvas id="g-actividades" aria-label="Participación por actividad"></canvas></div>
+    </div>
+    <div class="elx-card">
+      <h3>Detalle</h3>
+      <p class="nota">Contratos vigentes hoy de cada empadronado. Una persona con dos actividades cuenta en las dos.</p>
+      <div style="overflow-x:auto">
+        <table class="elx-tabla">
+          <thead><tr><th>Actividad</th><th>Tipo</th><th class="num">En el padrón</th><th class="num">Votaron</th><th>Participación</th><th class="num">% de los votantes</th></tr></thead>
+          <tbody id="a-tabla"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <p class="elx-pie">Datos en vivo de xSys (padrón de la elección en <code>Clientes_Listas_Precios</code>). Se actualiza solo cada 30 segundos.</p>
+</div>
+{% endblock content %}
+
+{% block extra_js %}
+{{ secciones|json_script:"elx-secciones" }}
+<script src="{% static 'xsys/js/chart.umd.min.js' %}"></script>
+<script>
+(function () {
+  "use strict";
+  var API = {
+    lista: "{% url 'xsys_elecciones_lista_api' %}",
+    participacion: "{% url 'xsys_elecciones_participacion_api' %}",
+    mesas: "{% url 'xsys_elecciones_mesas_api' %}",
+    horarios: "{% url 'xsys_elecciones_horarios_api' %}",
+    actividades: "{% url 'xsys_elecciones_actividades_api' %}"
+  };
+  var SECCIONES = JSON.parse(document.getElementById("elx-secciones").textContent);
+  var REFRESCO_MS = 30000;
+  var C = {
+    celeste: "#2596be", celeste2: "#66b4ec", celeste3: "#d4ecf7", azul: "#004887",
+    acento: "#1e7e9f", oro: "#f2c230", previa: "#a7b1bd", grilla: "#edf1f5", texto: "#4b5b6e"
+  };
+  var estado = { seccion: null, eleccion: null, datos: {}, graficos: {}, filtroAct: "todas", timer: null };
+  var $ = function (id) { return document.getElementById(id); };
+  var fmt = new Intl.NumberFormat("es-AR");
+  var n = function (v) { return fmt.format(Math.round(v || 0)); };
+  var pct = function (v) { return (v || 0).toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " %"; };
+  function anio(e) { return e && e.fecha ? e.fecha.slice(0, 4) : ""; }
+
+  Chart.defaults.font.family = "Poppins, system-ui, sans-serif";
+  Chart.defaults.font.size = 11;
+  Chart.defaults.color = C.texto;
+  Chart.defaults.plugins.legend.display = false;
+  Chart.defaults.plugins.tooltip.backgroundColor = "#102033";
+  Chart.defaults.plugins.tooltip.padding = 10;
+  Chart.defaults.plugins.tooltip.cornerRadius = 8;
+  Chart.defaults.plugins.tooltip.titleFont = { weight: "600" };
+  Chart.defaults.maintainAspectRatio = false;
+  Chart.defaults.animation.duration = 400;
+
+  // Línea horizontal de referencia (promedio / participación general).
+  var lineaRef = {
+    id: "lineaRef",
+    afterDatasetsDraw: function (chart, _a, opts) {
+      if (opts.valor == null) return;
+      var eje = opts.eje === "x" ? chart.scales.x : chart.scales.y;
+      var area = chart.chartArea, ctx = chart.ctx, p = eje.getPixelForValue(opts.valor);
+      ctx.save();
+      ctx.strokeStyle = C.oro; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      if (opts.eje === "x") { ctx.moveTo(p, area.top); ctx.lineTo(p, area.bottom); }
+      else { ctx.moveTo(area.left, p); ctx.lineTo(area.right, p); }
+      ctx.stroke();
+      ctx.setLineDash([]); ctx.fillStyle = "#7a5a00"; ctx.font = "600 11px Poppins, sans-serif";
+      if (opts.eje === "x") { ctx.fillText(opts.texto || "", Math.min(p + 6, area.right - 90), area.bottom - 6); }
+      else { ctx.fillText(opts.texto || "", area.right - ctx.measureText(opts.texto || "").width, p - 6); }
+      ctx.restore();
+    }
+  };
+  Chart.register(lineaRef);
+
+  function grafico(id, config) {
+    var g = estado.graficos[id];
+    if (g) {
+      g.data = config.data;
+      g.options = config.options;
+      g.update();
+      return g;
+    }
+    estado.graficos[id] = new Chart($(id), config);
+    return estado.graficos[id];
+  }
+  var ejes = function (extraY, extraX) {
+    return {
+      x: Object.assign({ grid: { display: false }, border: { display: false } }, extraX || {}),
+      y: Object.assign({ beginAtZero: true, grid: { color: C.grilla }, border: { display: false }, ticks: { precision: 0 } }, extraY || {})
+    };
+  };
+
+  // ------------------------------------------------------------ encabezado
+  var ESTADOS = { pendiente: "Por empezar", en_curso: "En vivo", cerrada: "Cerrada" };
+  function pintarCabecera(d) {
+    var e = d.eleccion, f = e.fecha ? new Date(e.fecha + "T12:00:00") : null;
+    $("elx-nombre").textContent = e.nombre.replace(/\s*\d{1,2}\/\d{1,2}\/\d{4}\s*$/, "") + " " + anio(e);
+    $("elx-sub").textContent = (f ? f.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "") +
+      " · " + d.jornada.apertura + " a " + d.jornada.cierre + " · padrón de " + n(e.padron) + " socios";
+    $("elx-estado").setAttribute("data-estado", d.momento.estado);
+    $("elx-estado-txt").textContent = ESTADOS[d.momento.estado] || "";
+    var ant = d.comparada;
+    ["p-ley-prev-txt"].forEach(function (id) { if ($(id)) $(id).textContent = ant ? ("Elección " + anio(ant)) : "Sin elección anterior"; });
+  }
+  function tic() {
+    $("elx-reloj").textContent = new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
+  }
+
+  function aviso(txt) {
+    var a = $("elx-aviso");
+    a.textContent = txt || "";
+    a.classList.toggle("visible", !!txt);
+  }
+
+  // ------------------------------------------------------------ participación
+  function pintarParticipacion(d) {
+    $("p-votaron").textContent = n(d.votaron);
+    $("p-padron").textContent = n(d.padron);
+    $("p-pct").textContent = pct(d.pct);
+    $("p-lleno").style.width = Math.min(100, d.pct) + "%";
+    $("p-lv").textContent = n(d.votaron);
+    $("p-lr").textContent = n(d.restan);
+    $("p-barra").setAttribute("aria-label", "Votó el " + pct(d.pct) + " del padrón");
+    var c = d.comparacion, ant = d.comparada;
+    if (c) {
+      var momento = d.momento.estado === "cerrada" ? "en total" : "a esta hora";
+      $("p-marca").hidden = false;
+      $("p-marca").style.left = "calc(" + Math.min(100, c.pct_a_esta_hora) + "% - 1px)";
+      $("p-lprev").hidden = false;
+      $("p-lprev-txt").innerHTML = anio(ant) + " " + momento + " <b>" + pct(c.pct_a_esta_hora) + "</b>";
+    }
+    $("k-restan").textContent = n(d.restan);
+    $("k-restan-d").textContent = pct(100 - d.pct) + " del padrón";
+    $("k-ritmo").innerHTML = n(d.ritmo_10min) + "<small>votos / 10 min</small>";
+    $("k-ritmo-d").textContent = d.momento.estado === "en_curso" ? (n(d.ultima_hora) + " votos en la última hora") : "Sólo durante la jornada";
+    $("k-proy").textContent = n(d.proyeccion);
+    $("k-proy-d").textContent = d.momento.estado === "en_curso" ? (pct(d.pct_proyeccion) + " si sigue este ritmo") :
+      d.momento.estado === "cerrada" ? "Resultado final" : "Se calcula durante la jornada";
+    if (c) {
+      var dif = d.pct - c.pct_a_esta_hora;
+      $("k-dif-k").textContent = "Contra " + anio(ant) + (d.momento.estado === "cerrada" ? "" : " a esta hora");
+      $("k-dif").innerHTML = '<span class="' + (dif >= 0 ? "elx-sube" : "elx-baja") + '">' + (dif >= 0 ? "+" : "") +
+        dif.toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "</span><small>puntos</small>";
+      $("k-dif-d").textContent = anio(ant) + ": " + n(c.a_esta_hora) + " votos (" + pct(c.pct_a_esta_hora) + ")";
+    } else {
+      $("k-dif").textContent = "—";
+      $("k-dif-d").textContent = "No hay una elección anterior con votos";
+    }
+
+    var t = d.tramos, enCurso = t.en_curso;
+    var colores = t.votos.map(function (_v, i) { return i === enCurso ? C.celeste2 : C.azul; });
+    var datasets = [{
+      type: "bar", label: "Esta elección", data: t.votos, backgroundColor: colores,
+      borderRadius: 4, borderSkipped: "bottom", barPercentage: .9, categoryPercentage: .95, order: 2
+    }];
+    if (c) datasets.push({
+      type: "line", label: "Elección " + anio(ant), data: c.tramos, borderColor: C.previa, borderWidth: 2,
+      pointRadius: 0, pointHoverRadius: 4, tension: .35, order: 1
+    });
+    grafico("g-velocidad", {
+      data: { labels: t.etiquetas, datasets: datasets },
+      options: {
+        interaction: { mode: "index", intersect: false },
+        scales: ejes({}, { ticks: { autoSkip: false, maxRotation: 0, callback: function (v, i) { return i % 6 === 0 ? t.etiquetas[i] : ""; } } }),
+        plugins: { tooltip: { callbacks: { title: function (it) { var i = it[0].dataIndex; return t.etiquetas[i] + " a " + (t.etiquetas[i + 1] || d.jornada.cierre); } } } }
+      }
+    });
+  }
+
+  // ------------------------------------------------------------ mesas
+  function pintarMesas(d) {
+    var cont = $("m-tarjetas"), enCurso = d.momento.estado === "en_curso";
+    var ahora = new Date(), minAhora = ahora.getHours() * 60 + ahora.getMinutes();
+    cont.innerHTML = "";
+    d.mesas.forEach(function (m) {
+      var quieta = false;
+      if (enCurso && m.ultimo) { var p = m.ultimo.split(":"); quieta = minAhora - (+p[0] * 60 + +p[1]) > 30; }
+      if (enCurso && !m.ultimo) quieta = d.momento.minuto > 30;
+      var el = document.createElement("div");
+      el.className = "elx-mesa" + (quieta ? " quieta" : "");
+      el.innerHTML = '<div class="elx-anillo" style="--p:' + Math.min(100, m.pct) + '"><span>' + Math.round(m.pct) + '%</span></div>' +
+        '<div><div class="n">Mesa ' + m.mesa + '</div><div class="det">' + n(m.votaron) + ' de ' + n(m.padron) + '</div>' +
+        '<div class="det">' + (m.ultimo ? "Último voto " + m.ultimo : "Sin votos") + '</div></div>';
+      cont.appendChild(el);
+    });
+    $("m-nota").textContent = "Porcentaje de su padrón que ya votó · promedio " + pct(d.promedio_pct);
+    grafico("g-mesas", {
+      type: "bar",
+      data: {
+        labels: d.mesas.map(function (m) { return "Mesa " + m.mesa; }),
+        datasets: [{ label: "Votaron", data: d.mesas.map(function (m) { return m.pct; }), backgroundColor: C.celeste,
+          hoverBackgroundColor: C.azul, borderRadius: 6, borderSkipped: "bottom", maxBarThickness: 46 }]
+      },
+      options: {
+        scales: ejes({ ticks: { callback: function (v) { return v + " %"; } }, suggestedMax: Math.max(10, d.promedio_pct * 1.4) }),
+        plugins: {
+          lineaRef: { valor: d.promedio_pct, texto: "Promedio " + pct(d.promedio_pct) },
+          tooltip: { callbacks: { label: function (it) { var m = d.mesas[it.dataIndex]; return " " + pct(m.pct) + " · " + n(m.votaron) + " de " + n(m.padron); } } }
+        }
+      }
+    });
+  }
+
+  // ------------------------------------------------------------ horarios
+  function pintarHorarios(d) {
+    var c = d.comparacion, ant = d.comparada, enCurso = d.hora_en_curso;
+    $("h-nota").textContent = d.hora_pico ? ("Hora pico: " + d.hora_pico + " a " + (parseInt(d.hora_pico, 10) + 1) + ":00") : "Cada barra es una franja de una hora";
+    var ds = [{
+      label: "Esta elección", data: d.por_hora, borderRadius: 6, borderSkipped: "bottom", maxBarThickness: 34,
+      backgroundColor: d.por_hora.map(function (_v, i) { return i === enCurso ? C.celeste2 : C.azul; })
+    }];
+    if (c) ds.push({ label: "Elección " + anio(ant), data: c.por_hora, backgroundColor: C.previa, borderRadius: 6, borderSkipped: "bottom", maxBarThickness: 34 });
+    grafico("g-horas", {
+      type: "bar",
+      data: { labels: d.horas, datasets: ds },
+      options: {
+        interaction: { mode: "index", intersect: false },
+        scales: ejes(),
+        plugins: {
+          legend: { display: !!c, position: "bottom", labels: { usePointStyle: true, pointStyle: "rectRounded", boxWidth: 10 } },
+          tooltip: { callbacks: { title: function (it) { var h = d.horas[it[0].dataIndex]; return h + " a " + (parseInt(h, 10) + 1) + ":00"; } } }
+        }
+      }
+    });
+    var a = d.acumulado, ds2 = [{
+      label: "Esta elección", data: a.pct, borderColor: C.azul, borderWidth: 3, pointRadius: 0, pointHoverRadius: 5,
+      tension: .3, fill: { target: "origin" }, backgroundColor: "rgba(37,150,190,.14)"
+    }];
+    if (c) ds2.push({ label: "Elección " + anio(ant), data: c.acumulado_pct, borderColor: C.previa, borderWidth: 2, borderDash: [5, 4], pointRadius: 0, tension: .3 });
+    grafico("g-acumulado", {
+      type: "line",
+      data: { labels: a.etiquetas, datasets: ds2 },
+      options: {
+        interaction: { mode: "index", intersect: false },
+        scales: ejes({ ticks: { callback: function (v) { return v + " %"; } } },
+          { ticks: { autoSkip: false, maxRotation: 0, callback: function (v, i) { return i % 6 === 0 ? a.etiquetas[i] : ""; } } }),
+        plugins: {
+          legend: { display: !!c, position: "bottom", labels: { usePointStyle: true, pointStyle: "line", boxWidth: 18 } },
+          tooltip: { callbacks: { label: function (it) { return " " + it.dataset.label + ": " + pct(it.parsed.y); } } }
+        }
+      }
+    });
+  }
+
+  // ------------------------------------------------------------ actividades
+  // Con 1 o 2 socios el porcentaje salta de 0 a 100 % y encabeza el ranking sin
+  // decir nada: el gráfico muestra sólo las que tienen padrón para comparar.
+  var MIN_PADRON_GRAFICO = 10;
+  var TIPOS = { deporte: "Deporte", servicio: "Servicio", ninguna: "—" };
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function pintarActividades(d) {
+    $("a-votaron").textContent = n(d.votaron);
+    $("a-votaron-d").textContent = pct(d.pct_general) + " del padrón";
+    $("a-con").textContent = n(d.con_actividad);
+    $("a-con-d").textContent = d.votaron ? pct(100 * d.con_actividad / d.votaron) + " de los votantes" : "—";
+    var sin = d.sin_actividad || { votaron: 0, padron: 0, pct: 0 };
+    $("a-sin").textContent = n(sin.votaron);
+    $("a-sin-d").textContent = "Votó el " + pct(sin.pct) + " de los " + n(sin.padron) + " sin actividad";
+    var conPadron = d.actividades.filter(function (a) { return a.padron >= 20; });
+    var top = conPadron.slice().sort(function (x, y) { return y.pct - x.pct; })[0];
+    $("a-top").textContent = top && top.votaron ? top.actividad : "—";
+    $("a-top-d").textContent = top && top.votaron ? ("Votó el " + pct(top.pct) + " (" + n(top.votaron) + " de " + n(top.padron) + ")") : "Entre las que tienen 20 o más socios";
+
+    var lista = d.actividades.filter(function (a) { return estado.filtroAct === "todas" || a.tipo === estado.filtroAct; })
+      .filter(function (a) { return a.padron >= MIN_PADRON_GRAFICO; })
+      .sort(function (x, y) { return y.pct - x.pct || y.padron - x.padron; });
+    $("a-graf-cont").style.height = Math.max(220, lista.length * 30 + 60) + "px";
+    grafico("g-actividades", {
+      type: "bar",
+      data: {
+        labels: lista.map(function (a) { return a.actividad; }),
+        datasets: [{ label: "Participación", data: lista.map(function (a) { return a.pct; }),
+          backgroundColor: lista.map(function (a) { return a.tipo === "deporte" ? C.celeste : C.oro; }),
+          borderRadius: 6, borderSkipped: "left", barPercentage: .75, categoryPercentage: .9 }]
+      },
+      options: {
+        indexAxis: "y",
+        scales: {
+          x: { beginAtZero: true, suggestedMax: 100, grid: { color: C.grilla }, border: { display: false }, ticks: { callback: function (v) { return v + " %"; } } },
+          y: { grid: { display: false }, border: { display: false }, ticks: { autoSkip: false } }
+        },
+        plugins: {
+          lineaRef: { valor: d.pct_general, eje: "x", texto: "General " + pct(d.pct_general) },
+          tooltip: { callbacks: { label: function (it) { var a = lista[it.dataIndex]; return " " + pct(a.pct) + " · votaron " + n(a.votaron) + " de " + n(a.padron); } } }
+        }
+      }
+    });
+
+    var filas = d.actividades.concat(d.sin_actividad ? [d.sin_actividad] : []);
+    $("a-tabla").innerHTML = filas.map(function (a) {
+      return "<tr><td>" + esc(a.actividad) + '</td><td><span class="elx-tag ' + a.tipo + '">' + TIPOS[a.tipo] + "</span></td>" +
+        '<td class="num">' + n(a.padron) + '</td><td class="num">' + n(a.votaron) + "</td>" +
+        '<td><div style="display:flex;align-items:center;gap:8px"><div class="elx-mini" style="flex:1"><i style="width:' + Math.min(100, a.pct) + '%"></i></div><span style="min-width:52px;text-align:right">' + pct(a.pct) + "</span></div></td>" +
+        '<td class="num">' + pct(a.pct_de_votantes) + "</td></tr>";
+    }).join("") || '<tr><td colspan="6" class="elx-vacio">Sin datos</td></tr>';
+  }
+
+  var PINTORES = { participacion: pintarParticipacion, mesas: pintarMesas, horarios: pintarHorarios, actividades: pintarActividades };
+
+  // ------------------------------------------------------------ carga
+  function pedir(url) {
+    return fetch(url, { credentials: "same-origin", headers: { Accept: "application/json" } }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.detail || ("Error " + r.status));
+        return j;
+      });
+    });
+  }
+  function cargar(seccion) {
+    var url = API[seccion] + (estado.eleccion ? "?eleccion=" + estado.eleccion : "");
+    return pedir(url).then(function (d) {
+      aviso("");
+      estado.datos[seccion] = d;
+      pintarCabecera(d);
+      if (estado.seccion === seccion) PINTORES[seccion](d);
+      $("elx-act").textContent = "Actualizado " + new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+    }).catch(function (e) { aviso(e.message); });
+  }
+  function programar() {
+    clearInterval(estado.timer);
+    estado.timer = setInterval(function () { if (!document.hidden && estado.seccion) cargar(estado.seccion); }, REFRESCO_MS);
+  }
+  function elegir(seccion, sinGuardar) {
+    estado.seccion = seccion;
+    document.querySelectorAll(".elx-tab").forEach(function (b) { b.setAttribute("aria-selected", String(b.dataset.seccion === seccion)); });
+    document.querySelectorAll(".elx-panel").forEach(function (p) { p.classList.toggle("activo", p.id === "panel-" + seccion); });
+    if (!sinGuardar) { try { localStorage.setItem("elx-seccion", seccion); } catch (e) {} history.replaceState(null, "", "#" + seccion); }
+    if (estado.datos[seccion]) PINTORES[seccion](estado.datos[seccion]);
+    cargar(seccion);
+  }
+
+  document.querySelectorAll(".elx-tab").forEach(function (b) {
+    b.addEventListener("click", function () { elegir(b.dataset.seccion); });
+  });
+  document.querySelectorAll(".elx-chip").forEach(function (b) {
+    b.addEventListener("click", function () {
+      estado.filtroAct = b.dataset.filtro;
+      document.querySelectorAll(".elx-chip").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+      if (estado.datos.actividades) pintarActividades(estado.datos.actividades);
+    });
+  });
+  $("elx-eleccion").addEventListener("change", function () {
+    estado.eleccion = this.value;
+    estado.datos = {};
+    cargar(estado.seccion);
+  });
+
+  tic(); setInterval(tic, 1000);
+  pedir(API.lista).then(function (j) {
+    var sel = $("elx-eleccion");
+    j.elecciones.forEach(function (e, i) {
+      var o = document.createElement("option");
+      o.value = e.id; o.textContent = e.nombre + (e.votaron ? " · " + n(e.votaron) + " votos" : "");
+      sel.appendChild(o);
+      if (i === 0) estado.eleccion = String(e.id);
+    });
+  }).catch(function (e) { aviso(e.message); }).then(function () {
+    var pedida = location.hash.replace("#", ""), guardada = null;
+    try { guardada = localStorage.getItem("elx-seccion"); } catch (e) {}
+    var inicial = SECCIONES.indexOf(pedida) >= 0 ? pedida : SECCIONES.indexOf(guardada) >= 0 ? guardada : SECCIONES[0];
+    elegir(inicial, true);
+    programar();
+  });
+})();
+</script>
+{% endblock extra_js %}

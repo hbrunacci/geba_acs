@@ -19,6 +19,7 @@ Cada ítem declara el rol MÍNIMO que lo ve, con los mismos criterios de
     puertas         admin o grupo Configuración de Puertas
     socios          puertas o grupo socios
     tableros        superusuario, staff o grupo tableros (NO alcanza admin)
+    elecciones      superusuario, staff o algún grupo elecciones_<sector>
     concesionarios  superusuario, staff o grupo concesionarios (NO alcanza admin)
 
 Un grupo NO declara rol propio: se muestra si al menos uno de sus hijos es
@@ -35,6 +36,7 @@ from common.roles import (
     es_admin,
     puede_concesionarios,
     puede_config_puertas,
+    puede_elecciones,
     puede_socios,
     puede_tableros,
 )
@@ -44,6 +46,7 @@ CHEQUEOS = {
     "puertas": puede_config_puertas,
     "socios": puede_socios,
     "tableros": puede_tableros,
+    "elecciones": puede_elecciones,
     "concesionarios": puede_concesionarios,
 }
 
@@ -114,6 +117,7 @@ MENU: tuple = (
     )),
 
     Item("Tableros", "xsys_tableros", rol="tableros"),
+    Item("Elecciones", "xsys_elecciones", rol="elecciones"),
 
     Grupo("Concesionarios", (
         Item("Listado", "concesionarios_listado", rol="concesionarios"),

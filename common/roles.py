@@ -37,6 +37,11 @@ GRUPO_SOCIOS = "socios"
 # que va en su propio grupo: se entrega el número sin entregar el sistema. Igual
 # que ``concesionarios``, NO alcanza con ser Administrador de la app.
 GRUPO_TABLEROS = "tableros"
+# Elecciones: un grupo por sector de la pantalla, porque el club pidió poder dar
+# la participación a quien la sigue en la mesa sin mostrarle, por ejemplo, qué
+# actividades tienen los que ya votaron. El orden es el de las pestañas.
+SECCIONES_ELECCIONES = ("participacion", "mesas", "horarios", "actividades")
+GRUPOS_ELECCIONES = {s: f"elecciones_{s}" for s in SECCIONES_ELECCIONES}
 
 
 def es_admin(user) -> bool:
@@ -99,6 +104,27 @@ def puede_tableros(user) -> bool:
     )
 
 
+def secciones_elecciones(user) -> list[str]:
+    """Sectores de la pantalla de Elecciones que el usuario puede ver.
+
+    Superusuario y staff ven todos; el resto, los de sus grupos
+    ``elecciones_<sector>``. Mismo criterio que tableros: ser Administrador de
+    la app no alcanza.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return []
+    if user.is_superuser or user.is_staff:
+        return list(SECCIONES_ELECCIONES)
+    grupos = set(user.groups.filter(name__in=GRUPOS_ELECCIONES.values())
+                 .values_list("name", flat=True))
+    return [s for s in SECCIONES_ELECCIONES if GRUPOS_ELECCIONES[s] in grupos]
+
+
+def puede_elecciones(user) -> bool:
+    """Ve la pantalla de Elecciones si tiene al menos un sector."""
+    return bool(secciones_elecciones(user))
+
+
 def _rol_requerido(check):
     """Construye un decorador de vista: login + chequeo de rol (403 si no cumple)."""
 
@@ -119,6 +145,7 @@ puertas_requerido = _rol_requerido(puede_config_puertas)
 concesionarios_requerido = _rol_requerido(puede_concesionarios)
 socios_requerido = _rol_requerido(puede_socios)
 tableros_requerido = _rol_requerido(puede_tableros)
+elecciones_requerido = _rol_requerido(puede_elecciones)
 
 
 class PuedeConfigPuertas(BasePermission):
@@ -159,3 +186,19 @@ class PuedeTableros(BasePermission):
 
     def has_permission(self, request, view):
         return puede_tableros(request.user)
+
+
+class PuedeElecciones(BasePermission):
+    """Permiso DRF por sector de Elecciones.
+
+    La vista declara ``seccion_elecciones``; sin ella alcanza con tener alguno.
+    Se chequea en el servidor y no sólo ocultando la pestaña: quien no tiene el
+    sector no puede pedir sus datos aunque arme la URL a mano.
+    """
+
+    message = "No tiene acceso a este sector de Elecciones."
+
+    def has_permission(self, request, view):
+        secciones = secciones_elecciones(request.user)
+        seccion = getattr(view, "seccion_elecciones", None)
+        return seccion in secciones if seccion else bool(secciones)

@@ -7,6 +7,13 @@ from xsys.api_views_socios import (
     SocioGrupoFamiliarAPI,
     SociosListadoAPI,
 )
+from xsys.api_views_elecciones import (
+    EleccionesActividadesAPI,
+    EleccionesHorariosAPI,
+    EleccionesListaAPI,
+    EleccionesMesasAPI,
+    EleccionesParticipacionAPI,
+)
 from xsys.api_views_tableros import (
     TableroAltasBajasAPI,
     TableroCategoriasAPI,
@@ -44,6 +51,15 @@ from xsys.api_views import (
 )
 
 urlpatterns = [
+    # Elecciones: un endpoint por sector, cada uno con su grupo.
+    path("xsys/elecciones/", EleccionesListaAPI.as_view(), name="xsys_elecciones_lista_api"),
+    path("xsys/elecciones/participacion/", EleccionesParticipacionAPI.as_view(),
+         name="xsys_elecciones_participacion_api"),
+    path("xsys/elecciones/mesas/", EleccionesMesasAPI.as_view(), name="xsys_elecciones_mesas_api"),
+    path("xsys/elecciones/horarios/", EleccionesHorariosAPI.as_view(),
+         name="xsys_elecciones_horarios_api"),
+    path("xsys/elecciones/actividades/", EleccionesActividadesAPI.as_view(),
+         name="xsys_elecciones_actividades_api"),
     # Tableros de gestión (rol tableros).
     path("xsys/tableros/padron/", TableroPadronAPI.as_view(), name="xsys_tablero_padron_api"),
     path("xsys/tableros/altas-bajas/", TableroAltasBajasAPI.as_view(),

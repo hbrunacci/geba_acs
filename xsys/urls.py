@@ -2,6 +2,7 @@ from django.urls import path
 
 from xsys.views import (
     xsys_diagnostico,
+    xsys_elecciones,
     xsys_molinetes_config,
     xsys_puerta_monitor,
     xsys_socio_console,
@@ -11,6 +12,7 @@ from xsys.views import (
 
 urlpatterns = [
     path("xsys/tableros/", xsys_tableros, name="xsys_tableros"),
+    path("xsys/elecciones/", xsys_elecciones, name="xsys_elecciones"),
     path("xsys/fichas/", xsys_socios_fichas, name="xsys_socios_fichas"),
     path("xsys/socios/", xsys_socio_console, name="xsys_socio_console"),
     path("xsys/diagnostico/", xsys_diagnostico, name="xsys_diagnostico"),

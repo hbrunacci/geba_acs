@@ -3,6 +3,8 @@ from django.shortcuts import render
 
 from common.roles import (
     admin_requerido,
+    elecciones_requerido,
+    secciones_elecciones,
     puertas_requerido,
     socios_requerido,
     tableros_requerido,
@@ -137,4 +139,17 @@ def xsys_tableros(request):
         "categorias": categorias,
         "deuda_foto": foto,
         "rangos": RANGOS_TABLERO,
+    })
+
+
+@elecciones_requerido
+def xsys_elecciones(request):
+    """Participación en las elecciones del club, en vivo.
+
+    La pantalla arranca vacía y pide cada sector por API. Acá sólo viajan los
+    sectores que el usuario puede ver, para que el selector superior no ofrezca
+    pestañas que después responderían 403.
+    """
+    return render(request, "xsys/elecciones.html", {
+        "secciones": secciones_elecciones(request.user),
     })
