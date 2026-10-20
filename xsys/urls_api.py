@@ -12,6 +12,7 @@ from xsys.api_views_elecciones import (
     EleccionesHorariosAPI,
     EleccionesListaAPI,
     EleccionesMesasAPI,
+    EleccionesPantallaAPI,
     EleccionesParticipacionAPI,
 )
 from xsys.api_views_tableros import (
@@ -60,6 +61,8 @@ urlpatterns = [
          name="xsys_elecciones_horarios_api"),
     path("xsys/elecciones/actividades/", EleccionesActividadesAPI.as_view(),
          name="xsys_elecciones_actividades_api"),
+    path("xsys/elecciones/pantalla/", EleccionesPantallaAPI.as_view(),
+         name="xsys_elecciones_pantalla_api"),
     # Tableros de gestión (rol tableros).
     path("xsys/tableros/padron/", TableroPadronAPI.as_view(), name="xsys_tablero_padron_api"),
     path("xsys/tableros/altas-bajas/", TableroAltasBajasAPI.as_view(),

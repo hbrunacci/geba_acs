@@ -1,0 +1,15 @@
+{# Los dos gráficos de horarios. Se incluye con un prefijo de ids (px) para poder repetirlo en la vista Pantalla. #}
+<div class="elx-grid-2b">
+  <div class="elx-card">
+    <div class="elx-cab">
+      <div><h3>Acreditados por hora</h3><p class="nota" id="{{ px }}h-nota">Cada barra es una franja de una hora</p></div>
+    </div>
+    <div class="elx-graf elx-graf--alto"><canvas id="{{ px }}g-horas" aria-label="Acreditados por hora"></canvas></div>
+  </div>
+  <div class="elx-card">
+    <div class="elx-cab">
+      <div><h3>Acreditación acumulada</h3><p class="nota">Porcentaje del padrón acreditado hasta cada momento</p></div>
+    </div>
+    <div class="elx-graf elx-graf--alto"><canvas id="{{ px }}g-acumulado" aria-label="Acreditación acumulada"></canvas></div>
+  </div>
+</div>

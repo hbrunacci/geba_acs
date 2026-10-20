@@ -40,7 +40,8 @@ GRUPO_TABLEROS = "tableros"
 # Elecciones: un grupo por sector de la pantalla, porque el club pidió poder dar
 # la participación a quien la sigue en la mesa sin mostrarle, por ejemplo, qué
 # actividades tienen los que ya votaron. El orden es el de las pestañas.
-SECCIONES_ELECCIONES = ("participacion", "mesas", "horarios", "actividades")
+# ``pantalla`` es la vista para el televisor: resumen, horarios y mesas juntos.
+SECCIONES_ELECCIONES = ("participacion", "mesas", "horarios", "actividades", "pantalla")
 GRUPOS_ELECCIONES = {s: f"elecciones_{s}" for s in SECCIONES_ELECCIONES}
 
 

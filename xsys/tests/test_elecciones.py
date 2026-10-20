@@ -144,6 +144,23 @@ class PermisosTests(_ConVotos):
         self.assertContains(r, 'data-seccion="mesas"')
         self.assertNotContains(r, 'data-seccion="actividades"')
 
+    def test_pantalla_trae_resumen_horarios_y_mesas_sin_dar_los_otros_sectores(self):
+        u = _usuario("tele", ["elecciones_pantalla"])
+        self.assertEqual(secciones_elecciones(u), ["pantalla"])
+        self.client.force_login(u)
+        with self._a_las("2026-10-25 12:00"):
+            r = self.client.get(reverse("xsys_elecciones_pantalla_api"))
+            self.assertEqual(self.client.get(reverse("xsys_elecciones_mesas_api")).status_code, 403)
+            self.assertEqual(self.client.get(reverse("xsys_elecciones_horarios_api")).status_code, 403)
+        self.assertEqual(r.status_code, 200)
+        d = r.json()
+        self.assertEqual(d["votaron"], 3)
+        self.assertEqual(sum(d["horarios"]["por_hora"]), 3)
+        self.assertEqual(sum(m["votaron"] for m in d["mesas"]), 3)
+        r = self.client.get(reverse("xsys_elecciones"))
+        self.assertContains(r, 'id="t-mesas"')
+        self.assertNotContains(r, 'id="panel-mesas"')
+
     def test_sin_grupo_no_entra_ni_lo_ve_en_el_menu(self):
         u = _usuario("nadie", ["Administrador"])
         self.client.force_login(u)
@@ -154,5 +171,5 @@ class PermisosTests(_ConVotos):
 
     def test_staff_ve_todos_los_sectores(self):
         u = _usuario("staff", is_staff=True)
-        self.assertEqual(secciones_elecciones(u), ["participacion", "mesas", "horarios", "actividades"])
+        self.assertEqual(secciones_elecciones(u), ["participacion", "mesas", "horarios", "actividades", "pantalla"])
         self.assertIn("xsys_elecciones", [e.get("url") for e in nav.construir(u)])

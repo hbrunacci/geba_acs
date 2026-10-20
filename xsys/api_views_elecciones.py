@@ -61,3 +61,8 @@ class EleccionesHorariosAPI(_Base):
 class EleccionesActividadesAPI(_Base):
     seccion_elecciones = "actividades"
     servicio = staticmethod(elecciones.actividades)
+
+
+class EleccionesPantallaAPI(_Base):
+    seccion_elecciones = "pantalla"
+    servicio = staticmethod(elecciones.pantalla)

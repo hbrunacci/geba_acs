@@ -3,7 +3,7 @@
 
 {% block page_title %}Elecciones · GEBA{% endblock page_title %}
 {% block header_title %}Elecciones{% endblock header_title %}
-{% block header_subtitle %}Participación en vivo.{% endblock header_subtitle %}
+{% block header_subtitle %}Acreditación en vivo.{% endblock header_subtitle %}
 
 {% block extra_head %}
 <link rel="stylesheet"
@@ -46,6 +46,7 @@
   }
   @media (max-width: 700px) { .elx { padding: 12px 12px 0; } }
   .elx * { box-sizing: border-box; }
+  .elx [hidden] { display: none !important; }
 
   /* ---------- Encabezado ---------- */
   .elx-hero {
@@ -88,6 +89,29 @@
     padding: 7px 34px 7px 12px; min-width: 230px; box-shadow: 0 2px 8px rgba(0,0,0,.12); cursor: pointer;
   }
   .elx-act { font-size: 12px; opacity: .8; }
+  .elx-pantalla {
+    display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 13px; font-weight: 600; color: #fff;
+    background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.28); border-radius: 10px; padding: 7px 12px; cursor: pointer;
+  }
+  .elx-pantalla:hover { background: rgba(255,255,255,.24); }
+  .elx-pantalla:focus-visible { outline: 3px solid var(--oro); outline-offset: 2px; }
+  .elx-pantalla svg { width: 16px; height: 16px; }
+  .elx-pantalla .salir, .elx:fullscreen .elx-pantalla .entrar { display: none; }
+  .elx:fullscreen .elx-pantalla .salir { display: inline; }
+
+  /* Pantalla completa (para dejarla en un televisor): ocupa todo, sin el
+     selector de elección ni el pie, y los gráficos crecen hasta el borde. */
+  .elx:fullscreen { max-width: none; overflow-y: auto; background: var(--fondo); padding: 20px 28px; align-content: start; }
+  .elx:fullscreen .elx-select, .elx:fullscreen .elx-pie { display: none; }
+  .elx:fullscreen .elx-graf--alto { height: calc(100vh - 290px); min-height: 340px; }
+  .elx:fullscreen #panel-pantalla .elx-graf--alto { height: calc(100vh - 470px); min-height: 300px; }
+
+  /* Vista Pantalla: resumen a la izquierda, horarios a la derecha, mesas al pie. */
+  .elx-tablero { display: grid; grid-template-columns: minmax(320px, 400px) 1fr; gap: 18px; align-items: stretch; }
+  @media (max-width: 1100px) { .elx-tablero { grid-template-columns: 1fr; } }
+  .elx-aros { display: flex; flex-wrap: wrap; justify-content: space-around; gap: 14px 10px; padding: 16px 18px; }
+  .elx-aro { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 76px; }
+  .elx-aro .n { font-family: var(--num); font-size: 22px; font-weight: 600; line-height: 1; color: var(--tinta); white-space: nowrap; }
 
   /* ---------- Selector de sector ---------- */
   .elx-tabs {
@@ -202,16 +226,22 @@
       <span class="elx-estado" id="elx-estado"><span class="elx-punto"></span><span id="elx-estado-txt">—</span><span class="reloj" id="elx-reloj">--:--</span></span>
       <select class="elx-select" id="elx-eleccion" aria-label="Elección"></select>
       <span class="elx-act" id="elx-act"></span>
+      <button class="elx-pantalla" type="button" id="elx-pantalla" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        <span class="entrar">Pantalla completa</span><span class="salir">Salir de pantalla completa</span>
+      </button>
     </div>
   </section>
 
-  <nav class="elx-tabs" role="tablist" aria-label="Sectores">
+  {# Con un solo sector la barra de solapas no aporta nada. #}
+  <nav class="elx-tabs" role="tablist" aria-label="Sectores"{% if secciones|length < 2 %} hidden{% endif %}>
     {% for s in secciones %}
     <button class="elx-tab" role="tab" type="button" data-seccion="{{ s }}" id="tab-{{ s }}" aria-controls="panel-{{ s }}" aria-selected="false">
-      {% if s == "participacion" %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>Participación
+      {% if s == "participacion" %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>Acreditación
       {% elif s == "mesas" %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Mesas
       {% elif s == "horarios" %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Horarios
       {% elif s == "actividades" %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>Actividades
+      {% elif s == "pantalla" %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Pantalla
       {% endif %}
     </button>
     {% endfor %}
@@ -222,36 +252,17 @@
   {% if "participacion" in secciones %}
   <section class="elx-panel" id="panel-participacion" role="tabpanel" aria-labelledby="tab-participacion">
     <div class="elx-grid-2">
-      <div class="elx-card">
-        <h3>Votaron</h3>
-        <div class="elx-grande" id="p-votaron">0</div>
-        <div class="elx-grande-cap">de <b id="p-padron">0</b> empadronados · <b id="p-pct">0 %</b> de participación</div>
-        <div class="elx-barra" role="img" id="p-barra">
-          <div class="lleno" id="p-lleno" style="width:0"></div>
-          <div class="marca" id="p-marca" title="Elección anterior a esta hora" hidden></div>
-        </div>
-        <div class="elx-leyenda">
-          <span><i class="elx-sw" style="background:var(--celeste)"></i>Votaron <b id="p-lv">0</b></span>
-          <span><i class="elx-sw" style="background:var(--celeste-3)"></i>Restan <b id="p-lr">0</b></span>
-          <span id="p-lprev" hidden><i class="elx-sw" style="background:var(--oro)"></i><span id="p-lprev-txt"></span></span>
-        </div>
-    <div class="elx-kpis elx-kpis--dentro">
-      <div class="elx-kpi"><div class="k">Restan votar</div><div class="v" id="k-restan">0</div><div class="d" id="k-restan-d"></div></div>
-      <div class="elx-kpi"><div class="k">Ritmo de la última hora</div><div class="v" id="k-ritmo">0<small>votos / 10 min</small></div><div class="d" id="k-ritmo-d"></div></div>
-      <div class="elx-kpi"><div class="k">Proyección al cierre</div><div class="v" id="k-proy">0</div><div class="d" id="k-proy-d"></div></div>
-      <div class="elx-kpi"><div class="k" id="k-dif-k">Contra la elección anterior</div><div class="v" id="k-dif">—</div><div class="d" id="k-dif-d"></div></div>
-    </div>
-      </div>
+      {% include "xsys/_elecciones_resumen.html" with px="" %}
       <div class="elx-card">
         <div class="elx-cab">
-          <div><h3>Velocidad de votación</h3><p class="nota">Votos cada 10 minutos, toda la jornada</p></div>
+          <div><h3>Ritmo de acreditación</h3><p class="nota">Acreditados cada 10 minutos, toda la jornada</p></div>
           <div class="elx-leyenda" style="margin:0">
             <span><i class="elx-sw" style="background:var(--azul)"></i>Esta elección</span>
             <span><i class="elx-sw" style="background:var(--celeste-2)"></i>Tramo en curso</span>
             <span id="p-ley-prev"><i class="elx-sw" style="background:var(--previa)"></i><span id="p-ley-prev-txt">Anterior</span></span>
           </div>
         </div>
-        <div class="elx-graf elx-graf--vel"><canvas id="g-velocidad" aria-label="Votos cada 10 minutos"></canvas></div>
+        <div class="elx-graf elx-graf--vel"><canvas id="g-velocidad" aria-label="Acreditados cada 10 minutos"></canvas></div>
       </div>
     </div>
   </section>
@@ -261,63 +272,61 @@
   <section class="elx-panel" id="panel-mesas" role="tabpanel" aria-labelledby="tab-mesas">
     <div class="elx-card">
       <div class="elx-cab">
-        <div><h3>Avance por mesa</h3><p class="nota" id="m-nota">Porcentaje de su padrón que ya votó</p></div>
-        <div class="elx-leyenda" style="margin:0"><span><i class="elx-sw" style="background:var(--alerta)"></i>Más de 30 min sin votos</span></div>
+        <div><h3>Avance por mesa</h3><p class="nota" id="m-nota">Porcentaje de su padrón ya acreditado</p></div>
+        <div class="elx-leyenda" style="margin:0"><span><i class="elx-sw" style="background:var(--alerta)"></i>Más de 30 min sin acreditaciones</span></div>
       </div>
       <div class="elx-mesas" id="m-tarjetas"></div>
     </div>
     <div class="elx-card">
-      <h3>Votos por mesa</h3>
+      <h3>Acreditados por mesa</h3>
       <p class="nota">La línea dorada es el promedio general</p>
-      <div class="elx-graf"><canvas id="g-mesas" aria-label="Votos por mesa"></canvas></div>
+      <div class="elx-graf"><canvas id="g-mesas" aria-label="Acreditados por mesa"></canvas></div>
     </div>
   </section>
   {% endif %}
 
   {% if "horarios" in secciones %}
   <section class="elx-panel" id="panel-horarios" role="tabpanel" aria-labelledby="tab-horarios">
-    <div class="elx-grid-2b">
-      <div class="elx-card">
-        <div class="elx-cab">
-          <div><h3>Votos por hora</h3><p class="nota" id="h-nota">Cada barra es una franja de una hora</p></div>
-        </div>
-        <div class="elx-graf elx-graf--alto"><canvas id="g-horas" aria-label="Votos por hora"></canvas></div>
-      </div>
-      <div class="elx-card">
-        <div class="elx-cab">
-          <div><h3>Participación acumulada</h3><p class="nota">Porcentaje del padrón que votó hasta cada momento</p></div>
-        </div>
-        <div class="elx-graf elx-graf--alto"><canvas id="g-acumulado" aria-label="Participación acumulada"></canvas></div>
-      </div>
+    {% include "xsys/_elecciones_horarios.html" with px="" %}
+  </section>
+  {% endif %}
+
+  {% if "pantalla" in secciones %}
+  {# Para el televisor: el resumen al costado, los gráficos de horarios a la derecha y el avance de cada mesa al pie. #}
+  <section class="elx-panel" id="panel-pantalla" role="tabpanel" aria-labelledby="tab-pantalla">
+    <div class="elx-tablero">
+      {% include "xsys/_elecciones_resumen.html" with px="t-" %}
+      {% include "xsys/_elecciones_horarios.html" with px="t-" %}
     </div>
+    <div class="elx-card elx-aros" id="t-mesas" aria-label="Porcentaje acreditado por mesa"></div>
   </section>
   {% endif %}
 
   {% if "actividades" in secciones %}
   <section class="elx-panel" id="panel-actividades" role="tabpanel" aria-labelledby="tab-actividades">
     <div class="elx-kpis">
-      <div class="elx-kpi"><div class="k">Votaron</div><div class="v" id="a-votaron">0</div><div class="d" id="a-votaron-d"></div></div>
+      <div class="elx-kpi"><div class="k">Acreditados a votar</div><div class="v" id="a-votaron">0</div><div class="d" id="a-votaron-d"></div></div>
       <div class="elx-kpi"><div class="k">Con alguna actividad</div><div class="v" id="a-con">0</div><div class="d" id="a-con-d"></div></div>
       <div class="elx-kpi"><div class="k">Sin actividad contratada</div><div class="v" id="a-sin">0</div><div class="d" id="a-sin-d"></div></div>
-      <div class="elx-kpi"><div class="k">Actividad que más votó</div><div class="v" id="a-top" style="font-size:30px">—</div><div class="d" id="a-top-d"></div></div>
+      <div class="elx-kpi"><div class="k">Actividad con más acreditados</div><div class="v" id="a-top" style="font-size:30px">—</div><div class="d" id="a-top-d"></div></div>
     </div>
     <div class="elx-card">
       <div class="elx-cab">
-        <div><h3>Participación por actividad</h3><p class="nota">Qué porcentaje de los que tienen cada actividad ya votó, entre las que tienen 10 socios o más en el padrón (el resto está en el detalle). La línea dorada es la participación general.</p></div>
+        <div><h3>Acreditación por actividad</h3><p class="nota">Qué porcentaje de los que tienen cada actividad ya se acreditó, entre las que tienen 10 socios o más en el padrón (el resto está en el detalle). La línea dorada es la acreditación general.</p></div>
         <div class="elx-chips" role="group" aria-label="Filtrar actividades">
           <button class="elx-chip" type="button" data-filtro="todas" aria-pressed="true">Todas</button>
           <button class="elx-chip" type="button" data-filtro="deporte" aria-pressed="false">Deportes</button>
           <button class="elx-chip" type="button" data-filtro="servicio" aria-pressed="false">Servicios</button>
         </div>
       </div>
-      <div class="elx-graf elx-graf--act" id="a-graf-cont"><canvas id="g-actividades" aria-label="Participación por actividad"></canvas></div>
+      <div class="elx-graf elx-graf--act" id="a-graf-cont"><canvas id="g-actividades" aria-label="Acreditación por actividad"></canvas></div>
     </div>
     <div class="elx-card">
       <h3>Detalle</h3>
       <p class="nota">Contratos vigentes hoy de cada empadronado. Una persona con dos actividades cuenta en las dos.</p>
       <div style="overflow-x:auto">
         <table class="elx-tabla">
-          <thead><tr><th>Actividad</th><th>Tipo</th><th class="num">En el padrón</th><th class="num">Votaron</th><th>Participación</th><th class="num">% de los votantes</th></tr></thead>
+          <thead><tr><th>Actividad</th><th>Tipo</th><th class="num">En el padrón</th><th class="num">Acreditados</th><th>Acreditación</th><th class="num">% de los acreditados</th></tr></thead>
           <tbody id="a-tabla"></tbody>
         </table>
       </div>
@@ -340,7 +349,8 @@
     participacion: "{% url 'xsys_elecciones_participacion_api' %}",
     mesas: "{% url 'xsys_elecciones_mesas_api' %}",
     horarios: "{% url 'xsys_elecciones_horarios_api' %}",
-    actividades: "{% url 'xsys_elecciones_actividades_api' %}"
+    actividades: "{% url 'xsys_elecciones_actividades_api' %}",
+    pantalla: "{% url 'xsys_elecciones_pantalla_api' %}"
   };
   var SECCIONES = JSON.parse(document.getElementById("elx-secciones").textContent);
   var REFRESCO_MS = 30000;
@@ -428,39 +438,44 @@
   }
 
   // ------------------------------------------------------------ participación
-  function pintarParticipacion(d) {
-    $("p-votaron").textContent = n(d.votaron);
-    $("p-padron").textContent = n(d.padron);
-    $("p-pct").textContent = pct(d.pct);
-    $("p-lleno").style.width = Math.min(100, d.pct) + "%";
-    $("p-lv").textContent = n(d.votaron);
-    $("p-lr").textContent = n(d.restan);
-    $("p-barra").setAttribute("aria-label", "Votó el " + pct(d.pct) + " del padrón");
+  // La tarjeta de acreditados; px es el prefijo de ids ("t-" en la vista Pantalla).
+  function pintarResumen(d, px) {
+    $(px + "p-votaron").textContent = n(d.votaron);
+    $(px + "p-padron").textContent = n(d.padron);
+    $(px + "p-pct").textContent = pct(d.pct);
+    $(px + "p-lleno").style.width = Math.min(100, d.pct) + "%";
+    $(px + "p-lv").textContent = n(d.votaron);
+    $(px + "p-lr").textContent = n(d.restan);
+    $(px + "p-barra").setAttribute("aria-label", "Se acreditó el " + pct(d.pct) + " del padrón");
     var c = d.comparacion, ant = d.comparada;
     if (c) {
       var momento = d.momento.estado === "cerrada" ? "en total" : "a esta hora";
-      $("p-marca").hidden = false;
-      $("p-marca").style.left = "calc(" + Math.min(100, c.pct_a_esta_hora) + "% - 1px)";
-      $("p-lprev").hidden = false;
-      $("p-lprev-txt").innerHTML = anio(ant) + " " + momento + " <b>" + pct(c.pct_a_esta_hora) + "</b>";
+      $(px + "p-marca").hidden = false;
+      $(px + "p-marca").style.left = "calc(" + Math.min(100, c.pct_a_esta_hora) + "% - 1px)";
+      $(px + "p-lprev").hidden = false;
+      $(px + "p-lprev-txt").innerHTML = anio(ant) + " " + momento + " <b>" + pct(c.pct_a_esta_hora) + "</b>";
     }
-    $("k-restan").textContent = n(d.restan);
-    $("k-restan-d").textContent = pct(100 - d.pct) + " del padrón";
-    $("k-ritmo").innerHTML = n(d.ritmo_10min) + "<small>votos / 10 min</small>";
-    $("k-ritmo-d").textContent = d.momento.estado === "en_curso" ? (n(d.ultima_hora) + " votos en la última hora") : "Sólo durante la jornada";
-    $("k-proy").textContent = n(d.proyeccion);
-    $("k-proy-d").textContent = d.momento.estado === "en_curso" ? (pct(d.pct_proyeccion) + " si sigue este ritmo") :
+    $(px + "k-restan").textContent = n(d.restan);
+    $(px + "k-restan-d").textContent = pct(100 - d.pct) + " del padrón";
+    $(px + "k-ritmo").innerHTML = n(d.ritmo_10min) + "<small>acreditados / 10 min</small>";
+    $(px + "k-ritmo-d").textContent = d.momento.estado === "en_curso" ? (n(d.ultima_hora) + " acreditados en la última hora") : "Sólo durante la jornada";
+    $(px + "k-proy").textContent = n(d.proyeccion);
+    $(px + "k-proy-d").textContent = d.momento.estado === "en_curso" ? (pct(d.pct_proyeccion) + " si sigue este ritmo") :
       d.momento.estado === "cerrada" ? "Resultado final" : "Se calcula durante la jornada";
     if (c) {
       var dif = d.pct - c.pct_a_esta_hora;
-      $("k-dif-k").textContent = "Contra " + anio(ant) + (d.momento.estado === "cerrada" ? "" : " a esta hora");
-      $("k-dif").innerHTML = '<span class="' + (dif >= 0 ? "elx-sube" : "elx-baja") + '">' + (dif >= 0 ? "+" : "") +
+      $(px + "k-dif-k").textContent = "Contra " + anio(ant) + (d.momento.estado === "cerrada" ? "" : " a esta hora");
+      $(px + "k-dif").innerHTML = '<span class="' + (dif >= 0 ? "elx-sube" : "elx-baja") + '">' + (dif >= 0 ? "+" : "") +
         dif.toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "</span><small>puntos</small>";
-      $("k-dif-d").textContent = anio(ant) + ": " + n(c.a_esta_hora) + " votos (" + pct(c.pct_a_esta_hora) + ")";
+      $(px + "k-dif-d").textContent = anio(ant) + ": " + n(c.a_esta_hora) + " acreditados (" + pct(c.pct_a_esta_hora) + ")";
     } else {
-      $("k-dif").textContent = "—";
-      $("k-dif-d").textContent = "No hay una elección anterior con votos";
+      $(px + "k-dif").textContent = "—";
+      $(px + "k-dif-d").textContent = "No hay una elección anterior con acreditados";
     }
+  }
+
+  function pintarParticipacion(d) {
+    pintarResumen(d, "");
 
     var t = d.tramos, enCurso = t.en_curso;
     var colores = t.votos.map(function (_v, i) { return i === enCurso ? C.celeste2 : C.azul; });
@@ -495,15 +510,15 @@
       el.className = "elx-mesa" + (quieta ? " quieta" : "");
       el.innerHTML = '<div class="elx-anillo" style="--p:' + Math.min(100, m.pct) + '"><span>' + Math.round(m.pct) + '%</span></div>' +
         '<div><div class="n">Mesa ' + m.mesa + '</div><div class="det">' + n(m.votaron) + ' de ' + n(m.padron) + '</div>' +
-        '<div class="det">' + (m.ultimo ? "Último voto " + m.ultimo : "Sin votos") + '</div></div>';
+        '<div class="det">' + (m.ultimo ? "Última acreditación " + m.ultimo : "Sin acreditados") + '</div></div>';
       cont.appendChild(el);
     });
-    $("m-nota").textContent = "Porcentaje de su padrón que ya votó · promedio " + pct(d.promedio_pct);
+    $("m-nota").textContent = "Porcentaje de su padrón ya acreditado · promedio " + pct(d.promedio_pct);
     grafico("g-mesas", {
       type: "bar",
       data: {
         labels: d.mesas.map(function (m) { return "Mesa " + m.mesa; }),
-        datasets: [{ label: "Votaron", data: d.mesas.map(function (m) { return m.pct; }), backgroundColor: C.celeste,
+        datasets: [{ label: "Acreditados", data: d.mesas.map(function (m) { return m.pct; }), backgroundColor: C.celeste,
           hoverBackgroundColor: C.azul, borderRadius: 6, borderSkipped: "bottom", maxBarThickness: 46 }]
       },
       options: {
@@ -517,15 +532,16 @@
   }
 
   // ------------------------------------------------------------ horarios
-  function pintarHorarios(d) {
+  function pintarHorarios(d, px) {
+    px = px || "";
     var c = d.comparacion, ant = d.comparada, enCurso = d.hora_en_curso;
-    $("h-nota").textContent = d.hora_pico ? ("Hora pico: " + d.hora_pico + " a " + (parseInt(d.hora_pico, 10) + 1) + ":00") : "Cada barra es una franja de una hora";
+    $(px + "h-nota").textContent = d.hora_pico ? ("Hora pico: " + d.hora_pico + " a " + (parseInt(d.hora_pico, 10) + 1) + ":00") : "Cada barra es una franja de una hora";
     var ds = [{
       label: "Esta elección", data: d.por_hora, borderRadius: 6, borderSkipped: "bottom", maxBarThickness: 34,
       backgroundColor: d.por_hora.map(function (_v, i) { return i === enCurso ? C.celeste2 : C.azul; })
     }];
     if (c) ds.push({ label: "Elección " + anio(ant), data: c.por_hora, backgroundColor: C.previa, borderRadius: 6, borderSkipped: "bottom", maxBarThickness: 34 });
-    grafico("g-horas", {
+    grafico(px + "g-horas", {
       type: "bar",
       data: { labels: d.horas, datasets: ds },
       options: {
@@ -542,7 +558,7 @@
       tension: .3, fill: { target: "origin" }, backgroundColor: "rgba(37,150,190,.14)"
     }];
     if (c) ds2.push({ label: "Elección " + anio(ant), data: c.acumulado_pct, borderColor: C.previa, borderWidth: 2, borderDash: [5, 4], pointRadius: 0, tension: .3 });
-    grafico("g-acumulado", {
+    grafico(px + "g-acumulado", {
       type: "line",
       data: { labels: a.etiquetas, datasets: ds2 },
       options: {
@@ -567,14 +583,14 @@
     $("a-votaron").textContent = n(d.votaron);
     $("a-votaron-d").textContent = pct(d.pct_general) + " del padrón";
     $("a-con").textContent = n(d.con_actividad);
-    $("a-con-d").textContent = d.votaron ? pct(100 * d.con_actividad / d.votaron) + " de los votantes" : "—";
+    $("a-con-d").textContent = d.votaron ? pct(100 * d.con_actividad / d.votaron) + " de los acreditados" : "—";
     var sin = d.sin_actividad || { votaron: 0, padron: 0, pct: 0 };
     $("a-sin").textContent = n(sin.votaron);
-    $("a-sin-d").textContent = "Votó el " + pct(sin.pct) + " de los " + n(sin.padron) + " sin actividad";
+    $("a-sin-d").textContent = "Se acreditó el " + pct(sin.pct) + " de los " + n(sin.padron) + " sin actividad";
     var conPadron = d.actividades.filter(function (a) { return a.padron >= 20; });
     var top = conPadron.slice().sort(function (x, y) { return y.pct - x.pct; })[0];
     $("a-top").textContent = top && top.votaron ? top.actividad : "—";
-    $("a-top-d").textContent = top && top.votaron ? ("Votó el " + pct(top.pct) + " (" + n(top.votaron) + " de " + n(top.padron) + ")") : "Entre las que tienen 20 o más socios";
+    $("a-top-d").textContent = top && top.votaron ? ("Se acreditó el " + pct(top.pct) + " (" + n(top.votaron) + " de " + n(top.padron) + ")") : "Entre las que tienen 20 o más socios";
 
     var lista = d.actividades.filter(function (a) { return estado.filtroAct === "todas" || a.tipo === estado.filtroAct; })
       .filter(function (a) { return a.padron >= MIN_PADRON_GRAFICO; })
@@ -584,7 +600,7 @@
       type: "bar",
       data: {
         labels: lista.map(function (a) { return a.actividad; }),
-        datasets: [{ label: "Participación", data: lista.map(function (a) { return a.pct; }),
+        datasets: [{ label: "Acreditación", data: lista.map(function (a) { return a.pct; }),
           backgroundColor: lista.map(function (a) { return a.tipo === "deporte" ? C.celeste : C.oro; }),
           borderRadius: 6, borderSkipped: "left", barPercentage: .75, categoryPercentage: .9 }]
       },
@@ -596,7 +612,7 @@
         },
         plugins: {
           lineaRef: { valor: d.pct_general, eje: "x", texto: "General " + pct(d.pct_general) },
-          tooltip: { callbacks: { label: function (it) { var a = lista[it.dataIndex]; return " " + pct(a.pct) + " · votaron " + n(a.votaron) + " de " + n(a.padron); } } }
+          tooltip: { callbacks: { label: function (it) { var a = lista[it.dataIndex]; return " " + pct(a.pct) + " · acreditados " + n(a.votaron) + " de " + n(a.padron); } } }
         }
       }
     });
@@ -610,7 +626,17 @@
     }).join("") || '<tr><td colspan="6" class="elx-vacio">Sin datos</td></tr>';
   }
 
-  var PINTORES = { participacion: pintarParticipacion, mesas: pintarMesas, horarios: pintarHorarios, actividades: pintarActividades };
+  // ------------------------------------------------------------ pantalla
+  function pintarPantalla(d) {
+    pintarResumen(d, "t-");
+    pintarHorarios(d.horarios, "t-");
+    $("t-mesas").innerHTML = d.mesas.map(function (m) {
+      return '<div class="elx-aro"><div class="elx-anillo" style="--p:' + Math.min(100, m.pct) + '"><span>' + Math.round(m.pct) + '%</span></div>' +
+        '<div class="n">Mesa ' + m.mesa + "</div></div>";
+    }).join("");
+  }
+
+  var PINTORES = { participacion: pintarParticipacion, mesas: pintarMesas, horarios: pintarHorarios, actividades: pintarActividades, pantalla: pintarPantalla };
 
   // ------------------------------------------------------------ carga
   function pedir(url) {
@@ -660,12 +686,21 @@
     cargar(estado.seccion);
   });
 
+  var raiz = document.querySelector(".elx"), botonPantalla = $("elx-pantalla");
+  if (raiz.requestFullscreen) {
+    botonPantalla.hidden = false;
+    botonPantalla.addEventListener("click", function () {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else raiz.requestFullscreen().catch(function (e) { aviso("No se pudo pasar a pantalla completa: " + e.message); });
+    });
+  }
+
   tic(); setInterval(tic, 1000);
   pedir(API.lista).then(function (j) {
     var sel = $("elx-eleccion");
     j.elecciones.forEach(function (e, i) {
       var o = document.createElement("option");
-      o.value = e.id; o.textContent = e.nombre + (e.votaron ? " · " + n(e.votaron) + " votos" : "");
+      o.value = e.id; o.textContent = e.nombre + (e.votaron ? " · " + n(e.votaron) + " acreditados" : "");
       sel.appendChild(o);
       if (i === 0) estado.eleccion = String(e.id);
     });

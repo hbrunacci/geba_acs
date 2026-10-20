@@ -71,7 +71,7 @@ def _conectar():
         conn = connect(settings.MSSQL_XSYS)
     except Exception as exc:  # pragma: no cover - depende de la red
         raise EleccionesError(
-            "Sin conexión con xSys: los votos se leen en vivo y no se pueden "
+            "Sin conexión con Clever: los datos se leen en vivo y no se pueden "
             "mostrar hasta que vuelva.") from exc
     return conn
 
@@ -365,6 +365,18 @@ def horarios(id_lista: int | None = None) -> dict:
         },
         "comparacion": comp,
     }
+
+
+def pantalla(id_lista: int | None = None) -> dict:
+    """Lo del televisor en una sola respuesta: resumen, horarios y mesas.
+
+    Los votos se leen una vez (``_votos`` está cacheado), así que armar las
+    tres partes no triplica las consultas a xSys.
+    """
+    d = participacion(id_lista)
+    d["horarios"] = horarios(id_lista)
+    d["mesas"] = mesas(id_lista)["mesas"]
+    return d
 
 
 # --------------------------------------------------------------------------- #
