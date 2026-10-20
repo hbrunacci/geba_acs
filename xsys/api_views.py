@@ -38,6 +38,7 @@ from xsys.serializers import (
     XsysSocioSerializer,
     XsysWhitelistSerializer,
 )
+from xsys.services import cochera as cochera_svc
 from xsys.services import contratos as contratos_svc
 from xsys.services import foto_fetch
 from xsys.services.access import resolver_acceso, resolver_socio
@@ -605,6 +606,42 @@ def _cochera_de(ev) -> str:
     return ""
 
 
+def _cochera_adeudada(ev, cochera_imp: dict | None) -> str:
+    """"Cochera impaga · NOBLE 109 · octubre" si el rechazo de la barrera es por eso.
+
+    xSys lo informa como "No cumple ninguna condición habilitante" (112), que el
+    visor mostraba como "Chequear Oficina de Socios". Ver ``services.cochera``.
+    """
+    if ev.id_cd_motivo != cochera_svc.MOTIVO_NINGUNA_CONDICION or not ev.fecha:
+        return ""
+    cupones = (cochera_imp or {}).get((ev.id_cliente, ev.id_acceso))
+    adeudada = cochera_svc.adeudada_al(cupones or [], timezone.localtime(ev.fecha).date())
+    if not adeudada:
+        return ""
+    cochera, periodos = adeudada
+    nro, nombre = partes_cochera(cochera)
+    lugar = f"{nombre} {nro}".strip() or cochera
+    if len(periodos) == 1:
+        cuando = _MESES[periodos[0].month - 1]
+    else:
+        cuando = f"{len(periodos)} cuotas desde {_MESES[periodos[0].month - 1]}"
+    return f"Cochera impaga · {lugar} · {cuando}"
+
+
+_MESES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+          "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+
+
+def _cochera_impaga(eventos, barreras: set[int]) -> dict:
+    """Cupones de cochera impagos de los rechazados por "ninguna condición" en barrera."""
+    pares = {
+        (e.id_cliente, e.id_acceso) for e in eventos
+        if e.id_cliente and e.id_acceso in barreras and e.resultado != "S"
+        and e.id_cd_motivo == cochera_svc.MOTIVO_NINGUNA_CONDICION
+    }
+    return cochera_svc.impagas(pares) if pares else {}
+
+
 def _mensaje_no_registrado(id_tarjeta: str) -> str:
     """Mensaje para la lectura que no corresponde a ninguna persona.
 
@@ -622,7 +659,7 @@ def _mensaje_no_registrado(id_tarjeta: str) -> str:
     return f"Credencial no registrada: {tag}"
 
 
-def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None, deuda_act: dict | None = None, apto: dict | None = None) -> dict:
+def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None, deuda_act: dict | None = None, apto: dict | None = None, cochera_imp: dict | None = None) -> dict:
     socio = socios.get(ev.id_cliente)
     tiene_foto = ev.id_cliente in fotos
     # Mensaje original de xSys (motivo de pantalla u observación).
@@ -672,8 +709,11 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         estado = "no"
         # Al que no paga cuota, el genérico no le dice nada al de la puerta: el
         # motivo de xSys ("contrato vencido", "no cumple ninguna condición") sí.
+        impaga = _cochera_adeudada(ev, cochera_imp)
         if no_registrado:
             mensaje = _mensaje_no_registrado(ev.id_tarjeta)
+        elif impaga:
+            mensaje = impaga
         elif (exento or sin_identificar) and mensaje_original:
             mensaje = mensaje_original
         else:
@@ -753,6 +793,8 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         "cochera": cochera,
         "cochera_nro": cochera_nro,
         "cochera_nombre": cochera_nombre,
+        # Rechazado en la barrera por no tener paga la cuota de la cochera.
+        "cochera_impaga": (not permitido) and bool(_cochera_adeudada(ev, cochera_imp)),
         # Veces que ingresó hoy por barrera con ESTA misma habilitación.
         "ingresos_hoy": (ingresos_hoy or {}).get(
             (ev.id_cliente, (ev.observacion or "").strip())),
@@ -981,9 +1023,11 @@ def _contexto_eventos(todos_x, todos_f) -> dict:
         _ingresos_hoy_por_habilitacion(todos_x, barreras)
         if any(e.id_acceso in barreras for e in todos_x) else {}
     )
+    cochera_imp = _cochera_impaga(todos_x, barreras)
     return {
         "xsys": (socios, fotos, motivos, ctrls, avisos_por_socio, contratos_por_socio,
-                 barreras, ingresos_hoy, sin_cuota, en_revision, conc_estado, deuda_act, apto),
+                 barreras, ingresos_hoy, sin_cuota, en_revision, conc_estado, deuda_act, apto,
+                 cochera_imp),
         "facial": (socios, fotos, avisos_por_socio, contratos_por_socio, sin_cuota,
                    en_revision, conc_estado, deuda_act, apto),
     }

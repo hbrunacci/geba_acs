@@ -115,7 +115,7 @@ class ContextoCompartidoTests(TestCase):
     def test_devuelve_los_argumentos_de_los_dos_payloads(self):
         from xsys.api_views import _contexto_eventos
         ctx = _contexto_eventos([], [])
-        self.assertEqual(len(ctx["xsys"]), 13)
+        self.assertEqual(len(ctx["xsys"]), 14)
         self.assertEqual(len(ctx["facial"]), 9)
 
     def test_sin_eventos_no_falla(self):
