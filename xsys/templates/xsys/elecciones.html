@@ -537,16 +537,21 @@
     var c = d.comparacion, ant = d.comparada, enCurso = d.hora_en_curso;
     $(px + "h-nota").textContent = d.hora_pico ? ("Hora pico: " + d.hora_pico + " a " + (parseInt(d.hora_pico, 10) + 1) + ":00") : "Cada barra es una franja de una hora";
     var ds = [{
-      label: "Esta elección", data: d.por_hora, borderRadius: 6, borderSkipped: "bottom", maxBarThickness: 34,
+      label: "Esta elección", data: d.por_hora, borderRadius: 6, borderSkipped: "left", maxBarThickness: 34,
       backgroundColor: d.por_hora.map(function (_v, i) { return i === enCurso ? C.celeste2 : C.azul; })
     }];
-    if (c) ds.push({ label: "Elección " + anio(ant), data: c.por_hora, backgroundColor: C.previa, borderRadius: 6, borderSkipped: "bottom", maxBarThickness: 34 });
+    if (c) ds.push({ label: "Elección " + anio(ant), data: c.por_hora, backgroundColor: C.previa, borderRadius: 6, borderSkipped: "left", maxBarThickness: 34 });
     grafico(px + "g-horas", {
       type: "bar",
       data: { labels: d.horas, datasets: ds },
+      // Horizontal: las horas bajan por el eje Y y la cantidad crece hacia la derecha.
       options: {
-        interaction: { mode: "index", intersect: false },
-        scales: ejes(),
+        indexAxis: "y",
+        interaction: { mode: "index", axis: "y", intersect: false },
+        scales: {
+          x: { beginAtZero: true, grid: { color: C.grilla }, border: { display: false }, ticks: { precision: 0 } },
+          y: { grid: { display: false }, border: { display: false }, ticks: { autoSkip: false } }
+        },
         plugins: {
           legend: { display: !!c, position: "bottom", labels: { usePointStyle: true, pointStyle: "rectRounded", boxWidth: 10 } },
           tooltip: { callbacks: { title: function (it) { var h = d.horas[it[0].dataIndex]; return h + " a " + (parseInt(h, 10) + 1) + ":00"; } } }
