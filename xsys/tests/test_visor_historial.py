@@ -116,7 +116,7 @@ class ContextoCompartidoTests(TestCase):
         from xsys.api_views import _contexto_eventos
         ctx = _contexto_eventos([], [])
         self.assertEqual(len(ctx["xsys"]), 14)
-        self.assertEqual(len(ctx["facial"]), 9)
+        self.assertEqual(len(ctx["facial"]), 10)
 
     def test_sin_eventos_no_falla(self):
         from xsys.api_views import _contexto_eventos

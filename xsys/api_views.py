@@ -40,6 +40,7 @@ from xsys.serializers import (
 )
 from xsys.services import cochera as cochera_svc
 from xsys.services import contratos as contratos_svc
+from xsys.services import deuda_actividades as deuda_act_svc
 from xsys.services import foto_fetch
 from xsys.services.access import resolver_acceso, resolver_socio
 from xsys.services.cuota import cuota_al_dia
@@ -801,7 +802,26 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
     }
 
 
-def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None, deuda_act: dict | None = None, apto: dict | None = None) -> dict:
+def _motivos_rechazo(cids) -> dict:
+    """Por qué la lista blanca tiene inhabilitado a cada uno: {id_cliente: motivo}.
+
+    El facial rechaza sin decir por qué (BioStar sólo informa que el usuario
+    venció), y la garita veía "Acceso Denegado" con los contratos en verde. El
+    motivo es el que calculó la lista blanca, que es la que lo inhabilitó en el
+    equipo. Es el estado de ahora, no el del momento del paso: para el que
+    sigue frenado coinciden, que es el caso que importa en la puerta.
+    """
+    ids = {int(c) for c in cids if c}
+    if not ids:
+        return {}
+    return {
+        w["id_cliente"]: w["motivo"].strip()
+        for w in XsysWhitelist.objects.filter(id_cliente__in=ids, habilitado=False)
+        .exclude(motivo="").values("id_cliente", "motivo")
+    }
+
+
+def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None, deuda_act: dict | None = None, apto: dict | None = None, rechazos: dict | None = None) -> dict:
     """Payload de un acceso facial BioStar, con la MISMA forma que _evento_payload
     para poder fusionarlo en la misma columna del visor. La identidad del equipo
     (``facial_equipo``) es el dato que xSys no tiene: viene del log de BioStar."""
@@ -823,7 +843,8 @@ def _facial_evento_payload(ev: BiostarAccessEvent, socios: dict, fotos: set, avi
         # estaba mal cuando lo que falla es la lectura del rostro.
         estado, mensaje = "no", "Rostro no reconocido"
     elif not permitido:
-        estado, mensaje = "no", "Acceso Denegado"
+        motivo = (rechazos or {}).get(ev.id_cliente)
+        estado, mensaje = "no", (f"Acceso Denegado · {motivo}" if motivo else "Acceso Denegado")
     elif not al_dia:
         estado, mensaje = "no", "Cuota Vencida"
     else:
@@ -1018,6 +1039,7 @@ def _contexto_eventos(todos_x, todos_f) -> dict:
     conc_estado = _estado_concesionarios(cids)
     deuda_act = _deuda_actividades(cids)
     apto = _apto_fisico(cids)
+    rechazos = _motivos_rechazo({e.id_cliente for e in todos_f if e.id_cliente and not e.permitido})
     barreras = _accesos_barrera()
     ingresos_hoy = (
         _ingresos_hoy_por_habilitacion(todos_x, barreras)
@@ -1029,7 +1051,7 @@ def _contexto_eventos(todos_x, todos_f) -> dict:
                  barreras, ingresos_hoy, sin_cuota, en_revision, conc_estado, deuda_act, apto,
                  cochera_imp),
         "facial": (socios, fotos, avisos_por_socio, contratos_por_socio, sin_cuota,
-                   en_revision, conc_estado, deuda_act, apto),
+                   en_revision, conc_estado, deuda_act, apto, rechazos),
     }
 
 
@@ -1746,6 +1768,33 @@ class SocioDetalleAPI(APIView):
             "contratos": contratos,
             "avisos": _avisos_recientes(id_cliente),
             "avisos_hoy": _tipos_avisados_hoy(id_cliente),
+        })
+
+
+class SocioDeudaActividadesAPI(APIView):
+    """GET /api/xsys/socios/<id_cliente>/deuda-actividades/ → deuda de
+    actividades vencida, por contrato, consultada en vivo a xSys.
+
+    Aparte de ``detalle`` porque sale a xSys: si xSys tarda, el resto del modal
+    (DNI, avisos) no espera. El monitor la pide sólo para los rechazados o los
+    que figuran con deuda, no en cada ficha.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, id_cliente: int):
+        try:
+            deudas = deuda_act_svc.detalle_socio(id_cliente)
+        except Exception as exc:  # xSys caído: el modal sigue sin este bloque
+            logger.warning("deuda de actividades de %s: %s", id_cliente, exc)
+            return Response({"id_cliente": id_cliente, "deudas": [], "error": "xSys no responde"},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({
+            "id_cliente": id_cliente,
+            "deudas": deudas,
+            "cuotas": sum(d["cuotas"] for d in deudas),
+            "importe": sum(d["importe"] for d in deudas),
         })
 
 

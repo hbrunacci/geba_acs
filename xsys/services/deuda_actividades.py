@@ -140,6 +140,87 @@ def _sql_cuotas_vencidas(cantidad_ids: int) -> str:
     """
 
 
+def _sql_detalle_socio() -> str:
+    """La misma deuda que cuenta ``_sql_cuotas_vencidas``, pero de UNA persona
+    y abierta por contrato, para mostrarle a la garita de qué es.
+
+    El contrato puede estar dado de baja: la deuda sigue y es justamente la que
+    no aparece entre los contratos vigentes de la ficha. La actividad sale del
+    primer producto del contrato con OUTER APPLY, para no multiplicar las filas
+    de la cuenta corriente cuando el contrato tiene más de un producto.
+    """
+    actividades = ",".join(str(i) for i in TIPOS_CON_ACTIVIDADES)
+    opcionales = ",".join("'%s'" % t for t in TIPOS_OPCIONALES)
+    return f"""
+        SELECT  O.Id_Contrato, O.Activo, O.Fecha_Baja,
+                ISNULL(D.Actividad, ''),
+                cuotas  = COUNT(*),
+                importe = SUM(CC.Saldo),
+                desde   = MIN(CC.Fecha),
+                hasta   = MAX(CC.Fecha)
+        FROM    Clientes_CtaCte CC
+                JOIN Cbtes B    ON B.Id_Trans = CC.Id_Trans
+                JOIN Contratos O ON O.Id_Contrato = B.Id_Contrato AND B.Id_Contrato > 0
+                OUTER APPLY (
+                    SELECT TOP 1 RTRIM(F.Descripcion) AS Actividad
+                    FROM   Contratos_Prod CP
+                           JOIN Productos P      ON P.Id_Producto = CP.Id_Producto
+                           JOIN Prod_Familias F  ON F.Id_Familia = P.Id_Familia
+                    WHERE  CP.Id_Contrato = O.Id_Contrato
+                ) D
+        WHERE   CC.Importe > 0 AND CC.Saldo > 0
+          AND   B.Id_Tipo_Cbte NOT IN ({opcionales})
+          AND   O.Id_Tipo_Con IN ({actividades})
+          AND   CC.Fecha >= ?
+          AND   CC.Fecha < ?
+          AND   CC.Id_Cliente = ?
+        GROUP BY O.Id_Contrato, O.Activo, O.Fecha_Baja, D.Actividad
+        ORDER BY MIN(CC.Fecha)
+    """
+
+
+def _fecha_iso(valor) -> str | None:
+    if valor is None:
+        return None
+    return (valor.date() if isinstance(valor, _dt.datetime) else valor).isoformat()
+
+
+def detalle_socio(id_cliente: int) -> list[dict]:
+    """Deuda de actividades vencida de una persona, por contrato, en vivo.
+
+    Es lo que el monitor muestra al abrir la ficha de alguien frenado por deuda:
+    sin esto la garita ve los contratos vigentes en verde y no entiende por qué
+    no pasa (el caso de la ficha 892646, que debía seis cuotas de un vóley ya
+    dado de baja).
+    """
+    hoy = timezone.localdate()
+    corte = _corte_vencido(hoy)
+    desde = desde_ejercicio()
+    conn = _conectar()
+    try:
+        cur = conn.cursor()
+        cur.execute(_sql_detalle_socio(),
+                    [_dt.datetime(desde.year, desde.month, desde.day),
+                     _dt.datetime(corte.year, corte.month, corte.day),
+                     int(id_cliente)])
+        filas = cur.fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "id_contrato": int(r[0]),
+            "actividad": (r[3] or "").strip(),
+            "contrato_activo": bool(r[1]) and r[2] is None,
+            "fecha_baja": _fecha_iso(r[2]),
+            "cuotas": int(r[4]),
+            "importe": float(r[5] or 0),
+            "desde": _fecha_iso(r[6]),
+            "hasta": _fecha_iso(r[7]),
+        }
+        for r in filas
+    ]
+
+
 def _conectar():
     try:
         conn = connect(settings.MSSQL_XSYS)

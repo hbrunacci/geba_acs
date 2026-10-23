@@ -211,6 +211,10 @@
     .mctr__val.ok { color: #56d364; } .mctr__val.deuda { color: #ff7b72; } .mctr__val.sin_pagos { color: #8b949e; }
     .mctr__sub { display: block; font-weight: 400; font-size: 11px; opacity: .6; color: #c9d1d9; }
     .mctr__tit { margin-top: 6px; font-size: 12px; color: #8b949e; font-style: italic; }
+    /* Deuda de actividades en vivo: va aparte de los contratos porque el contrato
+       que se debe suele estar dado de baja y ya no figura arriba. */
+    .mdeuda { margin-top: 14px; }
+    .mdeuda .mctr { border-color: #6e2b2b; }
     .contrato.cs { border-color: #2ea043; }
     .modal__vacio { opacity: .5; font-size: 13px; }
 
@@ -295,6 +299,7 @@
           <div class="modal__contratos">
             <strong>Contratos adquiridos</strong>
             <div id="m-contratos"></div>
+            <div id="m-deuda"></div>
           </div>
           <div class="modal__acciones" id="m-acciones">
             <div class="avisos__t">Dejar aviso al socio</div>
@@ -711,7 +716,9 @@
       // Los contratos ya vienen en el evento: se pintan sin esperar al fetch.
       document.getElementById("m-contratos").innerHTML =
         ev.id_cliente ? contratosModalHTML(ev) : '<span class="modal__vacio">Sin socio</span>';
+      document.getElementById("m-deuda").innerHTML = "";
       if (!ev.id_cliente) return;
+      cargarDeudaModal(ev);
       fetch(API + "/socios/" + ev.id_cliente + "/detalle/", { headers: hdr() })
         .then(function (r) { return r.json(); })
         .then(function (d) {
@@ -961,6 +968,45 @@
       var tit = cs[0].via_titular
         ? '<div class="mctr__tit">Facturados al titular del grupo familiar: ' + esc(cs[0].via_titular) + '</div>' : "";
       return '<div class="mctr">' + filas + '</div>' + tit;
+    }
+
+    // Deuda de actividades vencida, en vivo, para el que fue rechazado o figura con
+    // deuda. Sin esto la garita veía los contratos vigentes en verde y no entendía
+    // por qué no pasaba: el contrato que se debe suele estar dado de baja.
+    var deudaModalId = null;
+    function cargarDeudaModal(ev) {
+      deudaModalId = ev.id_cliente;
+      if (ev.permitido && !ev.deuda_actividades) return;
+      var cont = document.getElementById("m-deuda");
+      cont.innerHTML = '<div class="mdeuda"><strong>Deuda de actividades</strong><div class="modal__vacio">Consultando…</div></div>';
+      fetch(API + "/socios/" + ev.id_cliente + "/deuda-actividades/", { headers: hdr() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (deudaModalId !== ev.id_cliente) return;  // ya abrieron otra ficha
+          cont.innerHTML = deudaModalHTML(d);
+        })
+        .catch(function () { if (deudaModalId === ev.id_cliente) cont.innerHTML = ""; });
+    }
+    function mesAnio(iso) {
+      var p = (iso || "").split("-");
+      return p.length > 1 ? (p[1] + "/" + p[0]) : "";
+    }
+    function deudaModalHTML(d) {
+      if (d.error) return '<div class="mdeuda"><strong>Deuda de actividades</strong><div class="modal__vacio">No se pudo consultar (' + esc(d.error) + ')</div></div>';
+      var ds = d.deudas || [];
+      if (!ds.length) return "";
+      var filas = ds.map(function (x) {
+        var meses = x.desde === x.hasta ? mesAnio(x.desde) : (mesAnio(x.desde) + " a " + mesAnio(x.hasta));
+        var sub = meses + (x.contrato_activo ? "" : " · contrato dado de baja" + (x.fecha_baja ? " " + fechaDia(x.fecha_baja) : ""));
+        return '<div class="mctr__row">' +
+            '<span class="mctr__name">' + esc((x.actividad || "Actividad").toUpperCase()) +
+              '<span class="mctr__tipo">' + esc(sub) + '</span></span>' +
+            '<span class="mctr__val deuda">debe ' + esc(pesos(x.importe)) +
+              '<span class="mctr__sub">' + x.cuotas + (x.cuotas === 1 ? " cuota" : " cuotas") + '</span>' +
+            '</span>' +
+          '</div>';
+      }).join("");
+      return '<div class="mdeuda"><strong>Deuda de actividades</strong><div class="mctr">' + filas + '</div></div>';
     }
 
     // Estas pantallas son kioscos que quedan abiertos días: si el visor cambió en
