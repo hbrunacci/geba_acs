@@ -1,7 +1,9 @@
-{# Tarjeta de acreditados a votar con sus cuatro indicadores. Se incluye con un prefijo de ids (px) para poder repetirlo en la vista Pantalla. #}
+{# Tarjeta de acreditados para votar con sus cuatro indicadores. Se incluye con un prefijo de ids (px) para poder repetirlo en la vista Pantalla, que muestra el número grande aparte (sin_grande). #}
 <div class="elx-card">
-  <h3>Acreditados a votar</h3>
+  {% if not sin_grande %}
+  <h3>Acreditados para votar</h3>
   <div class="elx-grande" id="{{ px }}p-votaron">0</div>
+  {% endif %}
   <div class="elx-grande-cap">de <b id="{{ px }}p-padron">0</b> empadronados · <b id="{{ px }}p-pct">0 %</b> del padrón acreditado</div>
   <div class="elx-barra" role="img" id="{{ px }}p-barra">
     <div class="lleno" id="{{ px }}p-lleno" style="width:0"></div>
@@ -14,7 +16,7 @@
   </div>
   <div class="elx-kpis elx-kpis--dentro">
     <div class="elx-kpi"><div class="k">Restan acreditarse</div><div class="v" id="{{ px }}k-restan">0</div><div class="d" id="{{ px }}k-restan-d"></div></div>
-    <div class="elx-kpi"><div class="k">Ritmo de la última hora</div><div class="v" id="{{ px }}k-ritmo">0<small>acreditados / 10 min</small></div><div class="d" id="{{ px }}k-ritmo-d"></div></div>
+    <div class="elx-kpi"><div class="k">Acreditados última hora</div><div class="v" id="{{ px }}k-ritmo">0</div><div class="d" id="{{ px }}k-ritmo-d"></div></div>
     <div class="elx-kpi"><div class="k">Proyección al cierre</div><div class="v" id="{{ px }}k-proy">0</div><div class="d" id="{{ px }}k-proy-d"></div></div>
     <div class="elx-kpi"><div class="k" id="{{ px }}k-dif-k">Contra la elección anterior</div><div class="v" id="{{ px }}k-dif">—</div><div class="d" id="{{ px }}k-dif-d"></div></div>
   </div>

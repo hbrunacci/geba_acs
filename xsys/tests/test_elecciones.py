@@ -62,14 +62,24 @@ class ParticipacionTests(_ConVotos):
         self.assertEqual((d["padron"], d["votaron"], d["restan"]), (6, 3, 3))
         self.assertEqual(d["pct"], 50.0)
         self.assertEqual(sum(d["tramos"]["votos"]), 3)
-        self.assertEqual(d["tramos"]["en_curso"], 9)        # 10:30 -> tramo 10:30-10:40
+        self.assertEqual(d["tramos"]["en_curso"], 3)        # abre 10:00; 10:30 -> tramo 10:30-10:40
         self.assertEqual(d["comparada"]["id"], 233)
         # En 2024, antes de las 10:30 había votado 1 de 4.
         self.assertEqual(d["comparacion"]["a_esta_hora"], 1)
         self.assertEqual(d["comparacion"]["pct_a_esta_hora"], 25.0)
-        # Ritmo: 2 votos entre 09:30 y 10:30 -> proyecta 2/h por 10,5 h más.
+        # Ritmo: 2 votos desde la apertura (10:15 y 10:16) -> proyecta 2/h por 10,5 h más.
         self.assertEqual(d["ultima_hora"], 2)
         self.assertEqual(d["proyeccion"], 3 + 21)
+        # Primera hora: todavía no hay una cerrada, va la que corre (el de 09:05 cuenta en ella).
+        self.assertEqual(d["hora_corte"], {"desde": "10:00", "hasta": "11:00", "votos": 3, "completa": False})
+
+    def test_acreditados_ultima_hora_es_la_hora_de_reloj_cerrada(self):
+        with self._a_las("2026-10-25 11:40"):
+            d = elecciones.participacion()
+        self.assertEqual(d["hora_corte"], {"desde": "10:00", "hasta": "11:00", "votos": 3, "completa": True})
+        with self._a_las("2026-10-25 12:05"):
+            d = elecciones.participacion()
+        self.assertEqual(d["hora_corte"], {"desde": "11:00", "hasta": "12:00", "votos": 0, "completa": True})
 
     def test_antes_de_la_eleccion_no_proyecta(self):
         with self._a_las("2026-10-20 12:00"):
@@ -97,10 +107,10 @@ class MesasHorariosTests(_ConVotos):
     def test_horarios_suman_el_total_y_cortan_el_acumulado_en_la_hora(self):
         with self._a_las("2026-10-25 10:30"):
             d = elecciones.horarios()
-        self.assertEqual(d["por_hora"][:2], [1, 2])
+        self.assertEqual(d["por_hora"][:2], [3, 0])         # el de 09:05 cae en la primera franja
         self.assertEqual(sum(d["por_hora"]), 3)
-        self.assertEqual(d["hora_en_curso"], 1)
-        self.assertEqual(len(d["acumulado"]["pct"]), 10)    # hasta el tramo 10:30
+        self.assertEqual(d["hora_en_curso"], 0)
+        self.assertEqual(len(d["acumulado"]["pct"]), 4)     # hasta el tramo 10:30
         self.assertEqual(d["acumulado"]["pct"][-1], 50.0)
         self.assertEqual(d["comparacion"]["acumulado_pct"][-1], 50.0)
 

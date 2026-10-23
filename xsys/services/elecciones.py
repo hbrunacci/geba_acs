@@ -49,9 +49,9 @@ class EleccionesError(RuntimeError):
     """No se pudieron leer los datos de xSys; el mensaje va tal cual a pantalla."""
 
 
-# La jornada electoral. Fuera de este horario no se vota, y es el eje de los
-# gráficos aunque el primer voto llegue 09:44 como en 2024.
-APERTURA = _dt.time(9, 0)
+# La jornada electoral, de 10 a 21. Es el eje de los gráficos: lo acreditado
+# antes de abrir (en 2024 el primero fue 09:44) cuenta en la primera franja.
+APERTURA = _dt.time(10, 0)
 CIERRE = _dt.time(21, 0)
 TRAMO_MIN = 10
 
@@ -254,6 +254,22 @@ def participacion(id_lista: int | None = None) -> dict:
     proyeccion = (votaron + round(ult_hora * restan_min / 60)
                   if momento["estado"] == "en_curso" else votaron)
 
+    # Acreditados de la última hora de reloj ya terminada (a las 15:40, de 14 a
+    # 15). En la primera hora todavía no hay una cerrada: va la que corre.
+    por_hora = _tramos(votos, 60)
+    if momento["estado"] == "pendiente":
+        h, completa = 0, False
+    elif momento["estado"] == "cerrada":
+        h, completa = len(por_hora) - 1, True
+    else:
+        h, completa = (corte // 60 - 1, True) if corte >= 60 else (0, False)
+    hora_corte = {
+        "desde": _etiqueta(h * 60),
+        "hasta": _etiqueta(min(_duracion(), (h + 1) * 60)),
+        "votos": por_hora[h] if momento["estado"] != "pendiente" else 0,
+        "completa": completa,
+    }
+
     comp = None
     if anterior:
         votos_ant = _votos(anterior["id"])
@@ -278,6 +294,7 @@ def participacion(id_lista: int | None = None) -> dict:
         "pct": _pct(votaron, padron),
         "ritmo_10min": ritmo,
         "ultima_hora": ult_hora,
+        "hora_corte": hora_corte,
         "proyeccion": proyeccion,
         "pct_proyeccion": _pct(proyeccion, padron),
         "mesas": len({m for m, _f in votos if m is not None}),

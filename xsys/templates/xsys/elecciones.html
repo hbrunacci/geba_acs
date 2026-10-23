@@ -104,9 +104,14 @@
   .elx:fullscreen { max-width: none; overflow-y: auto; background: var(--fondo); padding: 20px 28px; align-content: start; }
   .elx:fullscreen .elx-select, .elx:fullscreen .elx-pie { display: none; }
   .elx:fullscreen .elx-graf--alto { height: calc(100vh - 290px); min-height: 340px; }
-  .elx:fullscreen #panel-pantalla .elx-graf--alto { height: calc(100vh - 470px); min-height: 300px; }
+  .elx:fullscreen #panel-pantalla .elx-graf--alto { height: calc(100vh - 680px); min-height: 260px; }
+  .elx-hero { min-height: min-content; }
 
-  /* Vista Pantalla: resumen a la izquierda, horarios a la derecha, mesas al pie. */
+  /* Vista Pantalla: la cifra grande arriba al centro, el resumen a la izquierda,
+     horarios a la derecha y mesas al pie. */
+  .elx-derecha { display: grid; gap: 18px; align-content: start; min-width: 0; }
+  .elx-cifra { text-align: center; padding: 12px 20px 10px; }
+  .elx-cifra .elx-grande { font-size: clamp(110px, 11vw, 170px); line-height: .8; margin-top: 6px; }
   .elx-tablero { display: grid; grid-template-columns: minmax(320px, 400px) 1fr; gap: 18px; align-items: stretch; }
   @media (max-width: 1100px) { .elx-tablero { grid-template-columns: 1fr; } }
   .elx-aros { display: flex; flex-wrap: wrap; justify-content: space-around; gap: 14px 10px; padding: 16px 18px; }
@@ -218,8 +223,8 @@
   <section class="elx-hero">
     <div class="elx-escudo"><img src="{% static 'xsys/img/geba-escudo.png' %}" alt="Escudo de GEBA" /></div>
     <div class="elx-titulo">
-      <div class="eyebrow">Gimnasia y Esgrima de Buenos Aires</div>
-      <h2 id="elx-nombre">Elecciones</h2>
+      <div class="eyebrow">Club de Gimnasia y Esgrima</div>
+      <h2 id="elx-nombre">GEBA Elige</h2>
       <div class="sub" id="elx-sub">Cargando…</div>
     </div>
     <div class="elx-controles">
@@ -257,7 +262,7 @@
         <div class="elx-cab">
           <div><h3>Ritmo de acreditación</h3><p class="nota">Acreditados cada 10 minutos, toda la jornada</p></div>
           <div class="elx-leyenda" style="margin:0">
-            <span><i class="elx-sw" style="background:var(--azul)"></i>Esta elección</span>
+            <span><i class="elx-sw" style="background:var(--azul)"></i><span id="p-ley-act-txt">Esta elección</span></span>
             <span><i class="elx-sw" style="background:var(--celeste-2)"></i>Tramo en curso</span>
             <span id="p-ley-prev"><i class="elx-sw" style="background:var(--previa)"></i><span id="p-ley-prev-txt">Anterior</span></span>
           </div>
@@ -295,8 +300,14 @@
   {# Para el televisor: el resumen al costado, los gráficos de horarios a la derecha y el avance de cada mesa al pie. #}
   <section class="elx-panel" id="panel-pantalla" role="tabpanel" aria-labelledby="tab-pantalla">
     <div class="elx-tablero">
-      {% include "xsys/_elecciones_resumen.html" with px="t-" %}
-      {% include "xsys/_elecciones_horarios.html" with px="t-" %}
+      {% include "xsys/_elecciones_resumen.html" with px="t-" sin_grande=True %}
+      <div class="elx-derecha">
+        <div class="elx-card elx-cifra">
+          <h3>Acreditados para votar</h3>
+          <div class="elx-grande" id="t-p-votaron">0</div>
+        </div>
+        {% include "xsys/_elecciones_horarios.html" with px="t-" %}
+      </div>
     </div>
     <div class="elx-card elx-aros" id="t-mesas" aria-label="Porcentaje acreditado por mesa"></div>
   </section>
@@ -364,6 +375,8 @@
   var n = function (v) { return fmt.format(Math.round(v || 0)); };
   var pct = function (v) { return (v || 0).toLocaleString("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " %"; };
   function anio(e) { return e && e.fecha ? e.fecha.slice(0, 4) : ""; }
+  // Nombre de la serie de la elección que se mira ("Elección 2026").
+  function estaEleccion(d) { return "Elección " + anio(d.eleccion); }
 
   Chart.defaults.font.family = "Poppins, system-ui, sans-serif";
   Chart.defaults.font.size = 11;
@@ -419,13 +432,14 @@
   var ESTADOS = { pendiente: "Por empezar", en_curso: "En vivo", cerrada: "Cerrada" };
   function pintarCabecera(d) {
     var e = d.eleccion, f = e.fecha ? new Date(e.fecha + "T12:00:00") : null;
-    $("elx-nombre").textContent = e.nombre.replace(/\s*\d{1,2}\/\d{1,2}\/\d{4}\s*$/, "") + " " + anio(e);
+    $("elx-nombre").textContent = "GEBA Elige " + anio(e);
     $("elx-sub").textContent = (f ? f.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "") +
       " · " + d.jornada.apertura + " a " + d.jornada.cierre + " · padrón de " + n(e.padron) + " socios";
     $("elx-estado").setAttribute("data-estado", d.momento.estado);
     $("elx-estado-txt").textContent = ESTADOS[d.momento.estado] || "";
     var ant = d.comparada;
     ["p-ley-prev-txt"].forEach(function (id) { if ($(id)) $(id).textContent = ant ? ("Elección " + anio(ant)) : "Sin elección anterior"; });
+    if ($("p-ley-act-txt")) $("p-ley-act-txt").textContent = estaEleccion(d);
   }
   function tic() {
     $("elx-reloj").textContent = new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -457,17 +471,19 @@
     }
     $(px + "k-restan").textContent = n(d.restan);
     $(px + "k-restan-d").textContent = pct(100 - d.pct) + " del padrón";
-    $(px + "k-ritmo").innerHTML = n(d.ritmo_10min) + "<small>acreditados / 10 min</small>";
-    $(px + "k-ritmo-d").textContent = d.momento.estado === "en_curso" ? (n(d.ultima_hora) + " acreditados en la última hora") : "Sólo durante la jornada";
+    var hc = d.hora_corte;
+    $(px + "k-ritmo").textContent = n(hc.votos);
+    $(px + "k-ritmo-d").textContent = "De " + hc.desde + " a " + hc.hasta + (hc.completa ? "" : " (en curso)");
     $(px + "k-proy").textContent = n(d.proyeccion);
     $(px + "k-proy-d").textContent = d.momento.estado === "en_curso" ? (pct(d.pct_proyeccion) + " si sigue este ritmo") :
       d.momento.estado === "cerrada" ? "Resultado final" : "Se calcula durante la jornada";
     if (c) {
-      var dif = d.pct - c.pct_a_esta_hora;
-      $(px + "k-dif-k").textContent = "Contra " + anio(ant) + (d.momento.estado === "cerrada" ? "" : " a esta hora");
-      $(px + "k-dif").innerHTML = '<span class="' + (dif >= 0 ? "elx-sube" : "elx-baja") + '">' + (dif >= 0 ? "+" : "") +
-        dif.toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "</span><small>puntos</small>";
-      $(px + "k-dif-d").textContent = anio(ant) + ": " + n(c.a_esta_hora) + " acreditados (" + pct(c.pct_a_esta_hora) + ")";
+      // En cantidad de acreditados, no en puntos del padrón.
+      var cerrada = d.momento.estado === "cerrada", dif = d.votaron - c.a_esta_hora;
+      $(px + "k-dif-k").textContent = "Contra " + anio(ant) + (cerrada ? "" : " a esta hora");
+      $(px + "k-dif").innerHTML = '<span class="' + (dif >= 0 ? "elx-sube" : "elx-baja") + '">' + (dif >= 0 ? "+" : "−") +
+        n(Math.abs(dif)) + "</span><small>acreditados</small>";
+      $(px + "k-dif-d").textContent = anio(ant) + (cerrada ? " en total: " : " a esta hora: ") + n(c.a_esta_hora) + " acreditados";
     } else {
       $(px + "k-dif").textContent = "—";
       $(px + "k-dif-d").textContent = "No hay una elección anterior con acreditados";
@@ -477,10 +493,10 @@
   function pintarParticipacion(d) {
     pintarResumen(d, "");
 
-    var t = d.tramos, enCurso = t.en_curso;
+    var t = d.tramos, enCurso = t.en_curso, c = d.comparacion, ant = d.comparada;
     var colores = t.votos.map(function (_v, i) { return i === enCurso ? C.celeste2 : C.azul; });
     var datasets = [{
-      type: "bar", label: "Esta elección", data: t.votos, backgroundColor: colores,
+      type: "bar", label: estaEleccion(d), data: t.votos, backgroundColor: colores,
       borderRadius: 4, borderSkipped: "bottom", barPercentage: .9, categoryPercentage: .95, order: 2
     }];
     if (c) datasets.push({
@@ -537,7 +553,7 @@
     var c = d.comparacion, ant = d.comparada, enCurso = d.hora_en_curso;
     $(px + "h-nota").textContent = d.hora_pico ? ("Hora pico: " + d.hora_pico + " a " + (parseInt(d.hora_pico, 10) + 1) + ":00") : "Cada barra es una franja de una hora";
     var ds = [{
-      label: "Esta elección", data: d.por_hora, borderRadius: 6, borderSkipped: "left", maxBarThickness: 34,
+      label: estaEleccion(d), data: d.por_hora, borderRadius: 6, borderSkipped: "left", maxBarThickness: 34,
       backgroundColor: d.por_hora.map(function (_v, i) { return i === enCurso ? C.celeste2 : C.azul; })
     }];
     if (c) ds.push({ label: "Elección " + anio(ant), data: c.por_hora, backgroundColor: C.previa, borderRadius: 6, borderSkipped: "left", maxBarThickness: 34 });
@@ -559,7 +575,7 @@
       }
     });
     var a = d.acumulado, ds2 = [{
-      label: "Esta elección", data: a.pct, borderColor: C.azul, borderWidth: 3, pointRadius: 0, pointHoverRadius: 5,
+      label: estaEleccion(d), data: a.pct, borderColor: C.azul, borderWidth: 3, pointRadius: 0, pointHoverRadius: 5,
       tension: .3, fill: { target: "origin" }, backgroundColor: "rgba(37,150,190,.14)"
     }];
     if (c) ds2.push({ label: "Elección " + anio(ant), data: c.acumulado_pct, borderColor: C.previa, borderWidth: 2, borderDash: [5, 4], pointRadius: 0, tension: .3 });
