@@ -303,3 +303,33 @@ XSYS_APTO_FAMILIAS = tuple(
         "20,21,22,23,25,27,28,30,31,33,34,35,36,37,38,39,40,41,42,43,44,60,63",
     ).split(",") if f.strip()
 )
+
+# Correo saliente. Sin EMAIL_HOST_PASSWORD no sale nada: queda el backend de
+# consola, que sólo lo escribe en el log del contenedor.
+#
+# Con Gmail la contraseña es una "contraseña de aplicación" de 16 caracteres
+# (myaccount.google.com/apppasswords, requiere verificación en dos pasos), no
+# la de la cuenta.
+# La cuenta del club (mail.geba.org.ar) usa el puerto 465 con SSL directo; Gmail,
+# el 587 con STARTTLS. Son excluyentes: el puerto decide cuál por defecto.
+EMAIL_HOST = os.getenv("EMAIL_HOST", "mail.geba.org.ar")
+EMAIL_PORT = _get_int_env("EMAIL_PORT", 465)
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "1" if EMAIL_PORT == 465 else "0") == "1"
+EMAIL_USE_TLS = not EMAIL_USE_SSL and os.getenv("EMAIL_USE_TLS", "1") == "1"
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_TIMEOUT = 20
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", f"GEBA ACS <{EMAIL_HOST_USER}>" if EMAIL_HOST_USER else "webmaster@localhost")
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+EMAIL_BACKEND = "common.correo.BackendRestringido"
+
+# Únicos destinatarios a los que el sistema puede escribir. Cualquier otra
+# dirección se descarta antes de llegar al servidor de correo, venga de donde
+# venga el envío (un comando, un error de Django, un proceso nuevo). Es la
+# garantía de que la app no le manda nada a un socio por accidente.
+EMAIL_DESTINATARIOS_PERMITIDOS = tuple(
+    d.strip().lower() for d in os.getenv(
+        "EMAIL_DESTINATARIOS_PERMITIDOS",
+        "hbrunacci@gmail.com,leonardomendez@geba.org.ar",
+    ).split(",") if d.strip()
+)
