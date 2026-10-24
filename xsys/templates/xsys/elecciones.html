@@ -102,7 +102,7 @@
   /* Pantalla completa (para dejarla en un televisor): ocupa todo, sin el
      selector de elección ni el pie, y los gráficos crecen hasta el borde. */
   .elx:fullscreen { max-width: none; overflow-y: auto; background: var(--fondo); padding: 20px 28px; align-content: start; }
-  .elx:fullscreen .elx-select, .elx:fullscreen .elx-pie { display: none; }
+  .elx:fullscreen .elx-select { display: none; }
   .elx:fullscreen .elx-graf--alto { height: calc(100vh - 290px); min-height: 340px; }
   .elx:fullscreen #panel-pantalla .elx-graf--alto { height: calc(100vh - 680px); min-height: 260px; }
   .elx-hero { min-height: min-content; }
@@ -117,6 +117,7 @@
   .elx-aros { display: flex; flex-wrap: wrap; justify-content: space-around; gap: 14px 10px; padding: 16px 18px; }
   .elx-aro { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 76px; }
   .elx-aro .n { font-family: var(--num); font-size: 22px; font-weight: 600; line-height: 1; color: var(--tinta); white-space: nowrap; }
+  .elx-aro .v { font-size: 14px; color: var(--tinta-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
   /* ---------- Selector de sector ---------- */
   .elx-tabs {
@@ -213,7 +214,6 @@
   .elx-aviso { border-radius: 14px; padding: 14px 18px; background: #fff7e6; border: 1px solid #f3d9a4; color: #6b4b00; font-size: 14px; display: none; }
   .elx-aviso.visible { display: block; }
   .elx-vacio { color: var(--apagado); font-size: 14px; text-align: center; padding: 40px 10px; }
-  .elx-pie { font-size: 12px; color: var(--apagado); }
   @media (prefers-reduced-motion: reduce) { .elx-panel.activo, .elx-barra .lleno { animation: none; transition: none; } .elx-estado .elx-punto { animation: none !important; } }
 </style>
 {% endblock extra_css %}
@@ -345,7 +345,6 @@
   </section>
   {% endif %}
 
-  <p class="elx-pie">Datos en vivo de xSys (padrón de la elección en <code>Clientes_Listas_Precios</code>). Se actualiza solo cada 30 segundos.</p>
 </div>
 {% endblock content %}
 
@@ -653,7 +652,8 @@
     pintarHorarios(d.horarios, "t-");
     $("t-mesas").innerHTML = d.mesas.map(function (m) {
       return '<div class="elx-aro"><div class="elx-anillo" style="--p:' + Math.min(100, m.pct) + '"><span>' + Math.round(m.pct) + '%</span></div>' +
-        '<div class="n">Mesa ' + m.mesa + "</div></div>";
+        '<div class="n">Mesa ' + m.mesa + '</div>' +
+        '<div class="v">' + n(m.votaron) + (m.votaron === 1 ? " acreditado" : " acreditados") + "</div></div>";
     }).join("");
   }
 
