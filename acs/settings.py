@@ -330,6 +330,6 @@ EMAIL_BACKEND = "common.correo.BackendRestringido"
 EMAIL_DESTINATARIOS_PERMITIDOS = tuple(
     d.strip().lower() for d in os.getenv(
         "EMAIL_DESTINATARIOS_PERMITIDOS",
-        "hbrunacci@gmail.com,leonardomendez@geba.org.ar",
+        "hbrunacci@gmail.com,l30m3nd3z@gmail.com",
     ).split(",") if d.strip()
 )
