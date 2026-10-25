@@ -14,6 +14,9 @@ openpyxl==3.1.5
 whitenoise==6.8.2
 idna==3.11
 pillow==11.3.0
+# PDF del reporte de acreditados de la elección (xsys/services/elecciones_reporte.py),
+# para repartir a las listas. Puro Python, sin dependencias del sistema.
+reportlab==4.2.5
 psycopg2-binary==2.9.11
 pyodbc==5.3.0
 python-dotenv==1.2.1

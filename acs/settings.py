@@ -318,7 +318,7 @@ EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "1" if EMAIL_PORT == 465 else "0") ==
 EMAIL_USE_TLS = not EMAIL_USE_SSL and os.getenv("EMAIL_USE_TLS", "1") == "1"
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-EMAIL_TIMEOUT = 20
+EMAIL_TIMEOUT = 60  # el servidor del club a veces tarda en contestar
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", f"GEBA ACS <{EMAIL_HOST_USER}>" if EMAIL_HOST_USER else "webmaster@localhost")
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 EMAIL_BACKEND = "common.correo.BackendRestringido"
