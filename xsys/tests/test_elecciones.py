@@ -146,8 +146,8 @@ class PermisosTests(_ConVotos):
         self.client.force_login(u)
         with self._a_las("2026-10-25 12:00"):
             self.assertEqual(self.client.get(reverse("xsys_elecciones_mesas_api")).status_code, 200)
-            self.assertEqual(self.client.get(reverse("xsys_elecciones_participacion_api")).status_code, 403)
-            self.assertEqual(self.client.get(reverse("xsys_elecciones_actividades_api")).status_code, 403)
+            self.assertEqual(self.client.get(reverse("xsys_elecciones_participacion_api")).status_code, 404)
+            self.assertEqual(self.client.get(reverse("xsys_elecciones_actividades_api")).status_code, 404)
             self.assertEqual(self.client.get(reverse("xsys_elecciones_lista_api")).status_code, 200)
         r = self.client.get(reverse("xsys_elecciones"))
         self.assertEqual(r.status_code, 200)
@@ -160,8 +160,8 @@ class PermisosTests(_ConVotos):
         self.client.force_login(u)
         with self._a_las("2026-10-25 12:00"):
             r = self.client.get(reverse("xsys_elecciones_pantalla_api"))
-            self.assertEqual(self.client.get(reverse("xsys_elecciones_mesas_api")).status_code, 403)
-            self.assertEqual(self.client.get(reverse("xsys_elecciones_horarios_api")).status_code, 403)
+            self.assertEqual(self.client.get(reverse("xsys_elecciones_mesas_api")).status_code, 404)
+            self.assertEqual(self.client.get(reverse("xsys_elecciones_horarios_api")).status_code, 404)
         self.assertEqual(r.status_code, 200)
         d = r.json()
         self.assertEqual(d["votaron"], 3)
@@ -174,8 +174,8 @@ class PermisosTests(_ConVotos):
     def test_sin_grupo_no_entra_ni_lo_ve_en_el_menu(self):
         u = _usuario("nadie", ["Administrador"])
         self.client.force_login(u)
-        self.assertEqual(self.client.get(reverse("xsys_elecciones")).status_code, 403)
-        self.assertEqual(self.client.get(reverse("xsys_elecciones_mesas_api")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("xsys_elecciones")).status_code, 404)
+        self.assertEqual(self.client.get(reverse("xsys_elecciones_mesas_api")).status_code, 404)
         urls = [e.get("url") for e in nav.construir(u)]
         self.assertNotIn("xsys_elecciones", urls)
 

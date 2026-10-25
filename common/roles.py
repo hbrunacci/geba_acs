@@ -17,6 +17,8 @@ from functools import wraps
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.http import Http404
+from rest_framework.exceptions import NotFound
 from rest_framework.permissions import BasePermission
 
 GRUPO_ADMIN = "Administrador"
@@ -126,14 +128,14 @@ def puede_elecciones(user) -> bool:
     return bool(secciones_elecciones(user))
 
 
-def _rol_requerido(check):
+def _rol_requerido(check, error=PermissionDenied):
     """Construye un decorador de vista: login + chequeo de rol (403 si no cumple)."""
 
     def decorator(view):
         @wraps(view)
         def _inner(request, *args, **kwargs):
             if not check(request.user):
-                raise PermissionDenied
+                raise error
             return view(request, *args, **kwargs)
 
         return login_required(_inner)
@@ -146,7 +148,7 @@ puertas_requerido = _rol_requerido(puede_config_puertas)
 concesionarios_requerido = _rol_requerido(puede_concesionarios)
 socios_requerido = _rol_requerido(puede_socios)
 tableros_requerido = _rol_requerido(puede_tableros)
-elecciones_requerido = _rol_requerido(puede_elecciones)
+elecciones_requerido = _rol_requerido(puede_elecciones, Http404)  # ver PuedeElecciones
 
 
 class PuedeConfigPuertas(BasePermission):
@@ -194,12 +196,16 @@ class PuedeElecciones(BasePermission):
 
     La vista declara ``seccion_elecciones``; sin ella alcanza con tener alguno.
     Se chequea en el servidor y no sólo ocultando la pestaña: quien no tiene el
-    sector no puede pedir sus datos aunque arme la URL a mano.
+    sector no puede pedir sus datos aunque arme la URL a mano. A un usuario
+    logueado sin el sector se le responde 404, no 403: el club no quiere que
+    un link guardado revele que ese sector existe.
     """
-
-    message = "No tiene acceso a este sector de Elecciones."
 
     def has_permission(self, request, view):
         secciones = secciones_elecciones(request.user)
         seccion = getattr(view, "seccion_elecciones", None)
-        return seccion in secciones if seccion else bool(secciones)
+        if seccion in secciones if seccion else bool(secciones):
+            return True
+        if getattr(request.user, "is_authenticated", False):
+            raise NotFound()
+        return False
