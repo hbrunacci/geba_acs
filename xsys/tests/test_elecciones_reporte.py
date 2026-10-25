@@ -29,3 +29,11 @@ class ReporteTests(SimpleTestCase):
         self.assertIn("Fecha_Proceso IS NOT NULL", q.call_args[0][0])
         self.assertEqual(r[0]["mesa"], 3)
         self.assertEqual((r[0]["socio"], r[0]["apellido"]), (892646, "YANORNO"))
+
+    def test_el_numero_de_socio_es_el_externo_no_la_ficha(self):
+        # Blanco Claudio Hernán: ficha 896332, socio 895752.
+        fila = (2, 1132, dt.datetime(2026, 10, 25, 12, 16), "895752", "BLANCO", "CLAUDIO HERNAN")
+        with mock.patch.object(R.E, "_consultar", return_value=[fila]) as q:
+            r = R.acreditados(239)
+        self.assertIn("Id_Cliente_Externo", q.call_args[0][0])
+        self.assertEqual(r[0]["socio"], 895752)

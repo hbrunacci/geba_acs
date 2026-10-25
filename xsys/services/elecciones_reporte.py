@@ -33,9 +33,15 @@ from xsys.services import elecciones as E
 
 
 def acreditados(id_lista: int) -> list[dict]:
-    """Los que ya se acreditaron, con su mesa, hora y nombre."""
+    """Los que ya se acreditaron, con su mesa, hora y nombre.
+
+    El número de socio es Id_Cliente_Externo, el que figura en el carnet y en
+    el ticket de la mesa; Id_Cliente es el número de ficha de xSys y en ~4.200
+    socios del padrón no coincide.
+    """
     filas = E._consultar("""
-        SELECT  L.Nro_Mesa, L.Nro_Orden, L.Fecha_Proceso, L.Id_Cliente,
+        SELECT  L.Nro_Mesa, L.Nro_Orden, L.Fecha_Proceso,
+                ISNULL(NULLIF(LTRIM(RTRIM(L.Id_Cliente_Externo)), ''), CAST(L.Id_Cliente AS VARCHAR(20))),
                 RTRIM(ISNULL(C.Apellido, '')), RTRIM(ISNULL(C.Nombre, ''))
         FROM    Clientes_Listas_Precios L
                 LEFT JOIN Clientes C ON C.Id_Cliente = L.Id_Cliente
@@ -46,7 +52,7 @@ def acreditados(id_lista: int) -> list[dict]:
         "mesa": int(m) if m is not None else 0,
         "orden": int(o) if o is not None else None,
         "fecha": f,
-        "socio": int(c),
+        "socio": int(c) if str(c).isdigit() else c,
         "apellido": (a or "").strip(),
         "nombre": (n or "").strip(),
     } for m, o, f, c, a, n in filas]
