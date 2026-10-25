@@ -94,7 +94,6 @@
     background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.28); border-radius: 10px; padding: 7px 12px; cursor: pointer;
   }
   .elx-pantalla:hover { background: rgba(255,255,255,.24); }
-  #elx-pdf { text-decoration: none; }
   .elx-pantalla:focus-visible { outline: 3px solid var(--oro); outline-offset: 2px; }
   .elx-pantalla svg { width: 16px; height: 16px; }
   .elx-pantalla .salir, .elx:fullscreen .elx-pantalla .entrar { display: none; }
@@ -103,7 +102,7 @@
   /* Pantalla completa (para dejarla en un televisor): ocupa todo, sin el
      selector de elección ni el pie, y los gráficos crecen hasta el borde. */
   .elx:fullscreen { max-width: none; overflow-y: auto; background: var(--fondo); padding: 20px 28px; align-content: start; }
-  .elx:fullscreen .elx-select, .elx:fullscreen #elx-pdf { display: none; }
+  .elx:fullscreen .elx-select { display: none; }
   .elx:fullscreen .elx-graf--alto { height: calc(100vh - 290px); min-height: 340px; }
   .elx:fullscreen #panel-pantalla .elx-graf--alto { height: calc(100vh - 680px); min-height: 260px; }
   .elx-hero { min-height: min-content; }
@@ -232,12 +231,6 @@
       <span class="elx-estado" id="elx-estado"><span class="elx-punto"></span><span id="elx-estado-txt">—</span><span class="reloj" id="elx-reloj">--:--</span></span>
       <select class="elx-select" id="elx-eleccion" aria-label="Elección"></select>
       <span class="elx-act" id="elx-act"></span>
-      {% if "participacion" in secciones %}
-      <a class="elx-pantalla" id="elx-pdf" href="#" title="Socios acreditados por hora y por mesa, para las listas">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
-        <span>Acreditados (PDF)</span>
-      </a>
-      {% endif %}
       <button class="elx-pantalla" type="button" id="elx-pantalla" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
         <span class="entrar">Pantalla completa</span><span class="salir">Salir de pantalla completa</span>
@@ -708,12 +701,6 @@
       if (estado.datos.actividades) pintarActividades(estado.datos.actividades);
     });
   });
-  // El PDF se arma en el momento con el corte actual de xSys.
-  if ($("elx-pdf")) $("elx-pdf").addEventListener("click", function (ev) {
-    ev.preventDefault();
-    location.href = "/api/xsys/elecciones/reporte.pdf" + (estado.eleccion ? "?eleccion=" + estado.eleccion : "");
-  });
-
   $("elx-eleccion").addEventListener("change", function () {
     estado.eleccion = this.value;
     estado.datos = {};
