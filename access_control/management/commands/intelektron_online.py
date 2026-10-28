@@ -251,7 +251,8 @@ class Command(BaseCommand):
                             source_id=ev.source_id, mensaje="", cuando=cuando, access_ctl=0)
 
     def _on_aux(self, input_id: int, event_code: int) -> None:
-        self.stdout.write(f"{datetime.now():%H:%M:%S} · sensor {input_id} código {event_code}")
+        """Entrada auxiliar (sensor de giro, pulsador...): se encola y se persiste."""
+        self.cola.put(("aux", ahora_local(), int(input_id), int(event_code)))
 
     def _on_conn(self, cause: int) -> None:
         if cause != 2:
@@ -262,14 +263,39 @@ class Command(BaseCommand):
 
     # ------------------------------------------------------------- persistencia
 
+    def _guardar_sensor(self, cuando: datetime, input_id: int, event_code: int) -> None:
+        """Evento de entrada auxiliar -> IntelektronEvent (origen 'online-aux')."""
+        from access_control.models import IntelektronEvent
+
+        self.stdout.write(f"{cuando:%H:%M:%S} · SENSOR entrada {input_id} código {event_code}")
+        try:
+            key = hashlib.sha1(f"online-aux|{cuando.isoformat()}|{input_id}|{event_code}".encode()).hexdigest()
+            IntelektronEvent.objects.get_or_create(
+                dedupe_key=key,
+                defaults={
+                    "device_ip": "", "dest_node": 0, "id_controlador": self.id_controlador,
+                    "access_id": 0, "event_code": event_code, "event_name": f"sensor {input_id}",
+                    "direction": 0, "source": input_id, "device_time": _aware(cuando),
+                    "raw": {"origen": "online-aux", "input_id": input_id, "event_code": event_code,
+                            "id_acceso": self.id_acceso},
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.stderr.write(self.style.WARNING(f"no se pudo guardar el evento de sensor: {exc}"))
+            close_old_connections()
+
     def _drenar_cola(self) -> None:
         from access_control.models import IntelektronEvent, PasoMolinete
 
         while True:
             try:
-                ev, decision, tipo, tag, cuando, accionar, antirebote = self.cola.get_nowait()
+                item = self.cola.get_nowait()
             except queue.Empty:
                 return
+            if item[0] == "aux":
+                self._guardar_sensor(*item[1:])
+                continue
+            ev, decision, tipo, tag, cuando, accionar, antirebote = item
             linea = f"{cuando:%H:%M:%S} · {ev.event_name} lector={ev.source_id} tag={tag} sentido={ev.direction}"
             if decision is not None:
                 linea += f" -> {decision.resumen}"
