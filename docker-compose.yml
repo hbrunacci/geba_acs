@@ -342,6 +342,36 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Modo ONLINE de Intelektron (2026-10-28): la placa, configurada en "Modo
+  # Envío = Online", nos manda cada lectura y ESPERA nuestra decisión; el
+  # comando decide con el validador LOCAL (réplica de la cascada de Clever,
+  # registra en acs_paso_molinete, no escribe en xSys) o con el SP de Clever
+  # (INTELEKTRON_ONLINE_VALIDADOR=clever). Con INTELEKTRON_ONLINE_MODO=observar
+  # (default) deniega todo; con MODO=real acciona el molinete. Un servicio por
+  # placa. Bajo profile para no arrancar con `docker compose up`:
+  #     docker compose --profile intelektron up -d intelektron-online
+  intelektron-online:
+    profiles: ["intelektron"]
+    build: .
+    image: geba_acs-web:latest
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-acs}
+      POSTGRES_USER: ${POSTGRES_USER:-acs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acs}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      DJANGO_DEBUG: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
+    command: ["sh", "-c",
+              "exec python manage.py intelektron_online --ip \"$${INTELEKTRON_ONLINE_IP}\" --port \"$${INTELEKTRON_ONLINE_PORT:-3001}\" --dest-node \"$${INTELEKTRON_ONLINE_DEST_NODE:-1}\" --source-node \"$${INTELEKTRON_ONLINE_SOURCE_NODE:-0}\" --id-controlador \"$${INTELEKTRON_ONLINE_ID_CONTROLADOR}\" --lectores-salida \"$${INTELEKTRON_ONLINE_LECTORES_SALIDA:-}\" --validador \"$${INTELEKTRON_ONLINE_VALIDADOR:-local}\" --modo \"$${INTELEKTRON_ONLINE_MODO:-observar}\" $$( [ -n \"$${INTELEKTRON_ONLINE_ID_ACCESO:-}\" ] && echo --id-acceso \"$${INTELEKTRON_ONLINE_ID_ACCESO}\" )"]
+    volumes:
+      - .:/app
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Modo LISTEN de Intelektron: NOSOTROS somos el servidor y la placa se conecta
   # a este host para reportar eventos en vivo (lectores/sensores). A diferencia
   # del intelektron-listener (que hace polling saliente), este PUBLICA el puerto
