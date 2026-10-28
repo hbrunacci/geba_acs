@@ -99,6 +99,7 @@ FLD_USER_TODO = 4095
 ACCESS_CTL_TOTAL = 4095
 
 CONN_CLOSED_BY_DEVICE = 2     # cause del callback de conexión cuando el equipo corta
+PROC_NET_TCP = "/proc/net/tcp"  # tabla TCP del kernel (Linux) que mira el watchdog de socket
 
 
 # --- Estructuras ---------------------------------------------------------------
@@ -332,6 +333,7 @@ class OnlineSession:
         self._viva = False
         self._lock = threading.Lock()
         self.reconexiones = 0
+        self.caidas_socket = 0      # cortes detectados por el watchdog (sin aviso de la librería)
         self.eventos = 0
         self.respuestas = 0
         self.errores_respuesta = 0
@@ -457,11 +459,59 @@ class OnlineSession:
     def viva(self) -> bool:
         return self._viva and self._handle > 0
 
+    def hay_socket(self) -> bool | None:
+        """¿Existe una conexión TCP ESTABLISHED hacia ``ip:port``?
+
+        Mira ``/proc/net/tcp`` (Linux, que es donde corre el contenedor). Devuelve
+        ``None`` cuando no se puede saber (Windows, sin permisos). Hace falta
+        porque la placa a veces cierra la sesión sin que la librería avise por el
+        callback de conexión (visto el 28/10/2026 al grabarle la configuración
+        por la web): ``viva`` queda en True, nadie contesta y el molinete deniega.
+        """
+        try:
+            with open(PROC_NET_TCP, encoding="ascii") as fh:
+                lineas = fh.readlines()[1:]
+        except OSError:
+            return None
+        try:
+            octetos = [int(o) for o in self.ip.split(".")]
+            # /proc/net/tcp muestra la IP como u32 en orden nativo (little-endian) en hex.
+            remoto = "".join(f"{o:02X}" for o in reversed(octetos)) + f":{self.port:04X}"
+        except ValueError:
+            return None
+        for linea in lineas:
+            partes = linea.split()
+            if len(partes) > 3 and partes[2].upper() == remoto and partes[3] == "01":
+                return True
+        return False
+
     def mantener(self, *, parar: Callable[[], bool], tick: float = 0.5,
-                 reintento: float = 2.0, on_reconexion: Callable[[int], None] | None = None) -> None:
-        """Bucle de mantenimiento: reconecta cuando el equipo corta. Vuelve cuando ``parar()``."""
+                 reintento: float = 2.0, on_reconexion: Callable[[int], None] | None = None,
+                 watchdog: float = 10.0, watchdog_fallas: int = 2) -> None:
+        """Bucle de mantenimiento: reconecta cuando el equipo corta. Vuelve cuando ``parar()``.
+
+        Cada ``watchdog`` segundos verifica con ``hay_socket()`` que la conexión
+        TCP siga; tras ``watchdog_fallas`` comprobaciones seguidas sin socket da la
+        sesión por muerta y reconecta (``caidas_socket`` las cuenta).
+        """
+        ultimo_chk = time.monotonic()
+        fallas = 0
         while not parar():
+            if self.viva and watchdog > 0 and time.monotonic() - ultimo_chk >= watchdog:
+                ultimo_chk = time.monotonic()
+                if self.hay_socket() is False:
+                    fallas += 1
+                    if fallas >= watchdog_fallas:
+                        logger.warning("sin socket hacia %s:%s en %d comprobaciones: se reconecta",
+                                       self.ip, self.port, fallas)
+                        self.caidas_socket += 1
+                        self._viva = False
+                        fallas = 0
+                else:
+                    fallas = 0
             if not self.viva:
+                fallas = 0
+                ultimo_chk = time.monotonic()
                 self.cerrar()
                 try:
                     self.abrir()

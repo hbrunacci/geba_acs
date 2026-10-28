@@ -14,6 +14,7 @@ class PasoMolinete(models.Model):
 
     * ``modo = observar``: se evaluó pero NO se accionó el molinete.
     * ``modo = real``: la respuesta fue la que recibió la placa.
+    * ``modo = libre``: se abrió con cualquier lectura, sin validar (prueba de relé).
 
     ``validador`` dice quién decidió: ``local`` (la réplica Python de la
     cascada de Clever, ``validador_local``) o ``clever`` (el SP de Clever,
@@ -26,7 +27,8 @@ class PasoMolinete(models.Model):
     """
 
     VALIDADORES = (("local", "geba_acs (réplica local)"), ("clever", "Clever (CP_SCA_RegistrarAcceso)"))
-    MODOS = (("observar", "Observar (no acciona)"), ("real", "Real (acciona el molinete)"))
+    MODOS = (("observar", "Observar (no acciona)"), ("real", "Real (acciona el molinete)"),
+             ("libre", "Libre (abre sin validar, prueba de relé)"))
 
     fecha = models.DateTimeField(default=timezone.now, db_index=True)
     id_controlador = models.IntegerField(db_index=True)

@@ -347,7 +347,8 @@ services:
   # comando decide con el validador LOCAL (réplica de la cascada de Clever,
   # registra en acs_paso_molinete, no escribe en xSys) o con el SP de Clever
   # (INTELEKTRON_ONLINE_VALIDADOR=clever). Con INTELEKTRON_ONLINE_MODO=observar
-  # (default) deniega todo; con MODO=real acciona el molinete. Un servicio por
+  # (default) deniega todo; con MODO=real acciona el molinete; con MODO=libre
+  # abre con CUALQUIER lectura sin validar (sólo para probar el relé). Un servicio por
   # placa. Bajo profile para no arrancar con `docker compose up`:
   #     docker compose --profile intelektron up -d intelektron-online
   intelektron-online:

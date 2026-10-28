@@ -17,6 +17,9 @@ Qué se hace con la decisión (``--modo``):
     DENEGADO: el molinete no abre. Sirve para ver que las lecturas llegan, a
     qué socio resuelve cada tag y qué se decidiría.
   * ``real``: la respuesta es la que recibe la placa; con habilitado abre.
+  * ``libre``: ABRE CON CUALQUIER LECTURA, sin importar la validación (que
+    igual se evalúa y registra). Sólo para probar el relé / el aspa; no
+    dejarlo así.
 
 La placa manda cada lectura como "No identificado" (106) porque no tiene
 lista local de usuarios; también se atiende "Por autorizar" (2). Las lecturas
@@ -85,8 +88,9 @@ class Command(BaseCommand):
                             help="Id_Acceso de la puerta. Default: el del controlador en CD_Controladores.")
         parser.add_argument("--validador", choices=("local", "clever"), default="local",
                             help="local: réplica en geba_acs, registra acá (default). clever: SP de Clever.")
-        parser.add_argument("--modo", choices=("observar", "real"), default="observar",
-                            help="observar: evalúa y deniega siempre (default). real: acciona el molinete.")
+        parser.add_argument("--modo", choices=("observar", "real", "libre"), default="observar",
+                            help="observar: evalúa y deniega siempre (default). real: acciona el molinete. "
+                                 "libre: abre con cualquier lectura sin validar (prueba de relé).")
         parser.add_argument("--grabar", action="store_true", help="Alias de --modo real.")
         parser.add_argument("--lectores-salida", default="",
                             help="source_id de los lectores de SALIDA separados por coma (default: ninguno).")
@@ -111,6 +115,7 @@ class Command(BaseCommand):
         self.validador = opts["validador"]
         self.modo = "real" if opts["grabar"] else opts["modo"]
         self.real = self.modo == "real"
+        self.libre = self.modo == "libre"   # abre con cualquier lectura, sin validar
         self.lectores_salida = {int(x) for x in opts["lectores_salida"].split(",") if x.strip()}
         self.lectores_hex = {int(x) for x in opts["lectores_hex"].split(",") if x.strip()}
         self.cola: "queue.Queue[tuple]" = queue.Queue()
@@ -134,7 +139,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"Molinete {ip}:{port} nodo {opts['dest_node']} · controlador {self.id_controlador} "
             f"acceso {self.id_acceso or '?'} · validador {self.validador} · modo {self.modo.upper()}"
-            f"{' (no acciona)' if not self.real else ''} · antirrebote {self.antirebote_seg} s"))
+            f"{' (no acciona)' if self.modo == 'observar' else ''}"
+            f"{' (ABRE CON CUALQUIER LECTURA, SIN VALIDAR)' if self.libre else ''} · antirrebote {self.antirebote_seg} s"))
         if self.validador == "local" and not self.id_acceso:
             self.stderr.write(self.style.ERROR(
                 "El controlador no tiene Id_Acceso en CD_Controladores y no se indicó --id-acceso."))
@@ -175,7 +181,8 @@ class Command(BaseCommand):
                     self.stdout.write(
                         f"{datetime.now():%H:%M:%S} · viva={sesion.viva} eventos={sesion.eventos} "
                         f"respuestas={sesion.respuestas} errores_rta={sesion.errores_respuesta} "
-                        f"reconexiones={sesion.reconexiones}")
+                        f"reconexiones={sesion.reconexiones} caidas_socket={sesion.caidas_socket} "
+                        f"socket={sesion.hay_socket()}")
                 time.sleep(0.2)
         except KeyboardInterrupt:
             pass
@@ -221,8 +228,12 @@ class Command(BaseCommand):
             tipo = tipo_acceso_from_event(ev, self.lectores_salida)
             tag = tag_for_event(ev, self.lectores_hex)
             decision, antirebote = self._decidir(tag, tipo, cuando)
-            accionar = bool(decision.habilitado and self.real)
-            mensaje = decision.mensaje if self.real else f"PRUEBA {decision.mensaje}"
+            if self.libre:
+                accionar, mensaje = True, f"LIBRE {decision.mensaje}"
+            elif self.real:
+                accionar, mensaje = bool(decision.habilitado), decision.mensaje
+            else:
+                accionar, mensaje = False, f"PRUEBA {decision.mensaje}"
             self.cola.put((ev, decision, tipo, tag, cuando, accionar, antirebote))
             return build_answer(access_id=ev.access_id, habilitado=accionar,
                                 source_id=ev.source_id, mensaje=mensaje, cuando=cuando)

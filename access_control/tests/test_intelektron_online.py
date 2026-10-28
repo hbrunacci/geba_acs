@@ -227,3 +227,29 @@ class OnlineSessionTestCase(SimpleTestCase):
         s.abrir()
         s._conn_cb(None, 7, 2)
         self.assertFalse(s.viva)
+
+    def test_hay_socket_lee_la_tabla_tcp(self):
+        import os
+        import tempfile
+        s, _ = self._sesion(lambda ev: None)
+        s.ip, s.port = "10.0.0.117", 3001
+        cabecera = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
+        fila = "   0: 0E0012AC:B048 7500000A:0BB9 {st} 00000000:00000000 00:00000000 00000000     0        0 1 0 0\n"
+        with tempfile.TemporaryDirectory() as d:
+            ruta = os.path.join(d, "tcp")
+            for st, esperado in (("01", True), ("06", False)):
+                with open(ruta, "w", encoding="ascii") as fh:
+                    fh.write(cabecera + fila.format(st=st))
+                with patch.object(online, "PROC_NET_TCP", ruta):
+                    self.assertIs(s.hay_socket(), esperado)
+            with patch.object(online, "PROC_NET_TCP", os.path.join(d, "no_existe")):
+                self.assertIsNone(s.hay_socket())
+
+    def test_watchdog_reconecta_cuando_desaparece_el_socket(self):
+        s, lib = self._sesion(lambda ev: None)
+        s.abrir()
+        with patch.object(s, "hay_socket", return_value=False):
+            s.mantener(parar=lambda: s.reconexiones >= 1, tick=0.001, watchdog=0.001, watchdog_fallas=2)
+        self.assertEqual((s.caidas_socket, s.reconexiones), (1, 1))
+        self.assertEqual(lib.itk_open.call_count, 2)
+        self.assertTrue(s.viva)

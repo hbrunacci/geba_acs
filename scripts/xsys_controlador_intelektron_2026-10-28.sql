@@ -117,7 +117,7 @@ GO
      102  CFG_IP_P0RT "Puerto Host"           3001
      24   CFG_COM_EVENT_1_READER (bits)       3  (1 Aceptado + 2 No identificado)
      46   CFG_COM_EVENT_2_READER (bits)       3
-     16/17 rele y tiempo "Aceptado" lector 1  1 / 1 s   (si el aspa no libera: rele 2, 3 s como en agosto)
+     16/17 rele y tiempo "Aceptado" lector 1  2 / 3 s   (28/10 tarde: con rele 1 / 1 s el aspa NO liberaba; set_num_cfg.cgi?2|1&16&2|1&17&3)
      18/19 rele y tiempo "Aceptado" lector 2  1 / 1 s
      29/30 tipo de lector 1 / 2               1 / 1
      7/8  sentido lector 1 / 2                1 / 1
