@@ -217,6 +217,26 @@ class OnlineSessionTestCase(SimpleTestCase):
         OnlineSession(ip="10.0.0.117", port=3001, keepalive=None, native=native)
         native.cdll.itk_set_keepalive.assert_not_called()
 
+    def test_parsear_placa(self):
+        from access_control.management.commands.intelektron_online import parsear_placa
+        p = parsear_placa("10.0.0.117:3001/47/14/2/3")
+        self.assertEqual((p.ip, p.port, p.id_controlador, p.id_acceso, p.rele, p.rele_tiempo),
+                         ("10.0.0.117", 3001, 47, 14, 2, 3))
+        p = parsear_placa(" 10.0.0.118/48 ", port=3005, rele=1, rele_tiempo=5)
+        self.assertEqual((p.ip, p.port, p.id_controlador, p.id_acceso, p.rele, p.rele_tiempo),
+                         ("10.0.0.118", 3005, 48, None, 1, 5))
+        for malo in ("10.0.0.1", "/47", "10.0.0.1/x", ""):
+            with self.assertRaises(ValueError):
+                parsear_placa(malo)
+
+    def test_segunda_sesion_no_reinicializa_la_libreria(self):
+        native = MagicMock()
+        native.cdll.itk_set_keepalive.return_value = 1
+        OnlineSession(ip="10.0.0.117", port=3001, keepalive=(30, 3), native=native)
+        OnlineSession(ip="10.0.0.118", port=3001, keepalive=(30, 3), native=native, init=False)
+        self.assertEqual(native.cdll.itk_init.call_count, 1)
+        self.assertEqual(native.cdll.itk_set_keepalive.call_count, 1)
+
     def test_no_identificado_tambien_se_decide(self):
         from access_control.management.commands.intelektron_online import EVENTOS_A_DECIDIR
         self.assertIn(EV_POR_AUTORIZAR, EVENTOS_A_DECIDIR)

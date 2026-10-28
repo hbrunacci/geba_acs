@@ -321,7 +321,11 @@ class OnlineSession:
         log_level: int = 3,
         keepalive: tuple[int, int] | None = (30, 3),
         native: NativeLibrary | None = None,
+        init: bool = True,
     ) -> None:
+        """``init=False`` para la segunda sesión y siguientes del mismo proceso: la
+        librería se inicializa (y el keepalive se configura) UNA vez por proceso;
+        repetir ``itk_init`` devuelve 1031 y el keepalive ya quedó aplicado."""
         self.ip, self.port = ip, int(port)
         self.dest_node, self.source_node = int(dest_node), int(source_node)
         self.timeout_ms = int(timeout_ms)
@@ -348,14 +352,16 @@ class OnlineSession:
         # Clever) y hay que reconectar; Clever usa 60 s / 3 reintentos. Tiene
         # que configurarse ANTES de itk_init (después devuelve 1031).
         self.keepalive = keepalive
-        if keepalive:
+        self.init = init
+        if keepalive and init:
             timeout_s, retry = keepalive
             code = int(self._lib.itk_set_keepalive(int(timeout_s), int(retry), self.dest_node))
             try:
                 ensure_ok(code, "itk_set_keepalive")   # OP_OK = 1; 1031 si ya hubo itk_init
             except Api3000NativeError as exc:
                 logger.warning("%s", exc)
-        self._lib.itk_init(self.log_path.encode("latin-1", "ignore"), self.log_level)
+        if init:
+            self._lib.itk_init(self.log_path.encode("latin-1", "ignore"), self.log_level)
 
     # -- firmas que native.py todavía no declara ---------------------------------
 
