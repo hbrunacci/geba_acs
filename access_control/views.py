@@ -759,3 +759,91 @@ def pollers_dashboard(request):
     contexto = {"pollers": pollers, "datos": datos, "movimientos": movimientos,
                 "resumen": resumen, "ahora": now}
     return render(request, "access_control/pollers_dashboard.html", contexto)
+
+
+# ---------------------------------------------------------------------------
+# Molinetes en línea (los que decide geba_acs con intelektron_online)
+# ---------------------------------------------------------------------------
+
+@puertas_requerido
+def molinetes_online(request):
+    """Estado en vivo de los molinetes Intelektron que atiende geba_acs."""
+    return render(request, "access_control/molinetes_online.html")
+
+
+class MolinetesOnlineAPI(APIView):
+    """GET /api/molinetes/online/ -> placas (acs_molinete_estado), últimos pasos y sensores."""
+
+    from common.roles import PuedeConfigPuertas as _Perm
+    permission_classes = [_Perm]
+
+    def get(self, request):
+        from access_control.models import IntelektronEvent, MolineteEstado, PasoMolinete
+        from access_control.models.molinete_estado import ESTADO_VENCIDO_SEG
+        from xsys.models import XsysControlador, XsysSocio
+
+        from institutions.models import DoorTurnstileGroup
+
+        ahora = timezone.now()
+        placas = list(MolineteEstado.objects.all())
+        ctrls = {c.id_controlador: c for c in XsysControlador.objects.filter(
+            pk__in=[p.id_controlador for p in placas])}
+        # Nombre como lo ve el operador: puerta y columna del visor, si está asignado.
+        etiqueta: dict[int, str] = {}
+        for g in DoorTurnstileGroup.objects.select_related("door").all():
+            for cid in (g.id_controladores or []):
+                etiqueta.setdefault(int(cid), f"{g.door.name} · {g.nombre}")
+        hoy = timezone.localdate()
+        pasos_hoy = {
+            r["id_controlador"]: r for r in PasoMolinete.objects.filter(fecha__date=hoy)
+            .values("id_controlador").annotate(
+                total=Count("id"), abiertos=Count("id", filter=Q(accionado=True)),
+                errores=Count("id", filter=~Q(error="")))
+        }
+        salida = []
+        for p in placas:
+            x = ctrls.get(p.id_controlador)
+            h = pasos_hoy.get(p.id_controlador, {})
+            edad = (ahora - p.updated_at).total_seconds()
+            salida.append({
+                "ip": p.ip, "port": p.port, "id_controlador": p.id_controlador, "id_acceso": p.id_acceso,
+                "nombre": p.nombre or etiqueta.get(p.id_controlador)
+                          or (x.descripcion if x and x.descripcion else f"Controlador {p.id_controlador}"),
+                "controlador_clever": x.descripcion if x else "",
+                "modo": p.modo, "validador": p.validador, "rele": p.rele, "rele_tiempo": p.rele_tiempo,
+                "viva": p.viva, "socket": p.socket, "vencido": edad > ESTADO_VENCIDO_SEG, "edad_seg": int(edad),
+                "en_linea": p.viva and p.socket is not False and edad <= ESTADO_VENCIDO_SEG,
+                "eventos": p.eventos, "respuestas": p.respuestas, "abiertos": p.abiertos, "denegados": p.denegados,
+                "errores": p.errores, "errores_respuesta": p.errores_respuesta,
+                "reconexiones": p.reconexiones, "caidas_socket": p.caidas_socket,
+                "hoy_total": h.get("total", 0), "hoy_abiertos": h.get("abiertos", 0), "hoy_errores": h.get("errores", 0),
+                "ultimo_evento": p.ultimo_evento, "ultima_apertura": p.ultima_apertura,
+                "ultimo_tag": p.ultimo_tag, "ultimo_mensaje": p.ultimo_mensaje, "ultimo_error": p.ultimo_error,
+                "proceso": p.proceso, "iniciado_at": p.iniciado_at, "updated_at": p.updated_at,
+            })
+
+        limite = min(int(request.query_params.get("pasos") or 30), 200)
+        pasos = list(PasoMolinete.objects.order_by("-fecha")[:limite])
+        socios = {s.id_cliente: s for s in XsysSocio.objects.filter(
+            id_cliente__in={p.id_cliente for p in pasos if p.id_cliente})}
+        pasos_json = [{
+            "fecha": p.fecha, "ip": (p.raw or {}).get("ip", ""), "id_controlador": p.id_controlador,
+            "id_acceso": p.id_acceso, "tipo": p.tipo, "tag": p.tag, "id_cliente": p.id_cliente,
+            "socio": _nombre_socio(socios.get(p.id_cliente)) if p.id_cliente else "",
+            "habilitado": p.habilitado, "accionado": p.accionado, "id_motivo": p.id_motivo,
+            "mensaje": p.mensaje, "modo": p.modo, "antirebote": p.antirebote,
+            "duracion_ms": p.duracion_ms, "error": p.error,
+        } for p in pasos]
+
+        sensores = [{
+            "fecha": e.device_time, "ip": e.device_ip, "id_controlador": e.id_controlador,
+            "entrada": e.source, "codigo": e.event_code,
+        } for e in IntelektronEvent.objects.filter(raw__origen="online-aux").order_by("-device_time")[:20]]
+
+        return Response({"ahora": ahora, "placas": salida, "pasos": pasos_json, "sensores": sensores})
+
+
+def _nombre_socio(s) -> str:
+    if s is None:
+        return ""
+    return f"{(s.apellido or '').strip()}, {(s.nombre or '').strip()}".strip(", ")

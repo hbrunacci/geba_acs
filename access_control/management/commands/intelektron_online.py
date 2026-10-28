@@ -47,8 +47,10 @@ Ejemplos:
 from __future__ import annotations
 
 import hashlib
+import os
 import queue
 import signal
+import socket
 import threading
 import time
 from dataclasses import dataclass, field
@@ -95,6 +97,11 @@ class Placa:
     abiertos: int = 0
     denegados: int = 0
     errores: int = 0
+    ultimo_evento: datetime | None = None
+    ultima_apertura: datetime | None = None
+    ultimo_tag: str = ""
+    ultimo_mensaje: str = ""
+    ultimo_error: str = ""
     extra: dict = field(default_factory=dict)
 
     @property
@@ -164,6 +171,9 @@ class Command(BaseCommand):
                             help="Segundos del pulso de --rele (0 = pulso corto). Default 3.")
         parser.add_argument("--alive", default=ALIVE_DEFAULT,
                             help="Archivo que se toca en cada vuelta del bucle (healthcheck). '' desactiva.")
+        parser.add_argument("--estado-cada", type=int, default=10,
+                            help="Segundos entre publicaciones del estado por placa en acs_molinete_estado "
+                                 "(la pantalla 'Molinetes en línea'). Default 10.")
 
     # ------------------------------------------------------------------ setup
 
@@ -204,6 +214,9 @@ class Command(BaseCommand):
         # placas pueden llegar a la vez y el validador tiene UNA conexión a xSys.
         self._lock_decision = threading.Lock()
         self.placas = self._placas_de_opts(opts)
+        self.proceso = f"{socket.gethostname()}:{os.getpid()}"
+        self.iniciado = timezone.now()
+        self.estado_cada = max(int(opts["estado_cada"]), 0)
 
         if self.validador == "local":
             self.local = ValidadorLocal()
@@ -255,6 +268,7 @@ class Command(BaseCommand):
 
         inicio = time.time()
         ultimo_hb = inicio
+        ultimo_estado = 0.0
         for p in self.placas:
             threading.Thread(target=p.sesion.mantener, kwargs={
                 "parar": self._parar.is_set,
@@ -269,6 +283,10 @@ class Command(BaseCommand):
                     ultimo_hb = time.time()
                     for p in self.placas:
                         self.stdout.write(self._linea_estado(p))
+                if self.estado_cada and time.time() - ultimo_estado >= self.estado_cada:
+                    ultimo_estado = time.time()
+                    for p in self.placas:
+                        self._publicar_estado(p)
                 time.sleep(0.2)
         except KeyboardInterrupt:
             pass
@@ -278,6 +296,7 @@ class Command(BaseCommand):
             for p in self.placas:
                 if p.sesion is not None:
                     p.sesion.cerrar()
+                self._publicar_estado(p, viva=False)
             if self.placas and self.placas[0].sesion is not None:
                 self.placas[0].sesion.uninit()
             if self.decisor:
@@ -292,6 +311,33 @@ class Command(BaseCommand):
         return (f"{datetime.now():%H:%M:%S} · {p.ip} ctrl {p.id_controlador} · viva={s.viva} eventos={s.eventos} "
                 f"respuestas={s.respuestas} abiertos={p.abiertos} denegados={p.denegados} errores_rta={s.errores_respuesta} "
                 f"reconexiones={s.reconexiones} caidas_socket={s.caidas_socket} socket={s.hay_socket()}")
+
+    def _publicar_estado(self, p: Placa, *, viva: bool | None = None) -> None:
+        """Foto del estado de la placa en acs_molinete_estado (pantalla 'Molinetes en línea')."""
+        from access_control.models import MolineteEstado
+
+        s = p.sesion
+        try:
+            MolineteEstado.objects.update_or_create(
+                ip=p.ip, port=p.port,
+                defaults={
+                    "id_controlador": p.id_controlador, "id_acceso": p.id_acceso,
+                    "modo": self.modo, "validador": self.validador, "rele": p.rele, "rele_tiempo": p.rele_tiempo,
+                    "viva": bool(s.viva) if viva is None and s is not None else bool(viva),
+                    "socket": (s.hay_socket() if s is not None and viva is None else (False if viva is False else None)),
+                    "eventos": s.eventos if s else 0, "respuestas": s.respuestas if s else 0,
+                    "abiertos": p.abiertos, "denegados": p.denegados, "errores": p.errores,
+                    "errores_respuesta": s.errores_respuesta if s else 0,
+                    "reconexiones": s.reconexiones if s else 0, "caidas_socket": s.caidas_socket if s else 0,
+                    "ultimo_evento": _aware(p.ultimo_evento), "ultima_apertura": _aware(p.ultima_apertura),
+                    "ultimo_tag": p.ultimo_tag[:100], "ultimo_mensaje": p.ultimo_mensaje[:300],
+                    "ultimo_error": p.ultimo_error[:300],
+                    "proceso": self.proceso, "iniciado_at": self.iniciado, "updated_at": timezone.now(),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - la pantalla no puede frenar el molinete
+            self.stderr.write(self.style.WARNING(f"no se pudo publicar el estado de {p.ip}: {exc}"))
+            close_old_connections()
 
     def _tocar_alive(self) -> None:
         if not self.alive:
@@ -403,17 +449,24 @@ class Command(BaseCommand):
                 linea += f" [{decision.duracion_ms:.0f} ms]"
                 if antirebote:
                     linea += " (repetida)"
+                p.ultimo_evento, p.ultimo_tag, p.ultimo_mensaje = cuando, tag, decision.mensaje or ""
                 if decision.error:
                     p.errores += 1
+                    p.ultimo_error = f"{cuando:%d/%m %H:%M:%S} {decision.error}"
                 if accionar:
                     p.abiertos += 1
+                    p.ultima_apertura = cuando
                     linea += " ABRE"
                     if p.rele > 0 and p.sesion is not None:
                         ok = p.sesion.accionar_rele(p.rele, p.rele_tiempo, node=ev.node)
                         linea += f" rele {p.rele}/{p.rele_tiempo}s {'OK' if ok else 'FALLO'}"
+                        if not ok:
+                            p.ultimo_error = f"{cuando:%d/%m %H:%M:%S} fallo el pulso de rele {p.rele}"
                 else:
                     p.denegados += 1
             self.stdout.write(linea)
+            if decision is not None:
+                self._publicar_estado(p)
             try:
                 fecha = timezone.make_aware(cuando, timezone.get_current_timezone())
                 if decision is not None:

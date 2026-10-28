@@ -6,6 +6,7 @@ from .device import BioStarDevice
 from .face_enrollment import FaceEnrollment
 from .historial_socio import SocioAcceso
 from .intelektron_event import IntelektronEvent
+from .molinete_estado import MolineteEstado
 from .paso_molinete import PasoMolinete
 from .paso_pendiente import PasoPendiente
 from .socio_aviso import SocioAviso
@@ -35,4 +36,5 @@ __all__ = [
     "SocioAcceso",
     "PasoPendiente",
     "PasoMolinete",
+    "MolineteEstado",
 ]

@@ -108,6 +108,7 @@ MENU: tuple = (
         Item("Molinetes por puerta", "xsys_molinetes_config", rol="puertas"),
         Item("Visor de puerta", "xsys_puerta_monitor", rol="puertas",
              nueva_pestania=True),
+        Item("Molinetes en línea", "molinetes_online", rol="puertas"),
         Item("¿Por qué no entra?", "xsys_diagnostico", rol="puertas"),
         Item("Diagnóstico de facial", "diag_facial_console", rol="puertas"),
         Item("Eventos", "events_console", rol="admin"),

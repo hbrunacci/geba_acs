@@ -6,6 +6,7 @@ from access_control.views import (
     api3000_test_console,
     avisos_pendientes,
     intelektron_admin,
+    molinetes_online,
     biostar_devices_console,
     biostar_users_console,
     diag_facial_console,
@@ -19,6 +20,7 @@ urlpatterns = [
     path("ACS/test", api3000_test_console, name="api3000_test_console"),
     path("ACS/test/", api3000_test_console),
     path("intelektron/devices/", intelektron_admin, name="intelektron_admin"),
+    path("molinetes/online/", molinetes_online, name="molinetes_online"),
     path("salud/", pollers_dashboard, name="pollers_dashboard"),
     path(
         "parking-movements/",

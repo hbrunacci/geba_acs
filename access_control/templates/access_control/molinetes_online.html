@@ -1,0 +1,172 @@
+{% extends "common/base.html" %}
+
+{% block page_title %}Molinetes en línea{% endblock page_title %}
+{% block header_title %}Molinetes en línea{% endblock header_title %}
+{% block header_subtitle %}
+  Molinetes Intelektron que decide geba_acs: conexión, decisiones y últimos pasos. Se actualiza solo cada 5 segundos.
+{% endblock header_subtitle %}
+
+{% block extra_css %}
+<style>
+  .mol-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); margin-bottom: 1.25rem; }
+  .mol-card { border: 1px solid rgba(15,23,42,0.08); border-radius: 1rem; padding: 1rem 1.15rem; background: #fff;
+              box-shadow: 0 10px 30px rgba(15,23,42,0.06); border-left: 6px solid #94a3b8; }
+  .mol-card--ok { border-left-color: #16a34a; }
+  .mol-card--warn { border-left-color: #f59e0b; }
+  .mol-card--down { border-left-color: #dc2626; }
+  .mol-card h3 { margin: 0 0 .15rem; font-size: 1.05rem; }
+  .mol-card .mol-sub { color: #64748b; font-size: .8rem; margin-bottom: .6rem; }
+  .mol-estado { display: inline-block; padding: .15rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 700; }
+  .mol-estado--ok { background: #dcfce7; color: #166534; }
+  .mol-estado--warn { background: #fef3c7; color: #92400e; }
+  .mol-estado--down { background: #fee2e2; color: #991b1b; }
+  .mol-kv { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem .75rem; font-size: .85rem; }
+  .mol-kv div span:first-child { color: #64748b; }
+  .mol-kv div span:last-child { float: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .mol-last { margin-top: .6rem; font-size: .82rem; border-top: 1px dashed rgba(15,23,42,0.1); padding-top: .5rem; }
+  .mol-err { color: #991b1b; font-size: .8rem; margin-top: .35rem; }
+  .mol-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  .mol-table th { text-align: left; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; padding: .4rem .5rem; border-bottom: 1px solid rgba(15,23,42,0.1); }
+  .mol-table td { padding: .4rem .5rem; border-bottom: 1px solid rgba(15,23,42,0.05); vertical-align: top; }
+  .mol-table tr.ok td.res { color: #166534; font-weight: 700; }
+  .mol-table tr.no td.res { color: #991b1b; font-weight: 700; }
+  .mol-panel { border: 1px solid rgba(15,23,42,0.08); border-radius: 1rem; padding: 1rem 1.15rem; background: #fff; margin-bottom: 1.25rem; }
+  .mol-panel h2 { font-size: 1rem; margin: 0 0 .6rem; }
+  .mol-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; }
+  .mol-muted { color: #64748b; }
+  #mol-msg { font-size: .85rem; color: #64748b; margin-bottom: .75rem; }
+</style>
+{% endblock extra_css %}
+
+{% block content %}
+<div id="mol-msg">Cargando…</div>
+<div id="mol-grid" class="mol-grid"></div>
+
+<section class="mol-panel">
+  <h2>Últimos pasos</h2>
+  <table class="mol-table">
+    <thead><tr><th>Hora</th><th>Molinete</th><th>Tag</th><th>Socio</th><th>Resultado</th><th>Mensaje</th><th>ms</th></tr></thead>
+    <tbody id="mol-pasos"><tr><td colspan="7" class="mol-muted">Sin pasos todavía.</td></tr></tbody>
+  </table>
+</section>
+
+<section class="mol-panel">
+  <h2>Sensores (entradas auxiliares)</h2>
+  <table class="mol-table">
+    <thead><tr><th>Hora</th><th>Placa</th><th>Entrada</th><th>Código</th></tr></thead>
+    <tbody id="mol-sensores"><tr><td colspan="4" class="mol-muted">La placa no informó ningún evento de sensor.</td></tr></tbody>
+  </table>
+</section>
+{% endblock content %}
+
+{% block extra_js %}
+<script>
+(function () {
+  const URL = "/api/molinetes/online/?pasos=40";
+  const grid = document.getElementById("mol-grid");
+  const msg = document.getElementById("mol-msg");
+  const tbPasos = document.getElementById("mol-pasos");
+  const tbSens = document.getElementById("mol-sensores");
+
+  function hora(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    const hoy = new Date();
+    const hhmm = d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return d.toDateString() === hoy.toDateString() ? hhmm : d.toLocaleDateString("es-AR") + " " + hhmm;
+  }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+  function hace(seg) {
+    if (seg == null) return "";
+    if (seg < 60) return seg + " s";
+    if (seg < 3600) return Math.floor(seg / 60) + " min";
+    return Math.floor(seg / 3600) + " h";
+  }
+
+  function clase(p) {
+    if (p.vencido || !p.viva || p.socket === false) return "down";
+    if (p.modo !== "real" || p.ultimo_error) return "warn";
+    return "ok";
+  }
+  function textoEstado(p) {
+    if (p.vencido) return "SIN SERVICIO (último dato hace " + hace(p.edad_seg) + ")";
+    if (!p.viva) return "SIN SESIÓN con la placa";
+    if (p.socket === false) return "CONEXIÓN CAÍDA, reconectando";
+    if (p.modo === "observar") return "EN LÍNEA · modo observar (no abre)";
+    if (p.modo === "libre") return "EN LÍNEA · MODO LIBRE (abre sin validar)";
+    return "EN LÍNEA";
+  }
+
+  function pintarPlacas(placas) {
+    if (!placas.length) {
+      grid.innerHTML = '<div class="mol-card"><h3>Sin molinetes</h3><div class="mol-sub">El servicio intelektron-online todavía no publicó ningún estado.</div></div>';
+      return;
+    }
+    grid.innerHTML = placas.map(p => {
+      const c = clase(p);
+      return `
+      <div class="mol-card mol-card--${c}">
+        <h3>${esc(p.nombre)}</h3>
+        <div class="mol-sub mol-mono">${esc(p.ip)}:${p.port} · controlador ${p.id_controlador} · acceso ${p.id_acceso ?? "?"}</div>
+        <div style="margin-bottom:.6rem"><span class="mol-estado mol-estado--${c}">${esc(textoEstado(p))}</span></div>
+        <div class="mol-kv">
+          <div><span>Modo</span><span>${esc(p.modo)}</span></div>
+          <div><span>Validador</span><span>${esc(p.validador)}</span></div>
+          <div><span>Relé</span><span>${p.rele ? p.rele + " / " + p.rele_tiempo + " s" : "placa"}</span></div>
+          <div><span>Actualizado</span><span>hace ${hace(p.edad_seg)}</span></div>
+          <div><span>Hoy pasos</span><span>${p.hoy_total}</span></div>
+          <div><span>Hoy abrió</span><span>${p.hoy_abiertos}</span></div>
+          <div><span>Desde el arranque</span><span>${p.abiertos} ok / ${p.denegados} no</span></div>
+          <div><span>Errores de decisión</span><span>${p.errores}</span></div>
+          <div><span>Reconexiones</span><span>${p.reconexiones}</span></div>
+          <div><span>Caídas de socket</span><span>${p.caidas_socket}</span></div>
+          <div><span>Eventos / respuestas</span><span>${p.eventos} / ${p.respuestas}</span></div>
+          <div><span>Servicio desde</span><span>${hora(p.iniciado_at)}</span></div>
+        </div>
+        <div class="mol-last">
+          <div><span class="mol-muted">Última lectura:</span> ${hora(p.ultimo_evento)} <span class="mol-mono">${esc(p.ultimo_tag)}</span> ${esc(p.ultimo_mensaje)}</div>
+          <div><span class="mol-muted">Última apertura:</span> ${hora(p.ultima_apertura)}</div>
+        </div>
+        ${p.ultimo_error ? '<div class="mol-err">Último error: ' + esc(p.ultimo_error) + '</div>' : ''}
+      </div>`;
+    }).join("");
+  }
+
+  function pintarPasos(pasos) {
+    if (!pasos.length) return;
+    tbPasos.innerHTML = pasos.map(x => `
+      <tr class="${x.accionado ? "ok" : "no"}">
+        <td>${hora(x.fecha)}</td>
+        <td class="mol-mono">${esc(x.ip || x.id_controlador)}</td>
+        <td class="mol-mono">${esc(x.tag)}</td>
+        <td>${x.id_cliente ? esc(x.socio || x.id_cliente) + ' <span class="mol-muted">(' + x.id_cliente + ')</span>' : '<span class="mol-muted">no registrada</span>'}</td>
+        <td class="res">${x.accionado ? "ABRIÓ" : "NO"}${x.antirebote ? ' <span class="mol-muted">(repetida)</span>' : ""}${x.modo !== "real" ? ' <span class="mol-muted">[' + esc(x.modo) + ']</span>' : ""}</td>
+        <td>${esc(x.mensaje)}${x.error ? ' <span class="mol-err">' + esc(x.error) + '</span>' : ""}</td>
+        <td class="mol-muted">${Math.round(x.duracion_ms || 0)}</td>
+      </tr>`).join("");
+  }
+
+  function pintarSensores(s) {
+    if (!s.length) return;
+    tbSens.innerHTML = s.map(x => `
+      <tr><td>${hora(x.fecha)}</td><td class="mol-mono">${esc(x.ip || x.id_controlador)}</td><td>${x.entrada}</td><td>${x.codigo}</td></tr>`).join("");
+  }
+
+  async function refrescar() {
+    try {
+      const r = await fetch(URL, { credentials: "same-origin", headers: { "Accept": "application/json" } });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const d = await r.json();
+      pintarPlacas(d.placas || []);
+      pintarPasos(d.pasos || []);
+      pintarSensores(d.sensores || []);
+      msg.textContent = "Actualizado " + hora(d.ahora) + " · " + (d.placas || []).length + " molinete(s)";
+    } catch (e) {
+      msg.textContent = "No se pudo actualizar: " + e.message;
+    }
+  }
+  refrescar();
+  setInterval(refrescar, 5000);
+})();
+</script>
+{% endblock extra_js %}
