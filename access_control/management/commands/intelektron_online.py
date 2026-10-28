@@ -64,6 +64,7 @@ from access_control.services.intelectron.api3000_wrapper.api3000.online import (
     tipo_acceso_from_event,
 )
 from access_control.services.intelektron_decision import Decision, DecisorClever
+from access_control.services.paso_visor import espejar_en_visor
 from access_control.services.validador_local import DecisionLocal, ValidadorLocal, ahora_local
 
 # Eventos con los que la placa pide una decisión al host. Una placa sin lista
@@ -286,7 +287,7 @@ class Command(BaseCommand):
             try:
                 fecha = timezone.make_aware(cuando, timezone.get_current_timezone())
                 if decision is not None:
-                    PasoMolinete.objects.create(
+                    paso = PasoMolinete.objects.create(
                         fecha=fecha, id_controlador=self.id_controlador, id_acceso=self.id_acceso,
                         tipo=tipo or "E", tag=tag, lector=ev.source_id, evento_codigo=ev.event_code,
                         id_cliente=decision.id_cliente, id_cliente_ref=decision.id_cliente_ref,
@@ -299,6 +300,8 @@ class Command(BaseCommand):
                         raw={"access_id": ev.access_id, "direction": ev.direction, "node": ev.node,
                              "traza": getattr(decision, "traza", [])},
                     )
+                    if self.modo != "observar":
+                        espejar_en_visor(paso, self.id_controlador, self.id_acceso)
                 key = hashlib.sha1(
                     f"online|{cuando.isoformat()}|{ev.access_id}|{ev.event_code}|{ev.source_id}".encode()
                 ).hexdigest()
