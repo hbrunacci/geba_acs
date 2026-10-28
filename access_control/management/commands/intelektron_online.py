@@ -105,6 +105,11 @@ class Command(BaseCommand):
         parser.add_argument("--log-nativo", default="/tmp/itk_online.log", help="Log de la librería nativa.")
         parser.add_argument("--keepalive", type=int, default=30,
                             help="Segundos entre keepalives (EcoTest) hacia la placa; 0 desactiva. Default 30.")
+        parser.add_argument("--rele", type=int, default=2,
+                            help="Relé a pulsar con itk_rele_control en cada apertura (0 = sólo la respuesta "
+                                 "habilitada, confiando en la config 'Aceptado' de la placa). Default 2.")
+        parser.add_argument("--rele-tiempo", type=int, default=3,
+                            help="Segundos del pulso de --rele (0 = pulso corto). Default 3.")
 
     # ------------------------------------------------------------------ setup
 
@@ -116,6 +121,8 @@ class Command(BaseCommand):
         self.modo = "real" if opts["grabar"] else opts["modo"]
         self.real = self.modo == "real"
         self.libre = self.modo == "libre"   # abre con cualquier lectura, sin validar
+        self.rele, self.rele_tiempo = int(opts["rele"]), int(opts["rele_tiempo"])
+        self.sesion = None
         self.lectores_salida = {int(x) for x in opts["lectores_salida"].split(",") if x.strip()}
         self.lectores_hex = {int(x) for x in opts["lectores_hex"].split(",") if x.strip()}
         self.cola: "queue.Queue[tuple]" = queue.Queue()
@@ -146,7 +153,7 @@ class Command(BaseCommand):
                 "El controlador no tiene Id_Acceso en CD_Controladores y no se indicó --id-acceso."))
             return
 
-        sesion = OnlineSession(
+        self.sesion = sesion = OnlineSession(
             ip=ip, port=port, dest_node=opts["dest_node"], source_node=opts["source_node"],
             timeout_ms=opts["timeout"], on_user=self._on_user, on_aux=self._on_aux,
             on_conn=self._on_conn, log_path=opts["log_nativo"],
@@ -272,6 +279,9 @@ class Command(BaseCommand):
                     linea += " (repetida)"
                 if accionar:
                     linea += " ABRE"
+                    if self.rele > 0 and self.sesion is not None:
+                        ok = self.sesion.accionar_rele(self.rele, self.rele_tiempo, node=ev.node)
+                        linea += f" rele {self.rele}/{self.rele_tiempo}s {'OK' if ok else 'FALLO'}"
             self.stdout.write(linea)
             try:
                 fecha = timezone.make_aware(cuando, timezone.get_current_timezone())

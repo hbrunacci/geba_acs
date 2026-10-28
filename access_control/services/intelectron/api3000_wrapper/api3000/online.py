@@ -99,6 +99,7 @@ FLD_USER_TODO = 4095
 ACCESS_CTL_TOTAL = 4095
 
 CONN_CLOSED_BY_DEVICE = 2     # cause del callback de conexión cuando el equipo corta
+CONN_LOST = 3                 # visto 28/10/2026: llega ~10-95 s después de una lectura y el socket ya no está
 PROC_NET_TCP = "/proc/net/tcp"  # tabla TCP del kernel (Linux) que mira el watchdog de socket
 
 
@@ -393,7 +394,7 @@ class OnlineSession:
 
     def _conn_cb(self, args, h_link, cause) -> None:
         cause = int(cause)
-        if cause == CONN_CLOSED_BY_DEVICE:
+        if cause in (CONN_CLOSED_BY_DEVICE, CONN_LOST):
             self._viva = False
         if self.on_conn:
             try:
@@ -419,6 +420,31 @@ class OnlineSession:
             logger.warning("itk_answer_user_event: %s", exc)
             return False
         self.respuestas += 1
+        return True
+
+    def accionar_rele(self, rele: int, accion: int, *, node: int | None = None) -> bool:
+        """Pulso directo de relé con ``itk_rele_control`` (handle, nodo, relé, acción).
+
+        ``accion``: 0 = pulso corto, 1..240 = segundos, 253 = ON, 254 = OFF, 255 =
+        invertir. Es el mecanismo validado en vivo en agosto de 2026 para este
+        molinete (relé 2, 3 s); la configuración "Aceptado" de la placa no
+        alcanzó el 28/10/2026.
+        """
+        from ctypes import c_int16
+        with self._lock:
+            handle = self._handle
+        if handle <= 0:
+            return False
+        lib = self._lib
+        lib.itk_rele_control.argtypes = [c_long, c_int16, c_long, c_long]
+        lib.itk_rele_control.restype = c_long
+        code = int(lib.itk_rele_control(c_long(handle), c_int16(self.dest_node if node is None else int(node)),
+                                        c_long(int(rele)), c_long(int(accion))))
+        try:
+            ensure_ok(code, "itk_rele_control")
+        except Api3000NativeError as exc:
+            logger.warning("itk_rele_control rele=%s accion=%s: %s", rele, accion, exc)
+            return False
         return True
 
     def abrir(self) -> int:

@@ -365,7 +365,7 @@ services:
       DJANGO_DEBUG: "0"
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-prod}
     command: ["sh", "-c",
-              "exec python manage.py intelektron_online --ip \"$${INTELEKTRON_ONLINE_IP}\" --port \"$${INTELEKTRON_ONLINE_PORT:-3001}\" --dest-node \"$${INTELEKTRON_ONLINE_DEST_NODE:-1}\" --source-node \"$${INTELEKTRON_ONLINE_SOURCE_NODE:-0}\" --id-controlador \"$${INTELEKTRON_ONLINE_ID_CONTROLADOR}\" --lectores-salida \"$${INTELEKTRON_ONLINE_LECTORES_SALIDA:-}\" --validador \"$${INTELEKTRON_ONLINE_VALIDADOR:-local}\" --modo \"$${INTELEKTRON_ONLINE_MODO:-observar}\" $$( [ -n \"$${INTELEKTRON_ONLINE_ID_ACCESO:-}\" ] && echo --id-acceso \"$${INTELEKTRON_ONLINE_ID_ACCESO}\" )"]
+              "exec python manage.py intelektron_online --ip \"$${INTELEKTRON_ONLINE_IP}\" --port \"$${INTELEKTRON_ONLINE_PORT:-3001}\" --dest-node \"$${INTELEKTRON_ONLINE_DEST_NODE:-1}\" --source-node \"$${INTELEKTRON_ONLINE_SOURCE_NODE:-0}\" --id-controlador \"$${INTELEKTRON_ONLINE_ID_CONTROLADOR}\" --lectores-salida \"$${INTELEKTRON_ONLINE_LECTORES_SALIDA:-}\" --validador \"$${INTELEKTRON_ONLINE_VALIDADOR:-local}\" --modo \"$${INTELEKTRON_ONLINE_MODO:-observar}\" --rele \"$${INTELEKTRON_ONLINE_RELE:-2}\" --rele-tiempo \"$${INTELEKTRON_ONLINE_RELE_TIEMPO:-3}\" $$( [ -n \"$${INTELEKTRON_ONLINE_ID_ACCESO:-}\" ] && echo --id-acceso \"$${INTELEKTRON_ONLINE_ID_ACCESO}\" )"]
     volumes:
       - .:/app
     depends_on:

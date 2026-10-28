@@ -228,6 +228,17 @@ class OnlineSessionTestCase(SimpleTestCase):
         s._conn_cb(None, 7, 2)
         self.assertFalse(s.viva)
 
+    def test_accionar_rele_usa_itk_rele_control(self):
+        s, lib = self._sesion(lambda ev: None)
+        lib.itk_rele_control.return_value = 1
+        self.assertFalse(s.accionar_rele(2, 3))          # sin sesión abierta no manda nada
+        s.abrir()
+        self.assertTrue(s.accionar_rele(2, 3))
+        handle, node, rele, accion = lib.itk_rele_control.call_args[0]
+        self.assertEqual((handle.value, node.value, rele.value, accion.value), (7, 1, 2, 3))
+        lib.itk_rele_control.return_value = 147
+        self.assertFalse(s.accionar_rele(5, 3))
+
     def test_hay_socket_lee_la_tabla_tcp(self):
         import os
         import tempfile
