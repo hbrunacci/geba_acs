@@ -266,6 +266,57 @@ class CategoriasTests(TestCase):
         self.assertEqual(len(d["catalogo"]), len(self.FILAS))
 
 
+class CategoriasExcelTests(TestCase):
+    """La descarga del reparto por categoría."""
+
+    FILAS = CategoriasTests.FILAS
+
+    def setUp(self):
+        User = get_user_model()
+        u = User.objects.create_user("tablerista", password="x")
+        u.groups.add(Group.objects.get_or_create(name="tableros")[0])
+        self.client.force_login(u)
+
+    def _bajar(self, **params):
+        with _mock_conexion([self.FILAS]):
+            return self.client.get(reverse("xsys_tablero_categorias_excel_api"), params)
+
+    def _hoja(self, r):
+        from openpyxl import load_workbook
+        return load_workbook(io.BytesIO(r.content)).active
+
+    def test_se_baja_como_adjunto_xlsx(self):
+        r = self._bajar()
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("spreadsheetml", r["Content-Type"])
+        self.assertIn('filename="socios_por_categoria_', r["Content-Disposition"])
+
+    def test_trae_todas_las_categorias_sin_agrupar_las_chicas(self):
+        # El umbral es de la torta; en la tabla tienen que estar las cinco.
+        ws = self._hoja(self._bajar(umbral="5"))
+        nombres = [c.value for c in ws["B"]]
+        for _, nombre, _, _ in self.FILAS:
+            self.assertIn(nombre, nombres)
+        self.assertFalse(any(str(n).startswith("Otras") for n in nombres if n))
+
+    def test_socios_primero_y_con_su_cantidad(self):
+        ws = self._hoja(self._bajar())
+        filas = [(f[1], f[2], f[3]) for f in ws.iter_rows(values_only=True)
+                 if f[2] in ("Socio", "No socio")]
+        self.assertEqual(filas[0], ("ACTIVO MAYOR", "Socio", 250))
+        self.assertEqual([t for _, t, _ in filas],
+                         ["Socio", "Socio", "No socio", "No socio", "No socio"])
+
+    def test_respeta_el_filtro_de_poblacion(self):
+        ws = self._hoja(self._bajar(solo="socios"))
+        tipos = {f[2] for f in ws.iter_rows(values_only=True)} - {None, "Tipo"}
+        self.assertEqual(tipos, {"Socio"})
+
+    def test_sin_categorias_avisa(self):
+        r = self._bajar(categorias="9999")
+        self.assertEqual(r.status_code, 409)
+
+
 # --------------------------------------------------------------------------- #
 # Deuda: de punta a punta contra Postgres
 # --------------------------------------------------------------------------- #
@@ -589,7 +640,8 @@ class PermisosTests(TestCase):
         self.client.force_login(self.sin_rol)
         for nombre in ("xsys_tablero_padron_api", "xsys_tablero_altas_bajas_api",
                        "xsys_tablero_categorias_api", "xsys_tablero_deuda_api",
-                       "xsys_tablero_deuda_excel_api"):
+                       "xsys_tablero_deuda_excel_api",
+                       "xsys_tablero_categorias_excel_api"):
             self.assertEqual(self.client.get(reverse(nombre)).status_code, 403, nombre)
 
     def test_recalcular_no_responde_a_get(self):

@@ -400,3 +400,93 @@ def _hoja_categorias(ws, filas):
             celda.font = _TOTAL
             celda.fill = _RELLENO_TOTAL
             celda.number_format = MONEDA if col >= 4 else "#,##0"
+
+
+# --------------------------------------------------------------------------- #
+# Reparto por categoría
+# --------------------------------------------------------------------------- #
+
+def generar_categorias(datos: dict, *, poblacion: str = "", categorias: str = "",
+                       usuario: str = "") -> bytes:
+    """El reparto por categoría del tablero, una fila por categoría.
+
+    ``datos`` es lo que devuelve ``tableros.categorias(umbral=0, ...)``: con
+    umbral cero no hay torta chica ni porción "Otras", así que ``principal`` es
+    la lista completa ya filtrada por población y categorías.
+
+    Los totales van como fórmula y no como número: si alguien borra o filtra
+    filas para armar su propio cuadro, el total lo acompaña.
+    """
+    filas = sorted(datos.get("principal") or [],
+                   key=lambda c: (not c["es_socio"], -c["n"], c["categoria"]))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Por categoría"
+    ws.sheet_view.showGridLines = False
+
+    ws.merge_cells("A1:E1")
+    ws["A1"] = "Padrón activo por categoría"
+    ws["A1"].font = _TITULO
+    ws["A1"].fill = _RELLENO_TITULO
+    ws.row_dimensions[1].height = 24
+    contexto = [
+        ("Fuente", "xSys · personas con ficha activa"),
+        ("Generado", f"{timezone.localtime():%d/%m/%Y %H:%M}"
+                     + (f" por {usuario}" if usuario else "")),
+        ("Población", poblacion or "Todas"),
+        ("Categorías", categorias or "Todas"),
+    ]
+    for r, (etiqueta, valor) in enumerate(contexto, start=2):
+        ws.cell(row=r, column=1, value=etiqueta).font = _ETIQUETA
+        ws.cell(row=r, column=2, value=valor)
+
+    cab = len(contexto) + 3
+    columnas = [("Id", 8), ("Categoría", 34), ("Tipo", 11), ("Cantidad", 12),
+                ("% del total", 13)]
+    for i, (titulo, ancho) in enumerate(columnas, start=1):
+        celda = ws.cell(row=cab, column=i, value=titulo)
+        celda.font = _CABECERA
+        celda.fill = _RELLENO_CABECERA
+        celda.alignment = Alignment(horizontal="center", vertical="center")
+        ws.column_dimensions[get_column_letter(i)].width = ancho
+
+    primera = cab + 1
+    ultima = cab + len(filas)
+    rango_n = f"$D${primera}:$D${max(ultima, primera)}"
+    rango_tipo = f"$C${primera}:$C${max(ultima, primera)}"
+    total_fila = ultima + 4  # debajo de "Socios" y "No socios"
+    for r, c in enumerate(filas, start=primera):
+        ws.cell(row=r, column=1, value=c["id"])
+        ws.cell(row=r, column=2, value=c["categoria"])
+        ws.cell(row=r, column=3, value="Socio" if c["es_socio"] else "No socio")
+        ws.cell(row=r, column=4, value=c["n"]).number_format = "#,##0"
+        ws.cell(row=r, column=5, value=f"=D{r}/$D${total_fila}").number_format = "0.00%"
+        for col in range(1, 6):
+            ws.cell(row=r, column=col).border = _BORDE_FINO
+
+    pies = [
+        (ultima + 2, "Socios", f'=SUMIF({rango_tipo},"Socio",{rango_n})'),
+        (ultima + 3, "No socios", f'=SUMIF({rango_tipo},"No socio",{rango_n})'),
+        (total_fila, "TOTAL", f"=SUM({rango_n})"),
+    ]
+    for r, etiqueta, formula in pies:
+        ws.cell(row=r, column=2, value=etiqueta).font = _TOTAL
+        ws.cell(row=r, column=4, value=formula).number_format = "#,##0"
+        ws.cell(row=r, column=5, value=f"=D{r}/$D${total_fila}").number_format = "0.00%"
+        for col in range(2, 6):
+            ws.cell(row=r, column=col).font = _TOTAL
+            ws.cell(row=r, column=col).fill = _RELLENO_TOTAL
+
+    ws.freeze_panes = ws.cell(row=primera, column=1)
+    if filas:
+        ws.auto_filter.ref = f"A{cab}:E{ultima}"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def nombre_archivo_categorias() -> str:
+    """``socios_por_categoria_2026-10-29_1130.xlsx``: es una foto de ese momento."""
+    return f"socios_por_categoria_{timezone.localtime():%Y-%m-%d_%H%M}.xlsx"

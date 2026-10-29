@@ -19,6 +19,7 @@ from xsys.api_views_elecciones import (
 from xsys.api_views_tableros import (
     TableroAltasBajasAPI,
     TableroCategoriasAPI,
+    TableroCategoriasExcelAPI,
     TableroDeudaAPI,
     TableroDeudaDetalleAPI,
     TableroDeudaDetalleExcelAPI,
@@ -73,6 +74,8 @@ urlpatterns = [
          name="xsys_tablero_altas_bajas_api"),
     path("xsys/tableros/categorias/", TableroCategoriasAPI.as_view(),
          name="xsys_tablero_categorias_api"),
+    path("xsys/tableros/categorias/excel/", TableroCategoriasExcelAPI.as_view(),
+         name="xsys_tablero_categorias_excel_api"),
     path("xsys/tableros/deuda/", TableroDeudaAPI.as_view(), name="xsys_tablero_deuda_api"),
     path("xsys/tableros/deuda/recalcular/", TableroDeudaRecalcularAPI.as_view(),
          name="xsys_tablero_deuda_recalcular_api"),

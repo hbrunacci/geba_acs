@@ -273,6 +273,7 @@
             </div>
           </div>
         </div>
+        <button class="btn btn-sm btn-success" id="cat-excel">Descargar Excel</button>
       </div>
     </div>
     <div class="row g-3">
@@ -1163,19 +1164,31 @@
     p.set("cuotas_min", estado.deudaCuotas);
     var ids = categoriasElegidas();
     if (ids) { p.set("categorias", ids); }
+    bajarArchivo("/api/xsys/tableros/deuda/excel/?" + p.toString(), $("d-excel"),
+                 "deuda_socios.xlsx");
+  }
 
+  function bajarCategoriasExcel() {
+    var p = new URLSearchParams();
+    p.set("solo", estado.catSolo);
+    var ids = categoriasElegidas();
+    if (ids) { p.set("categorias", ids); }
+    bajarArchivo("/api/xsys/tableros/categorias/excel/?" + p.toString(), $("cat-excel"),
+                 "socios_por_categoria.xlsx");
+  }
+
+  function bajarArchivo(url, b, nombrePorDefecto) {
     // Se baja por fetch y no con window.location a propósito. Asignar location
     // convierte la descarga en una NAVEGACIÓN, y una navegación la puede
     // interceptar el service worker de la PWA: en las máquinas donde estaba
     // registrado, la página parecía recargarse y no bajaba nada. Además, así se
     // puede leer el error del servidor y mostrarlo, en vez de dejar al usuario
     // mirando una pantalla que no hizo nada.
-    var b = $("d-excel");
     var texto = b.textContent;
     b.disabled = true;
     b.textContent = "Generando…";
 
-    fetch("/api/xsys/tableros/deuda/excel/?" + p.toString(), {
+    fetch(url, {
       credentials: "same-origin",
       headers: { "X-Requested-With": "XMLHttpRequest" }
     }).then(function (r) {
@@ -1184,7 +1197,7 @@
           throw new Error(j.detail || ("El servidor respondió " + r.status));
         });
       }
-      var nombre = "deuda_socios.xlsx";
+      var nombre = nombrePorDefecto;
       var cd = r.headers.get("Content-Disposition") || "";
       var m = cd.match(/filename="?([^";]+)"?/);
       if (m) { nombre = m[1]; }
@@ -1574,6 +1587,7 @@
   $("btn-refrescar").addEventListener("click", cargarTodo);
   $("d-actualizar").addEventListener("click", recalcularDeuda);
   $("d-excel").addEventListener("click", bajarExcel);
+  $("cat-excel").addEventListener("click", bajarCategoriasExcel);
 
   // Sombra en la barra de período mientras está pegada arriba. Se detecta con
   // un centinela vacío justo encima en vez de escuchar el scroll: el observer

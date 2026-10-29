@@ -112,6 +112,53 @@ class TableroCategoriasAPI(_Base):
             return Response({"detail": str(exc)}, status=503)
 
 
+CATEGORIAS_SOLO = {"todos": "Todas", "socios": "Sólo socios", "no_socios": "Sólo no socios"}
+
+
+class TableroCategoriasExcelAPI(APIView):
+    """El reparto por categoría en .xlsx, con los filtros de la pantalla.
+
+    El umbral de la torta no se aplica: es para que el gráfico se lea, y en una
+    tabla las categorías chicas se leen igual que las grandes.
+    """
+
+    permission_classes = [PuedeTableros]
+
+    def get(self, request):
+        try:
+            from xsys.services import tableros_excel
+        except ImportError:
+            return Response(
+                {"detail": "Falta la biblioteca openpyxl en el servidor."},
+                status=503)
+
+        solo = request.query_params.get("solo", "todos")
+        ids = _ids(request, "categorias")
+        try:
+            datos = tableros.categorias(umbral=0, ids=ids, solo=solo)
+        except TableroError as exc:
+            return Response({"detail": str(exc)}, status=503)
+        if not datos["principal"]:
+            return Response({"detail": "No hay categorías con esos filtros."}, status=409)
+
+        etiqueta_cat = "Todas"
+        if ids:
+            etiqueta_cat = ", ".join(sorted(c["categoria"] for c in datos["principal"]))
+
+        contenido = tableros_excel.generar_categorias(
+            datos,
+            poblacion=CATEGORIAS_SOLO.get(solo, solo),
+            categorias=etiqueta_cat,
+            usuario=getattr(request.user, "username", "") or "")
+        respuesta = HttpResponse(
+            contenido,
+            content_type="application/vnd.openxmlformats-officedocument."
+                         "spreadsheetml.sheet")
+        respuesta["Content-Disposition"] = (
+            'attachment; filename="%s"' % tableros_excel.nombre_archivo_categorias())
+        return respuesta
+
+
 class TableroDeudaAPI(_Base):
     """Deuda por mes leída de la última foto guardada."""
 
