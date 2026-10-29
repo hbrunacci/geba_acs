@@ -13,6 +13,13 @@ Placas (``--placa``, repetible, o ``--placas`` con una lista separada por ';'):
   acceso sale de CD_Controladores). Los argumentos viejos (--ip
   --id-controlador --id-acceso) siguen valiendo y definen una sola placa.
 
+  ATENCIÓN (29/10/2026): con la librería libitkcom actual, dos placas en el
+  MISMO proceso no funcionan: la librería usa un único enlace (link id 1) y
+  cada reconexión de una placa cierra la conexión de la otra (cortes cada
+  30 s en ambas). Hasta resolverlo, UNA PLACA POR PROCESO: en compose hay un
+  servicio por placa (intelektron-online, intelektron-online-ombues). Ver
+  scripts/intelektron_multiplaca_2026-10-28.md.
+
 Quién decide (``--validador``):
   * ``local`` (default): la réplica Python de la cascada de Clever
     (``services.validador_local``). Lee las tablas de xSys, NO escribe nada en

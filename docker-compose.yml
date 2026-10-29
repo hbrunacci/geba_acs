@@ -386,6 +386,25 @@ services:
       retries: 3
       start_period: 90s
 
+  # Segunda placa en SU PROPIO proceso. La librería libitkcom usa un único
+  # enlace (link id 1) por proceso aunque se abran dos sesiones: con dos placas
+  # en el mismo contenedor cada reconexión de una cerraba la conexión de la
+  # otra (29/10/2026, garita + Ombúes "Molinete 1", cortes cada 30 s en ambas).
+  # Hasta resolverlo en la librería, una placa por contenedor. Misma imagen y
+  # mismo comando; sólo cambia la lista de placas, que sale de
+  # INTELEKTRON_ONLINE_PLACAS_OMBUES y NO cae a la forma vieja de una placa
+  # (para no abrir una segunda sesión contra la garita por error).
+  intelektron-online-ombues:
+    extends:
+      service: intelektron-online
+    environment:
+      INTELEKTRON_ONLINE_PLACAS: ${INTELEKTRON_ONLINE_PLACAS_OMBUES:-}
+    command: ["sh", "-c",
+              "if [ -z \"$${INTELEKTRON_ONLINE_PLACAS:-}\" ]; then echo 'Falta INTELEKTRON_ONLINE_PLACAS_OMBUES en .env'; exit 1; fi; exec python manage.py intelektron_online --placas \"$${INTELEKTRON_ONLINE_PLACAS}\" --dest-node \"$${INTELEKTRON_ONLINE_DEST_NODE:-1}\" --source-node \"$${INTELEKTRON_ONLINE_SOURCE_NODE:-0}\" --lectores-salida \"$${INTELEKTRON_ONLINE_LECTORES_SALIDA:-}\" --validador \"$${INTELEKTRON_ONLINE_VALIDADOR:-local}\" --modo \"$${INTELEKTRON_ONLINE_MODO:-observar}\" --rele \"$${INTELEKTRON_ONLINE_RELE:-2}\" --rele-tiempo \"$${INTELEKTRON_ONLINE_RELE_TIEMPO:-3}\""]
+    depends_on:
+      web:
+        condition: service_healthy
+
   # Modo LISTEN de Intelektron: NOSOTROS somos el servidor y la placa se conecta
   # a este host para reportar eventos en vivo (lectores/sensores). A diferencia
   # del intelektron-listener (que hace polling saliente), este PUBLICA el puerto

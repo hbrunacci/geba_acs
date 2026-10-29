@@ -349,13 +349,17 @@ class OnlineSession:
         self._cb_conn = CONN_CALLBACK(self._conn_cb)
         # Keepalive (EcoTest) de la librería hacia el equipo: sin esto la placa
         # cierra la sesión al cumplirse su "Timeout Conexión" (100 s en las de
-        # Clever) y hay que reconectar; Clever usa 60 s / 3 reintentos. Tiene
-        # que configurarse ANTES de itk_init (después devuelve 1031).
+        # Clever) y hay que reconectar. Tiene que configurarse ANTES de itk_init
+        # (después devuelve 1031). La librería lo toma en MILISEGUNDOS (Clever
+        # usa PlacaIntelektronTimeOutKA=40000 / 3 reintentos): el 28-29/10/2026
+        # se le pasó "30" creyendo que eran segundos y mandaba un EcoTest cada
+        # ~130 ms (7 por segundo, 200 MB de log por día). Acá la tupla sigue
+        # siendo (segundos, reintentos) y se convierte al llamar.
         self.keepalive = keepalive
         self.init = init
         if keepalive and init:
             timeout_s, retry = keepalive
-            code = int(self._lib.itk_set_keepalive(int(timeout_s), int(retry), self.dest_node))
+            code = int(self._lib.itk_set_keepalive(int(timeout_s) * 1000, int(retry), self.dest_node))
             try:
                 ensure_ok(code, "itk_set_keepalive")   # OP_OK = 1; 1031 si ya hubo itk_init
             except Api3000NativeError as exc:

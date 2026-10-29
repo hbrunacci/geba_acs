@@ -212,7 +212,8 @@ class OnlineSessionTestCase(SimpleTestCase):
         native = MagicMock()
         native.cdll.itk_set_keepalive.return_value = 1   # OP_OK
         OnlineSession(ip="10.0.0.117", port=3001, dest_node=1, keepalive=(30, 3), native=native)
-        native.cdll.itk_set_keepalive.assert_called_once_with(30, 3, 1)
+        # La librería recibe milisegundos: 30 s -> 30000.
+        native.cdll.itk_set_keepalive.assert_called_once_with(30000, 3, 1)
         native.cdll.itk_set_keepalive.reset_mock()
         OnlineSession(ip="10.0.0.117", port=3001, keepalive=None, native=native)
         native.cdll.itk_set_keepalive.assert_not_called()

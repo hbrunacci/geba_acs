@@ -3,21 +3,45 @@
 Paso a paso acordado el 28/10/2026. Lo marcado **HECHO** quedó ejecutado ese
 día; lo demás depende de hardware o de infraestructura que hoy no hay.
 
-## 1. Un proceso para todas las placas — HECHO
+## 1. Un proceso para todas las placas — HECHO, pero NO SIRVE con la librería actual
 `manage.py intelektron_online` acepta una lista de placas
 (`--placa ip[:puerto]/ctrl[/acceso[/rele[/seg]]]`, repetible, o `--placas "a;b;c"`).
 Un solo proceso mantiene una sesión por placa, con el **mismo validador** y la
 misma conexión a xSys; las decisiones se serializan con un lock (120–200 ms
-cada una, diez placas con lecturas simultáneas esperan como mucho ~2 s, la
-placa espera hasta 5 s). La librería se inicializa una sola vez por proceso.
-Compose: `INTELEKTRON_ONLINE_PLACAS="10.0.0.117:3001/47/14/2/3;..."`.
+cada una). La librería se inicializa una sola vez por proceso.
 
-Para sumar una placa nueva: agregarla a `INTELEKTRON_ONLINE_PLACAS` en `.env`
-y `docker compose --profile intelektron up -d intelektron-online`. Antes, la
+**Visto el 29/10/2026 con dos placas reales (garita .117 + Ombúes .66):**
+`libitkcom` usa UN solo enlace (link id 1) por proceso aunque se llame a
+`itk_open` dos veces con distinta IP. Cada reconexión de una placa cerraba
+la conexión de la otra: cortes cada 30 s en las dos, cero lecturas en la .66.
+Lo confirma su log (`/tmp/itk_online.log`: "close link id = 1 / open
+10.0.0.117 / close link id = 1 / open 10.0.0.66", alternando).
+**Regla hasta nuevo aviso: una placa por contenedor.** Compose tiene
+`intelektron-online` (garita, `INTELEKTRON_ONLINE_PLACAS`) e
+`intelektron-online-ombues` (`INTELEKTRON_ONLINE_PLACAS_OMBUES`); para una
+tercera placa se copia el bloque con otra variable. Cuesta ~55 MB por
+contenedor y el arranque tarda ~45 s (migrate + collectstatic del entrypoint).
+Pendiente: probar si `itk_open` con `source_node` distinto por placa da link
+ids distintos (Clever pasa un nodo origen distinto por placa: `Intelek_NroNodo`),
+o preguntar a Intelektron.
+
+Para sumar una placa nueva: su propio servicio en compose y su variable en
+`.env`, `docker compose --profile intelektron up -d <servicio>`. Antes, la
 placa tiene que: estar en Modo Envío Online, mandar "Aceptado + No
 identificado" al host (bits 3 en el param 24), tener fila en CD_Controladores
-(Tipo_Cont 'K', Activo 0) o acceso explícito en la spec, y saber qué relé
-libera el aspa (en la .117 es relé 2 / 3 s por pulso directo).
+(Tipo_Cont 'K', Activo 0) o acceso explícito en la spec, saber qué relé
+libera el aspa (en la .117 es relé 2 / 3 s por pulso directo; en la .66 basta
+la config "Aceptado" de la placa, relé 1), y **tener "IP Servidor" = 10.0.0.20**
+(params 522–525 por web: `set_num_cfg.cgi?4|1&522&10|1&523&0|1&524&0|1&525&20`).
+Sin ese filtro cualquier instancia de la app de Clever (hay otra fuera de esta
+PC: CD_Servers lista MOLI-SM 10.0.0.2 y JN-SOCIOS 192.168.3.80) se queda con
+la placa en cuanto la ve libre, porque la app carga TODOS los controladores
+activos, no sólo los de su sede. Las placas que instaló Clever ya lo tienen
+(la .67 sí; la .66 y la .117 estaban en 0.0.0.0).
+
+**Keepalive:** `itk_set_keepalive` recibe MILISEGUNDOS. Hasta el 29/10 se le
+pasaba 30 (= 30 ms): un EcoTest cada ~130 ms, 7 por segundo, 200 MB de log
+por día en `/tmp` del contenedor. Corregido (×1000 en `OnlineSession`).
 
 ## 2. Estado por placa y salud del servicio — HECHO
 Línea de estado por placa cada 60 s (viva, eventos, abiertos, denegados,
