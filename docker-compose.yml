@@ -405,6 +405,16 @@ services:
       web:
         condition: service_healthy
 
+  # Tercera placa (Ombúes "Molinete 4", ctrl 53, 10.0.0.67), mismo esquema.
+  intelektron-online-ombues4:
+    extends:
+      service: intelektron-online-ombues
+    environment:
+      INTELEKTRON_ONLINE_PLACAS: ${INTELEKTRON_ONLINE_PLACAS_OMBUES4:-}
+    depends_on:
+      web:
+        condition: service_healthy
+
   # Modo LISTEN de Intelektron: NOSOTROS somos el servidor y la placa se conecta
   # a este host para reportar eventos en vivo (lectores/sensores). A diferencia
   # del intelektron-listener (que hace polling saliente), este PUBLICA el puerto
