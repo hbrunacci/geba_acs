@@ -180,3 +180,19 @@ def construir(user, url_actual: str = "") -> list[dict]:
             "abierto": any(h["activo"] for h in hijos_dict),
         })
     return salida
+
+
+def inicio(user) -> str | None:
+    """La primera pantalla del menú que el usuario puede ver, para entrar ahí.
+
+    Antes todo el que no era admin iba a "Molinetes por puerta", y quien no tenía
+    el rol de puertas (concesionarios, tableros) caía en un 403 sin menú ni forma
+    de cerrar la sesión. Se saltean las que abren en otra pestaña: el visor de
+    puerta no es una pantalla para aterrizar.
+    """
+    for entrada in construir(user):
+        items = [entrada] if entrada["tipo"] == "item" else entrada["items"]
+        for item in items:
+            if not item["nueva_pestania"]:
+                return item["url"]
+    return None

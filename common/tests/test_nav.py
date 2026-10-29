@@ -210,3 +210,38 @@ class RenderTests(TestCase):
             if r.status_code >= 400:
                 malas.append(f"{item.titulo} ({item.url}) -> {r.status_code}")
         self.assertEqual(malas, [])
+
+
+class InicioTests(TestCase):
+    """Al entrar, cada usuario va a una pantalla suya y nunca a un 403 sin salida."""
+
+    def _entrar(self, usuario):
+        self.client.force_login(usuario)
+        return self.client.get(reverse("common:dashboard"), HTTP_HOST="localhost")
+
+    def test_cada_rol_aterriza_en_una_pantalla_que_puede_abrir(self):
+        casos = {
+            "concesionarios": "concesionarios_listado",
+            "tableros": "xsys_tableros",
+            "elecciones_mesas": "xsys_elecciones",
+            "Configuración de Puertas": "xsys_molinetes_config",
+        }
+        for grupo, destino in casos.items():
+            r = self._entrar(_usuario("u_" + grupo.split()[0], [grupo]))
+            self.assertRedirects(r, reverse(destino), fetch_redirect_response=False,
+                                 msg_prefix=grupo)
+            self.assertEqual(self.client.get(r["Location"], HTTP_HOST="localhost").status_code,
+                             200, grupo)
+
+    def test_sin_pantallas_ve_el_boton_de_salir(self):
+        r = self._entrar(_usuario("nadie2"))
+        self.assertEqual(r.status_code, 403)
+        self.assertContains(r, "sidebar__logout", status_code=403)
+
+    def test_el_403_muestra_el_menu_y_el_boton_de_salir(self):
+        self.client.force_login(_usuario("t1", ["tableros"]))
+        with self.settings(DEBUG=False):
+            r = self.client.get(reverse("concesionarios_listado"), HTTP_HOST="localhost")
+        self.assertEqual(r.status_code, 403)
+        self.assertContains(r, "sidebar__logout", status_code=403)
+        self.assertContains(r, "Tableros", status_code=403)

@@ -5,12 +5,13 @@ from django.contrib.auth.views import (
 )
 from django.contrib.staticfiles import finders
 from django.http import Http404, HttpResponse
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import TemplateView
 
-from common.roles import es_admin
+from common import nav
+from common.roles import es_admin, puede_config_puertas
 
 
 class DashboardView(LoginRequiredMixin, TemplateView):
@@ -19,10 +20,19 @@ class DashboardView(LoginRequiredMixin, TemplateView):
     redirect_field_name = "next"
 
     def dispatch(self, request, *args, **kwargs):
-        # El resumen es solo para administradores; los demás roles (ej. grupo de
-        # Puertas) van directo a su pantalla al iniciar sesión.
+        # El resumen es solo para administradores; los demás roles van directo
+        # a la primera pantalla que tienen en el menú.
         if request.user.is_authenticated and not es_admin(request.user):
-            return redirect("xsys_molinetes_config")
+            # Puertas sigue entrando a molinetes, como siempre: es su pantalla
+            # de trabajo aunque el menú ponga antes las fichas de socios.
+            if puede_config_puertas(request.user):
+                return redirect("xsys_molinetes_config")
+            destino = nav.inicio(request.user)
+            if destino:
+                return redirect(destino)
+            # Sin ninguna pantalla asignada: una página con el menú vacío y el
+            # botón de salir, en vez de un error sin salida.
+            return render(request, "common/sin_pantallas.html", status=403)
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):

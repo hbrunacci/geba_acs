@@ -1,0 +1,13 @@
+{% extends "common/base.html" %}
+{% comment %}
+  Página de error con el menú y "Cerrar sesión": la de Django es texto plano y
+  dejaba al usuario sin forma de salir ni de volver a sus pantallas.
+{% endcomment %}
+{% block page_title %}Sin permiso{% endblock page_title %}
+{% block header_title %}Sin permiso{% endblock header_title %}
+{% block header_subtitle %}No tenés permiso para ver esta pantalla.{% endblock header_subtitle %}
+{% block content %}
+<div class="card"><div class="card__body">
+  <p class="mb-0">Usá el menú de la izquierda para ir a tus pantallas, o <strong>Cerrar sesión</strong> para entrar con otro usuario.</p>
+</div></div>
+{% endblock content %}

@@ -119,6 +119,18 @@ body.layout {
   display: flex;
   flex-direction: column;
   padding: 2rem 1.5rem;
+  /* Fija a la altura de la ventana: si acompaña al contenido, en las pantallas
+     largas (Elecciones, Tableros) "Cerrar sesión" queda al fondo de la página
+     y nadie lo encuentra. El menú scrollea solo si no entra. */
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  flex-shrink: 0;
+}
+
+.layout__sidebar .sidebar__nav {
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .brand {
@@ -591,6 +603,24 @@ body.layout {
     flex-direction: row;
     align-items: center;
     gap: 1.5rem;
+    position: static;
+    height: auto;
+  }
+
+  /* En la barra horizontal el pie va en la misma fila: sin el margen y el
+     borde de arriba, que sólo tienen sentido en la columna. */
+  .sidebar__footer {
+    margin-top: 0;
+    border-top: 0;
+    padding-top: 0;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .sidebar__logout {
+    margin-top: 0;
+    white-space: nowrap;
   }
 
   .sidebar__nav {
