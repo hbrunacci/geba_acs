@@ -389,11 +389,11 @@ services:
   # Segunda placa en SU PROPIO proceso. La librería libitkcom usa un único
   # enlace (link id 1) por proceso aunque se abran dos sesiones: con dos placas
   # en el mismo contenedor cada reconexión de una cerraba la conexión de la
-  # otra (29/10/2026, garita + Ombúes "Molinete 1", cortes cada 30 s en ambas).
+  # otra (29/10/2026, Alcorta Molinete 3 + Ombúes Molinete 1, cortes cada 30 s en ambas).
   # Hasta resolverlo en la librería, una placa por contenedor. Misma imagen y
   # mismo comando; sólo cambia la lista de placas, que sale de
   # INTELEKTRON_ONLINE_PLACAS_OMBUES y NO cae a la forma vieja de una placa
-  # (para no abrir una segunda sesión contra la garita por error).
+  # (para no abrir una segunda sesión contra el Molinete 3 de Alcorta por error).
   intelektron-online-ombues:
     extends:
       service: intelektron-online

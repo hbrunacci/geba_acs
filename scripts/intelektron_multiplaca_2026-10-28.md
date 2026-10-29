@@ -10,14 +10,14 @@ Un solo proceso mantiene una sesión por placa, con el **mismo validador** y la
 misma conexión a xSys; las decisiones se serializan con un lock (120–200 ms
 cada una). La librería se inicializa una sola vez por proceso.
 
-**Visto el 29/10/2026 con dos placas reales (garita .117 + Ombúes .66):**
+**Visto el 29/10/2026 con dos placas reales (Alcorta Molinete 3 (.117) + Ombúes Molinete 1 (.66)):**
 `libitkcom` usa UN solo enlace (link id 1) por proceso aunque se llame a
 `itk_open` dos veces con distinta IP. Cada reconexión de una placa cerraba
 la conexión de la otra: cortes cada 30 s en las dos, cero lecturas en la .66.
 Lo confirma su log (`/tmp/itk_online.log`: "close link id = 1 / open
 10.0.0.117 / close link id = 1 / open 10.0.0.66", alternando).
 **Regla hasta nuevo aviso: una placa por contenedor.** Compose tiene
-`intelektron-online` (garita, `INTELEKTRON_ONLINE_PLACAS`) e
+`intelektron-online` (Alcorta Molinete 3, `INTELEKTRON_ONLINE_PLACAS`) e
 `intelektron-online-ombues` (`INTELEKTRON_ONLINE_PLACAS_OMBUES`); para una
 tercera placa se copia el bloque con otra variable. Cuesta ~55 MB por
 contenedor y el arranque tarda ~45 s (migrate + collectstatic del entrypoint).
