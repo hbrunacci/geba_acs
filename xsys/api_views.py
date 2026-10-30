@@ -166,6 +166,35 @@ def _content_type(data: bytes) -> str:
     return "application/octet-stream"
 
 
+def _foto_persona_local(request, id_cliente: int, thumb: bool) -> HttpResponse:
+    """La foto cargada en la app de una persona que no está en xSys.
+
+    Sólo para esos legajos: a un socio sin foto en el espejo se le sigue
+    contestando 404, como siempre. Lleva ETag como las de xSys.
+    """
+    from concesionarios.models import FotoPersona, es_local
+
+    if not es_local(id_cliente):
+        return HttpResponse(status=status.HTTP_404_NOT_FOUND)
+    meta = FotoPersona.objects.filter(id_cliente=id_cliente).values("id", "sha256").first()
+    if meta is None:
+        return HttpResponse(status=status.HTTP_404_NOT_FOUND)
+    etag = '"l%s-%s-%s"' % (meta["id"], (meta["sha256"] or "0")[:16], "t" if thumb else "f")
+    if request.headers.get("If-None-Match") == etag:
+        resp = HttpResponse(status=304)
+    else:
+        from concesionarios import fotos
+
+        data, tipo = fotos.bytes_para_mostrar(id_cliente, miniatura=thumb)
+        if not data:
+            return HttpResponse(status=status.HTTP_404_NOT_FOUND)
+        resp = HttpResponse(data, content_type=tipo or _content_type(data))
+        resp["Content-Length"] = str(len(data))
+    resp["ETag"] = etag
+    resp["Cache-Control"] = "private, max-age=86400"
+    return resp
+
+
 class SocioFotoAPI(APIView):
     """GET /api/xsys/socios/<id_cliente>/foto/[?nro=][?thumb=1] → bytes de la imagen."""
 
@@ -186,7 +215,7 @@ class SocioFotoAPI(APIView):
         meta = (qs.filter(nro=nro) if nro else qs.order_by("nro")).values(
             "id", "sha256", "synced_at").first()
         if meta is None:
-            return HttpResponse(status=status.HTTP_404_NOT_FOUND)
+            return _foto_persona_local(request, id_cliente, thumb)
 
         marca = meta["sha256"] or (meta["synced_at"].isoformat() if meta["synced_at"] else "0")
         etag = '"%s-%s-%s"' % (meta["id"], marca[:16], "t" if thumb else "f")
@@ -471,6 +500,29 @@ def _estado_concesionarios(cids) -> dict:
         return {}
 
 
+def _personas_locales(cids) -> dict:
+    """Las personas cargadas sólo en la app, por legajo, con quién tiene foto.
+
+    Se resuelven acá y no con ``socio_fetch``: xSys no las conoce, y pedírselas
+    sería una consulta perdida en cada vuelta del visor. La clave ``_con_foto``
+    trae los legajos con foto cargada en la app.
+    """
+    from concesionarios.models import FotoPersona, es_local
+
+    ids = {int(c) for c in cids if c and es_local(c)}
+    if not ids:
+        return {}
+    try:
+        from concesionarios.services import personas_por_id
+        salida = {k: v for k, v in personas_por_id(ids).items() if v.get("local")}
+        salida["_con_foto"] = set(FotoPersona.objects.filter(id_cliente__in=ids)
+                                  .values_list("id_cliente", flat=True))
+        return salida
+    except Exception:  # pragma: no cover - el visor no se cae por un accesorio
+        logger.exception("No se pudieron resolver las personas locales")
+        return {}
+
+
 def _deuda_actividades(cids) -> dict:
     """Socios con deuda de cuotas de actividades, para marcarlos en el visor.
 
@@ -660,8 +712,11 @@ def _mensaje_no_registrado(id_tarjeta: str) -> str:
     return f"Credencial no registrada: {tag}"
 
 
-def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None, deuda_act: dict | None = None, apto: dict | None = None, cochera_imp: dict | None = None) -> dict:
+def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivos: dict, controladores: dict | None = None, avisos_por_socio: dict | None = None, contratos_por_socio: dict | None = None, barreras: set | None = None, ingresos_hoy: dict | None = None, sin_cuota: dict | None = None, en_revision: set | None = None, conc_estado: dict | None = None, deuda_act: dict | None = None, apto: dict | None = None, cochera_imp: dict | None = None, locales: dict | None = None) -> dict:
     socio = socios.get(ev.id_cliente)
+    # Persona cargada sólo en la app (concesionarios.PersonaLocal): no está en el
+    # espejo de xSys, pero tiene nombre y DNI que mostrar.
+    local = (locales or {}).get(ev.id_cliente)
     tiene_foto = ev.id_cliente in fotos
     # Mensaje original de xSys (motivo de pantalla u observación).
     mensaje_original = ""
@@ -764,12 +819,12 @@ def _evento_payload(ev: ExternalAccessLogEntry, socios: dict, fotos: set, motivo
         "mensaje": mensaje,
         "mensaje_original": mensaje_original,
         "id_cliente": ev.id_cliente,
-        "doc_nro": (socio.doc_nro if socio else None),
+        "doc_nro": (socio.doc_nro if socio else (local["doc_nro"] if local else None)),
         "nombre": (
             (f"{socio.apellido}, {socio.nombre}".strip(", ") or socio.razon_social)
-            if socio else ""
+            if socio else (local["nombre_completo"] if local else "")
         ),
-        "categoria": (socio.categoria if socio else ""),
+        "categoria": (socio.categoria if socio else (local["categoria"] if local else "")),
         "ult_cuota_paga": (socio.ult_cuota_paga.isoformat() if socio and socio.ult_cuota_paga else None),
         "foto_url": foto_url,
         "foto_thumb_url": (foto_url + "?thumb=1") if foto_url else None,
@@ -1021,13 +1076,15 @@ def _contexto_eventos(todos_x, todos_f) -> dict:
     mids = {e.id_cd_motivo for e in todos_x if e.id_cd_motivo}
     ctrl_ids = {e.id_controlador for e in todos_x if e.id_controlador}
     socios = {s.id_cliente: s for s in XsysSocio.objects.filter(pk__in=cids)}
-    faltantes_socio = cids - set(socios)
+    locales = _personas_locales(cids)
+    faltantes_socio = cids - set(socios) - set(locales)
     if faltantes_socio:
         from xsys.services import socio_fetch
 
         socio_fetch.request_many(faltantes_socio)
     fotos = set(XsysSocioFoto.objects.filter(id_cliente__in=cids).values_list("id_cliente", flat=True))
-    foto_fetch.request_many(cids - fotos)
+    foto_fetch.request_many(cids - fotos - set(locales))
+    fotos |= locales.get("_con_foto", set())
     motivos = {m.id_cd_motivo: m for m in XsysMotivo.objects.filter(pk__in=mids)}
     ctrls = {c.id_controlador: c for c in XsysControlador.objects.filter(pk__in=ctrl_ids)}
     avisos_por_socio: dict = {}
@@ -1049,7 +1106,7 @@ def _contexto_eventos(todos_x, todos_f) -> dict:
     return {
         "xsys": (socios, fotos, motivos, ctrls, avisos_por_socio, contratos_por_socio,
                  barreras, ingresos_hoy, sin_cuota, en_revision, conc_estado, deuda_act, apto,
-                 cochera_imp),
+                 cochera_imp, locales),
         "facial": (socios, fotos, avisos_por_socio, contratos_por_socio, sin_cuota,
                    en_revision, conc_estado, deuda_act, apto, rechazos),
     }

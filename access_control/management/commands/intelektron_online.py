@@ -28,6 +28,11 @@ Quién decide (``--validador``):
   * ``clever``: el SP ``CP_SCA_RegistrarAcceso`` de Clever (requiere EXECUTE);
     en modo real Clever graba el paso en ``CD_ES``.
 
+Antes que cualquiera de los dos se consulta la base local de concesionarios:
+si la lectura (DNI o credencial) es de una persona dada de alta sólo en la app
+(``concesionarios.PersonaLocal``), decide ``concesionarios.acceso`` y xSys no
+se pregunta. El paso queda con ``validador = concesion``.
+
 Qué se hace con la decisión (``--modo``):
   * ``observar`` (default): se evalúa y registra, pero se contesta siempre
     DENEGADO: el molinete no abre.
@@ -364,8 +369,11 @@ class Command(BaseCommand):
             previa = self._ultimas.get(clave)
             if previa and self.antirebote_seg > 0 and cuando - previa[0] <= timedelta(seconds=self.antirebote_seg):
                 return previa[1], True
-            if self.local is not None:
-                decision: Decision = self.local.decidir(
+            decision: Decision | None = self._decidir_persona_local(p, tag, tipo, cuando)
+            if decision is not None:
+                pass
+            elif self.local is not None:
+                decision = self.local.decidir(
                     tipo_acceso=tipo, tag=tag, id_controlador=p.id_controlador, id_acceso=p.id_acceso,
                     cuando=cuando)
             else:
@@ -377,6 +385,23 @@ class Command(BaseCommand):
                     corte = cuando - timedelta(seconds=max(self.antirebote_seg, 1) * 10)
                     self._ultimas = {k: v for k, v in self._ultimas.items() if v[0] >= corte}
         return decision, False
+
+    def _decidir_persona_local(self, p: Placa, tag: str, tipo: str, cuando: datetime) -> Decision | None:
+        """Personas dadas de alta sólo en la app (``concesionarios.PersonaLocal``).
+
+        Se mira PRIMERO la base local: si la lectura es de una de ellas, decide
+        ella y xSys no se consulta. Si no lo es, o si la base local falla, se
+        devuelve None y sigue la validación de siempre: un problema acá no puede
+        dejar sin molinete a los socios.
+        """
+        from concesionarios import acceso
+
+        try:
+            return acceso.decidir(tag=tag, tipo_acceso=tipo, cuando=cuando, id_acceso=p.id_acceso)
+        except Exception as exc:  # noqa: BLE001
+            self.stderr.write(self.style.WARNING(f"validación de personas locales falló: {exc}"))
+            close_old_connections()
+            return None
 
     # --------------------------------------------------------- callbacks nativos
 
@@ -484,7 +509,8 @@ class Command(BaseCommand):
                         habilitado=bool(decision.habilitado), accionado=accionar,
                         id_motivo=getattr(decision, "id_motivo", None),
                         mensaje=(decision.mensaje or "")[:300], detalle=(getattr(decision, "detalle", "") or "")[:200],
-                        info=(decision.info or "")[:10], validador=self.validador, modo=self.modo,
+                        info=(decision.info or "")[:10],
+                        validador=getattr(decision, "validador", self.validador), modo=self.modo,
                         antirebote=antirebote, duracion_ms=round(decision.duracion_ms, 1),
                         error=(decision.error or "")[:300],
                         raw={"access_id": ev.access_id, "direction": ev.direction, "node": ev.node,

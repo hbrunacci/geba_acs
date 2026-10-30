@@ -10,6 +10,7 @@ from concesionarios.models import (
     Empresa,
     HorarioAcceso,
     HorarioFranja,
+    PersonaLocal,
     TipoDocumento,
 )
 
@@ -136,6 +137,72 @@ class ConcesionarioSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"fecha_baja": "La baja no puede ser anterior al alta."})
         return attrs
+
+
+class AsignacionSerializer(ConcesionarioSerializer):
+    """La concesión sin el legajo, para el alta de una persona nueva: el legajo
+    todavía no existe, lo genera la ``PersonaLocal`` al guardarse."""
+
+    class Meta(ConcesionarioSerializer.Meta):
+        fields = tuple(f for f in ConcesionarioSerializer.Meta.fields if f != "id_cliente")
+
+
+class PersonaLocalSerializer(serializers.ModelSerializer):
+    """Alta y edición de una persona que no está en xSys.
+
+    Se rechaza un DNI que ya está en el espejo de xSys: esa persona se agrega
+    desde la búsqueda, con su legajo. Cargarla dos veces haría que en nuestros
+    molinetes la decida la base local y en los demás xSys, cada uno con su
+    propio criterio, y nadie sabría por qué entra en una puerta y no en otra.
+    """
+
+    class Meta:
+        model = PersonaLocal
+        fields = ("id", "id_cliente", "doc_nro", "apellido", "nombre", "sexo", "fecha_nac",
+                  "credencial", "telefono", "email")
+        read_only_fields = ("id_cliente",)
+
+    def validate_doc_nro(self, valor):
+        from xsys.models import XsysSocio
+
+        if not valor or valor <= 0 or valor >= 1_000_000_000:
+            raise serializers.ValidationError("El DNI tiene que ser un número válido.")
+        socio = XsysSocio.objects.filter(doc_nro=valor).first()
+        if socio is not None:
+            nombre = f"{socio.apellido}, {socio.nombre}".strip(", ") or socio.razon_social
+            raise serializers.ValidationError(
+                f"Ese DNI ya está en xSys: {nombre} (legajo {socio.id_cliente}). "
+                "Buscalo en la lista de arriba.")
+        return valor
+
+    def validate_apellido(self, valor):
+        valor = (valor or "").strip().upper()
+        if not valor:
+            raise serializers.ValidationError("Falta el apellido.")
+        return valor
+
+    def validate_nombre(self, valor):
+        return (valor or "").strip().upper()
+
+    def validate_sexo(self, valor):
+        valor = (valor or "").strip().upper()[:1]
+        if valor and valor not in ("M", "F", "X"):
+            raise serializers.ValidationError("Sexo: M, F o X.")
+        return valor
+
+    def validate_credencial(self, valor):
+        valor = (valor or "").strip().upper()
+        if not valor:
+            return ""
+        otros = PersonaLocal.objects.filter(credencial=valor)
+        if self.instance is not None:
+            otros = otros.exclude(pk=self.instance.pk)
+        if otros.exists():
+            raise serializers.ValidationError("Esa credencial ya la tiene otra persona cargada acá.")
+        from xsys.models import XsysSocio
+        if XsysSocio.objects.filter(credencial_nro=valor).exists():
+            raise serializers.ValidationError("Esa credencial ya es de un socio en xSys.")
+        return valor
 
 
 class DocumentoSerializer(serializers.ModelSerializer):

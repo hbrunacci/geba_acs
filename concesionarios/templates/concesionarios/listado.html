@@ -131,9 +131,17 @@ imprime en pantalla tal cual.
       <button type="button" class="modal__close" data-close-modal aria-label="Cerrar">&times;</button>
     </div>
     <div>
+        <div class="btn-group mb-3" role="group" aria-label="Origen de la persona">
+          <input type="radio" class="btn-check" name="alta-origen" id="alta-origen-xsys" value="xsys" checked>
+          <label class="btn btn-outline-primary btn-sm" for="alta-origen-xsys">Buscar en xSys</label>
+          <input type="radio" class="btn-check" name="alta-origen" id="alta-origen-nueva" value="nueva">
+          <label class="btn btn-outline-primary btn-sm" for="alta-origen-nueva">Persona nueva</label>
+        </div>
+        <div id="alta-panel-xsys">
         <p class="text-muted small">
           Buscá a la persona en el espejo de xSys. Aparecen los socios con categoría
-          CONCESIONARIO que todavía no están cargados acá.
+          CONCESIONARIO que todavía no están cargados acá, y las personas cargadas en
+          la app que quedaron sin concesión.
         </p>
         <div class="input-group mb-2">
           <input class="form-control" id="alta-busqueda" placeholder="Apellido, DNI o legajo">
@@ -145,10 +153,50 @@ imprime en pantalla tal cual.
             <tbody id="alta-resultados"><tr><td colspan="4" class="text-muted">Buscá para empezar.</td></tr></tbody>
           </table>
         </div>
+        </div>
+        <div id="alta-panel-nueva" hidden>
+          <p class="text-muted small">
+            Para quien no está en xSys. Queda cargada sólo en la app: <strong>no se
+            escribe nada en xSys</strong>. En los molinetes que maneja geba_acs entra con
+            su DNI (o su credencial, si le das una) según su concesión, su horario y su
+            documentación. En los molinetes y faciales que todavía decide xSys no va a
+            poder pasar.
+          </p>
+          <div class="row g-2" id="alta-persona">
+            <div class="col-6 col-md-3">
+              <label class="form-label mb-1" for="np-doc">DNI</label>
+              <input class="form-control" id="np-doc" inputmode="numeric" placeholder="30123456">
+            </div>
+            <div class="col-6 col-md-5">
+              <label class="form-label mb-1" for="np-apellido">Apellido</label>
+              <input class="form-control" id="np-apellido">
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label mb-1" for="np-nombre">Nombre</label>
+              <input class="form-control" id="np-nombre">
+            </div>
+            <div class="col-4 col-md-2">
+              <label class="form-label mb-1" for="np-sexo">Sexo</label>
+              <select class="form-select" id="np-sexo"><option value=""></option><option>F</option><option>M</option><option>X</option></select>
+            </div>
+            <div class="col-8 col-md-3">
+              <label class="form-label mb-1" for="np-nac">Nacimiento</label>
+              <input type="date" class="form-control" id="np-nac">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label mb-1" for="np-credencial">Credencial <span class="celda-chica">(opcional)</span></label>
+              <input class="form-control" id="np-credencial" placeholder="Hex de la tarjeta">
+            </div>
+            <div class="col-6 col-md-4">
+              <label class="form-label mb-1" for="np-telefono">Teléfono</label>
+              <input class="form-control" id="np-telefono">
+            </div>
+          </div>
+        </div>
         <hr>
         <form id="alta-form" class="row g-2">
           <input type="hidden" name="id_cliente" id="alta-id-cliente">
-          <div class="col-12"><div class="alert alert-secondary py-2 mb-1" id="alta-elegido">Ninguna persona seleccionada.</div></div>
+          <div class="col-12" id="alta-elegido-fila"><div class="alert alert-secondary py-2 mb-1" id="alta-elegido">Ninguna persona seleccionada.</div></div>
           <div class="col-12 col-md-5">
             <label class="form-label mb-1" for="alta-empresa">Empresa</label>
             <select class="form-select" id="alta-empresa" name="empresa" required></select>
@@ -197,7 +245,9 @@ imprime en pantalla tal cual.
     if (!datos) return 'Error inesperado';
     if (typeof datos === 'string') return datos;
     if (datos.detail) return datos.detail;
-    return Object.keys(datos).map(k => k + ': ' + [].concat(datos[k]).join(' ')).join(' · ');
+    // Los errores de la persona nueva llegan anidados: {persona: {doc_nro: [...]}}.
+    return Object.keys(datos).map(k => (datos[k] && typeof datos[k] === 'object' && !Array.isArray(datos[k]))
+      ? mensajeDeError(datos[k]) : k + ': ' + [].concat(datos[k]).join(' ')).join(' · ');
   }
 
   const esc = (v) => (v === null || v === undefined) ? '' : String(v)
@@ -252,9 +302,9 @@ imprime en pantalla tal cual.
         return '<tr data-id="' + f.id + '">' +
           '<td>' + esc(p.nombre_completo) + (f.activo ? '' : ' <span class="pill pill--nada">baja</span>') + '</td>' +
           '<td>' + esc(p.doc_nro || '') + '</td>' +
-          '<td class="celda-chica">' + esc(p.id_cliente) + '</td>' +
+          '<td class="celda-chica">' + (p.local ? '—' : esc(p.id_cliente)) + '</td>' +
           '<td class="celda-chica">' + fecha(p.fecha_nac) + '</td>' +
-          '<td class="celda-chica">' + esc(p.categoria) + '</td>' +
+          '<td class="celda-chica">' + (p.local ? '<span class="pill pill--nada">Cargado en la app</span>' : esc(p.categoria)) + '</td>' +
           '<td>' + esc(f.empresa.nombre) + '</td>' +
           '<td class="celda-chica">' + esc(f.cargo) + '</td>' +
           '<td class="celda-chica">' + (h ? esc(h.nombre) + (f.permite_ahora ? '' : ' <span class="pill pill--nada">fuera de horario</span>') : '—') + '</td>' +
@@ -303,12 +353,13 @@ imprime en pantalla tal cual.
             '</div>' +
           '</div>' +
           '<h6>Persona</h6>' +
+          (p.local ? formPersonaLocal(p) :
           '<dl class="row mb-3 small">' +
             fila('Legajo', p.id_cliente) + fila('DNI', p.doc_nro) +
             fila('Categoría', p.categoria) + fila('Nacimiento', fecha(p.fecha_nac)) +
             fila('Credencial', p.credencial_nro) + fila('Email', p.email) +
             fila('Activo en xSys', p.activo ? 'Sí' : 'No') +
-          '</dl>' +
+          '</dl>') +
           '<h6>Asignación</h6>' +
           '<form id="d-form" class="row g-2 small">' +
             '<div class="col-12"><label class="form-label mb-1">Empresa</label>' +
@@ -369,6 +420,48 @@ imprime en pantalla tal cual.
     $('d-doc-form').addEventListener('submit', adjuntar);
     $('d-foto-subir').addEventListener('click', subirFoto);
     $('d-foto-enrolar').addEventListener('click', enrolarFoto);
+    if (p.local) $('d-persona-form').addEventListener('submit', guardarPersonaLocal);
+  }
+
+  // Persona cargada sólo en la app: sus datos se corrigen acá (las de xSys, en xSys).
+  function formPersonaLocal(p) {
+    const campo = (col, rotulo, nombre, valor, tipo) =>
+      '<div class="' + col + '"><label class="form-label mb-1">' + rotulo + '</label>' +
+      '<input class="form-control form-control-sm" name="' + nombre + '"' + (tipo ? ' type="' + tipo + '"' : '') +
+      ' value="' + esc(valor || '') + '"></div>';
+    return '<p class="celda-chica mb-2">Cargada en la app, no está en xSys. Entra sólo por los molinetes que maneja geba_acs.</p>' +
+      '<form id="d-persona-form" class="row g-2 small mb-3">' +
+        campo('col-6', 'Apellido', 'apellido', p.apellido) +
+        campo('col-6', 'Nombre', 'nombre', p.nombre) +
+        campo('col-6', 'DNI', 'doc_nro', p.doc_nro) +
+        campo('col-6', 'Nacimiento', 'fecha_nac', p.fecha_nac, 'date') +
+        campo('col-6', 'Credencial', 'credencial', p.credencial_nro) +
+        campo('col-6', 'Teléfono', 'telefono', p.telefono) +
+        campo('col-12', 'Email', 'email', p.email, 'email') +
+        '<div class="col-12 d-flex gap-2 align-items-center">' +
+          '<button class="btn btn-sm btn-outline-primary" type="submit">Guardar datos</button>' +
+          '<span id="d-persona-msg" class="small"></span></div>' +
+      '</form>';
+  }
+
+  async function guardarPersonaLocal(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    const cuerpo = {
+      apellido: f.apellido.value, nombre: f.nombre.value,
+      doc_nro: parseInt(f.doc_nro.value, 10) || null,
+      fecha_nac: f.fecha_nac.value || null, credencial: f.credencial.value,
+      telefono: f.telefono.value, email: f.email.value,
+    };
+    try {
+      const p = await api('/api/concesionarios/persona-local/' + detalleIdCliente + '/',
+                          { method: 'PUT', body: JSON.stringify(cuerpo) });
+      $('detalle-titulo').textContent = p.nombre_completo;
+      $('d-persona-msg').className = 'small text-success'; $('d-persona-msg').textContent = 'Guardado.';
+      cargarListado();
+    } catch (e) {
+      $('d-persona-msg').className = 'small text-danger'; $('d-persona-msg').textContent = e.message;
+    }
   }
 
   function msgFoto(texto, clase) {
@@ -486,36 +579,69 @@ imprime en pantalla tal cual.
       return;
     }
     $('alta-resultados').innerHTML = d.results.map(function (p) {
-      return '<tr><td>' + esc(p.nombre_completo) + '</td><td>' + esc(p.doc_nro || '') + '</td>' +
-        '<td>' + esc(p.id_cliente) + '</td>' +
+      return '<tr><td>' + esc(p.nombre_completo) + (p.local ? ' <span class="pill pill--nada">Cargado en la app</span>' : '') +
+        '</td><td>' + esc(p.doc_nro || '') + '</td>' +
+        '<td>' + (p.local ? '—' : esc(p.id_cliente)) + '</td>' +
         '<td class="text-end"><button class="btn btn-sm btn-outline-primary" data-elegir="' + p.id_cliente + '" data-nombre="' + esc(p.nombre_completo) + '">Elegir</button></td></tr>';
     }).join('');
     Array.prototype.forEach.call($('alta-resultados').querySelectorAll('[data-elegir]'), function (b) {
       b.addEventListener('click', function () {
         $('alta-id-cliente').value = b.dataset.elegir;
-        $('alta-elegido').textContent = b.dataset.nombre + ' (legajo ' + b.dataset.elegir + ')';
+        $('alta-elegido').textContent = b.dataset.nombre;
       });
     });
+  }
+
+  const altaNueva = () => $('alta-origen-nueva').checked;
+
+  function cambiarOrigen() {
+    $('alta-panel-xsys').hidden = altaNueva();
+    $('alta-panel-nueva').hidden = !altaNueva();
+    $('alta-elegido-fila').hidden = altaNueva();
+    $('alta-msg').textContent = '';
+  }
+
+  function limpiarAlta(f) {
+    f.reset();
+    $('alta-id-cliente').value = ''; $('alta-elegido').textContent = 'Ninguna persona seleccionada.';
+    ['np-doc', 'np-apellido', 'np-nombre', 'np-sexo', 'np-nac', 'np-credencial', 'np-telefono']
+      .forEach(id => { $(id).value = ''; });
+    $('alta-msg').textContent = '';
   }
 
   async function altaSubmit(ev) {
     ev.preventDefault();
     const f = ev.target;
-    if (!$('alta-id-cliente').value) {
-      $('alta-msg').textContent = 'Elegí una persona de la lista.'; return;
-    }
-    const cuerpo = {
-      id_cliente: parseInt($('alta-id-cliente').value, 10),
+    const asignacion = {
       empresa: parseInt(f.empresa.value, 10),
       cargo: f.cargo.value,
       horario: f.horario.value ? parseInt(f.horario.value, 10) : null,
     };
+    let url, cuerpo;
+    if (altaNueva()) {
+      const doc = parseInt($('np-doc').value.replace(/\D/g, ''), 10);
+      if (!doc || !$('np-apellido').value.trim()) {
+        $('alta-msg').textContent = 'Faltan el DNI y el apellido.'; return;
+      }
+      url = '/api/concesionarios/alta-persona/';
+      cuerpo = Object.assign({ persona: {
+        doc_nro: doc, apellido: $('np-apellido').value, nombre: $('np-nombre').value,
+        sexo: $('np-sexo').value, fecha_nac: $('np-nac').value || null,
+        credencial: $('np-credencial').value, telefono: $('np-telefono').value,
+      } }, asignacion);
+    } else {
+      if (!$('alta-id-cliente').value) {
+        $('alta-msg').textContent = 'Elegí una persona de la lista.'; return;
+      }
+      url = '/api/concesionarios/alta/';
+      cuerpo = Object.assign({ id_cliente: parseInt($('alta-id-cliente').value, 10) }, asignacion);
+    }
     try {
-      await api('/api/concesionarios/alta/', { method: 'POST', body: JSON.stringify(cuerpo) });
-      cerrarModal('alta-modal'); f.reset();
-      $('alta-id-cliente').value = ''; $('alta-elegido').textContent = 'Ninguna persona seleccionada.';
-      $('alta-msg').textContent = '';
+      const r = await api(url, { method: 'POST', body: JSON.stringify(cuerpo) });
+      cerrarModal('alta-modal'); limpiarAlta(f);
       cargarListado();
+      // A la persona nueva le falta la foto y la documentación: se abre su ficha.
+      if (altaNueva() && r && r.id) abrirDetalle(r.id);
     } catch (e) { $('alta-msg').textContent = e.message; }
   }
 
@@ -545,6 +671,8 @@ imprime en pantalla tal cual.
     if (ev.key === 'Enter') { ev.preventDefault(); buscarCandidatos(); }
   });
   $('alta-form').addEventListener('submit', altaSubmit);
+  $('alta-origen-xsys').addEventListener('change', cambiarOrigen);
+  $('alta-origen-nueva').addEventListener('change', cambiarOrigen);
   inicio();
 })();
 </script>

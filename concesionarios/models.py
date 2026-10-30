@@ -169,10 +169,74 @@ class Empresa(models.Model):
         return self.nombre
 
 
+# Legajos de las personas que existen SÓLO acá. Los de xSys van por el millón;
+# arrancar en 2.000 millones deja el choque fuera de alcance, sigue entrando en
+# un IntegerField y en el ``<int:...>`` de las URLs (que no acepta negativos).
+ID_LOCAL_BASE = 2_000_000_000
+
+
+def es_local(id_cliente) -> bool:
+    """El legajo es de una persona cargada acá y no en xSys."""
+    try:
+        return int(id_cliente) >= ID_LOCAL_BASE
+    except (TypeError, ValueError):
+        return False
+
+
+class PersonaLocal(models.Model):
+    """Una persona que no está en xSys y se da de alta desde la app.
+
+    El club pidió poder cargar al personal de una concesión sin tocar xSys. La
+    persona vive en esta base y recibe un ``id_cliente`` propio (desde
+    ``ID_LOCAL_BASE``), así la documentación, la foto, el visor y los pasos de
+    molinete —que cuelgan todos de ``id_cliente``— la tratan igual que a un
+    legajo de xSys sin saber de dónde viene.
+
+    En los molinetes que atiende ``intelektron_online`` se la identifica por DNI
+    o por credencial y se la valida acá, antes de preguntarle a xSys (ver
+    ``concesionarios.acceso``).
+    """
+
+    doc_nro = models.BigIntegerField(unique=True)
+    apellido = models.CharField(max_length=80)
+    nombre = models.CharField(max_length=80, blank=True, default="")
+    sexo = models.CharField(max_length=1, blank=True, default="")
+    fecha_nac = models.DateField(null=True, blank=True)
+    # Número de la credencial Mifare tal como la lee la placa (hex en mayúsculas).
+    credencial = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    telefono = models.CharField(max_length=40, blank=True, default="")
+    email = models.CharField(max_length=200, blank=True, default="")
+    id_cliente = models.IntegerField(unique=True, null=True, editable=False)
+    creado_por = models.CharField(max_length=150, blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "conc_persona_local"
+        verbose_name = "Persona local"
+        verbose_name_plural = "Personas locales"
+        ordering = ("apellido", "nombre")
+
+    def __str__(self) -> str:  # pragma: no cover - representación auxiliar
+        return f"{self.nombre_completo} · DNI {self.doc_nro}"
+
+    def save(self, *args, **kwargs):
+        self.credencial = (self.credencial or "").strip().upper()
+        super().save(*args, **kwargs)
+        if self.id_cliente is None:
+            self.id_cliente = ID_LOCAL_BASE + self.pk
+            super().save(update_fields=["id_cliente"])
+
+    @property
+    def nombre_completo(self) -> str:
+        return f"{self.apellido}, {self.nombre}".strip(", ")
+
+
 class Concesionario(models.Model):
     """La persona del control de acceso, atada a su empresa.
 
-    ``id_cliente`` es el de xSys y es único: una persona trabaja para una
+    ``id_cliente`` es el de xSys (o el de una ``PersonaLocal``) y es único:
+    una persona trabaja para una
     empresa por vez. Si cambia de empresa se edita el registro; el historial de
     quién fue de quién no es lo que se pidió y agregarlo sin que nadie lo use
     sólo complica las altas.

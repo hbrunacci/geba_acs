@@ -14,7 +14,7 @@ from typing import Any, Iterable
 from django.db.models import Q
 from django.utils import timezone
 
-from concesionarios.models import Concesionario, Documento
+from concesionarios.models import Concesionario, Documento, PersonaLocal, es_local
 from xsys.models import XsysSocio
 
 # Categoría de xSys que identifica a un concesionario (Clientes.Id_Tipo_Cli).
@@ -97,7 +97,7 @@ def datos_persona(socio: XsysSocio | None, id_cliente: int) -> dict[str, Any]:
                 "nombre_completo": f"Legajo {id_cliente}", "doc_nro": None,
                 "categoria": "", "id_tipo_cli": None, "activo": None, "sexo": "",
                 "fecha_nac": None, "email": "", "credencial_nro": "",
-                "en_el_espejo": False}
+                "en_el_espejo": False, "local": False}
     completo = f"{socio.apellido}, {socio.nombre}".strip(", ") or socio.razon_social
     return {
         "id_cliente": socio.id_cliente,
@@ -113,7 +113,44 @@ def datos_persona(socio: XsysSocio | None, id_cliente: int) -> dict[str, Any]:
         "email": socio.email,
         "credencial_nro": socio.credencial_nro,
         "en_el_espejo": True,
+        "local": False,
     }
+
+
+CATEGORIA_LOCAL = "Cargado en la app"
+
+
+def datos_persona_local(persona: PersonaLocal) -> dict[str, Any]:
+    """Los mismos datos que ``datos_persona``, para quien no está en xSys."""
+    return {
+        "id_cliente": persona.id_cliente,
+        "apellido": persona.apellido,
+        "nombre": persona.nombre,
+        "nombre_completo": persona.nombre_completo or f"Legajo {persona.id_cliente}",
+        "doc_nro": persona.doc_nro,
+        "categoria": CATEGORIA_LOCAL,
+        "id_tipo_cli": None,
+        "activo": None,
+        "sexo": persona.sexo,
+        "fecha_nac": persona.fecha_nac,
+        "email": persona.email,
+        "telefono": persona.telefono,
+        "credencial_nro": persona.credencial,
+        "en_el_espejo": False,
+        "local": True,
+    }
+
+
+def personas_por_id(ids: Iterable[int]) -> dict[int, dict[str, Any]]:
+    """``{id_cliente: datos}`` resolviendo cada legajo donde vive: xSys o la app."""
+    ids = [int(i) for i in ids if i]
+    salida = {s.id_cliente: datos_persona(s, s.id_cliente) for s in
+              XsysSocio.objects.filter(id_cliente__in=[i for i in ids if not es_local(i)])}
+    salida.update({p.id_cliente: datos_persona_local(p) for p in
+                   PersonaLocal.objects.filter(id_cliente__in=[i for i in ids if es_local(i)])})
+    for i in ids:
+        salida.setdefault(i, datos_persona(None, i))
+    return salida
 
 
 def listar(*, empresa_id: int | None = None, doc: str = "", apellido: str = "",
@@ -135,29 +172,36 @@ def listar(*, empresa_id: int | None = None, doc: str = "", apellido: str = "",
     registros = list(qs)
 
     ids = [c.id_cliente for c in registros]
-    socios = {s.id_cliente: s for s in XsysSocio.objects.filter(id_cliente__in=ids)}
 
     doc, apellido = doc.strip(), apellido.strip()
     if doc or apellido:
         filtro = Q()
+        filtro_local = Q()
         if doc:
             solo_digitos = "".join(ch for ch in doc if ch.isdigit())
             if solo_digitos:
                 filtro |= Q(doc_nro=int(solo_digitos))
+                filtro_local |= Q(doc_nro=int(solo_digitos))
         if apellido:
             # Buena parte de los concesionarios están cargados como razón social,
             # con Apellido y Nombre vacíos ("RCA KIOSKO PB - SURACE"): buscar sólo
             # por apellido los dejaba afuera del filtro.
             filtro |= (Q(apellido__icontains=apellido) | Q(nombre__icontains=apellido)
                        | Q(razon_social__icontains=apellido))
+            filtro_local |= Q(apellido__icontains=apellido) | Q(nombre__icontains=apellido)
         if filtro:
             permitidos = set(
                 XsysSocio.objects.filter(filtro, id_cliente__in=ids)
+                .values_list("id_cliente", flat=True))
+            permitidos |= set(
+                PersonaLocal.objects.filter(filtro_local, id_cliente__in=ids)
                 .values_list("id_cliente", flat=True))
         else:
             permitidos = set()
         registros = [c for c in registros if c.id_cliente in permitidos]
         ids = [c.id_cliente for c in registros]
+
+    personas = personas_por_id(ids)
 
     docs = resumen_documental(ids, hoy)
 
@@ -167,7 +211,7 @@ def listar(*, empresa_id: int | None = None, doc: str = "", apellido: str = "",
         horario = c.horario_vigente
         filas.append({
             "id": c.id,
-            "persona": datos_persona(socios.get(c.id_cliente), c.id_cliente),
+            "persona": personas[c.id_cliente],
             "empresa": {"id": c.empresa_id, "nombre": c.empresa.nombre,
                         "cuit": c.empresa.cuit, "activa": c.empresa.activa},
             "cargo": c.cargo,
@@ -284,16 +328,21 @@ def ingresos(*, desde: date, hasta: date, empresa_id: int | None = None,
         return {"results": [], "resumen": _resumen([]), "sin_concesionarios": True}
 
     ids = list(registros)
-    sql = _SQL_INGRESOS.format(ids=",".join(str(i) for i in ids))
     limites = (datetime.combine(desde, datetime.min.time()),
                datetime.combine(hasta + timedelta(days=1), datetime.min.time()))
 
-    filas_sql = _consultar(sql, limites, cursor)
-    if filas_sql is None:
-        return {"error": "No se pudo consultar los movimientos en xSys.",
-                "results": [], "resumen": _resumen([])}
+    ids_xsys = [i for i in ids if not es_local(i)]
+    filas_sql: list = []
+    if ids_xsys:
+        sql = _SQL_INGRESOS.format(ids=",".join(str(i) for i in ids_xsys))
+        filas_sql = _consultar(sql, limites, cursor)
+        if filas_sql is None:
+            return {"error": "No se pudo consultar los movimientos en xSys.",
+                    "results": [], "resumen": _resumen([])}
+    filas_sql = sorted(list(filas_sql) + _pasos_propios(ids, *limites),
+                       key=lambda f: f[1], reverse=True)
 
-    socios = {s.id_cliente: s for s in XsysSocio.objects.filter(id_cliente__in=ids)}
+    personas = personas_por_id(ids)
     estados = estado_operativo(ids)
     con_foto = _ids_con_foto(ids)
 
@@ -305,7 +354,7 @@ def ingresos(*, desde: date, hasta: date, empresa_id: int | None = None,
         filas.append({
             "id_es": int(id_es),
             "fecha": fecha,
-            "persona": datos_persona(socios.get(cid), cid),
+            "persona": personas.get(cid) or datos_persona(None, cid),
             "empresa": estado.get("empresa", ""),
             "tiene_foto": cid in con_foto,
             "permitido": permitido,
@@ -324,6 +373,36 @@ def ingresos(*, desde: date, hasta: date, empresa_id: int | None = None,
         "truncado": len(filas_sql) > TOPE_INGRESOS,
         "total_crudo": len(filas_sql),
     }
+
+
+def _pasos_propios(ids: list[int], desde: datetime, hasta: datetime) -> list[tuple]:
+    """Pasadas por los molinetes que decide geba_acs, con la forma de las de CD_ES.
+
+    Esos molinetes no escriben en xSys: sin esto el listado no mostraría a las
+    personas cargadas sólo en la app, ni a nadie que haya pasado por ellos con
+    el validador local. Las del validador ``clever`` en modo real sí quedan en
+    CD_ES y se dejan afuera para no contarlas dos veces. Tampoco van las de
+    ``observar`` (no se abrió nada) ni las lecturas repetidas.
+    """
+    from access_control.models import PasoMolinete
+    from access_control.services.paso_visor import VISOR_ID_BASE
+    from xsys.models import XsysControlador
+
+    tz = timezone.get_current_timezone()
+    pasos = list(
+        PasoMolinete.objects.filter(
+            id_cliente__in=ids, fecha__gte=timezone.make_aware(desde, tz),
+            fecha__lt=timezone.make_aware(hasta, tz), modo__in=("real", "libre"),
+            antirebote=False)
+        .exclude(validador="clever"))
+    nombres = {c.id_controlador: (c.descripcion or "").strip() for c in
+               XsysControlador.objects.filter(pk__in={p.id_controlador for p in pasos})}
+    return [
+        (VISOR_ID_BASE + p.id, timezone.localtime(p.fecha).replace(tzinfo=None), p.id_cliente,
+         "S" if p.accionado else "E", p.id_acceso, p.id_controlador,
+         nombres.get(p.id_controlador, ""), "", p.mensaje)
+        for p in pasos
+    ]
 
 
 def _resumen(filas: list[dict]) -> dict[str, int]:
@@ -372,12 +451,20 @@ def candidatos_sin_registrar(limite: int = 50, busqueda: str = "") -> list[dict[
     """
     ya = set(Concesionario.objects.values_list("id_cliente", flat=True))
     qs = XsysSocio.objects.filter(id_tipo_cli=ID_TIPO_CLI_CONCESIONARIO).exclude(id_cliente__in=ya)
+    # Las cargadas en la app a las que se les quitó la concesión: no están en
+    # xSys, así que si no aparecen acá no hay forma de volver a asignarlas.
+    locales = PersonaLocal.objects.exclude(id_cliente__in=ya)
     busqueda = busqueda.strip()
     if busqueda:
         filtro = (Q(apellido__icontains=busqueda) | Q(nombre__icontains=busqueda)
                   | Q(razon_social__icontains=busqueda))
+        filtro_local = Q(apellido__icontains=busqueda) | Q(nombre__icontains=busqueda)
         digitos = "".join(ch for ch in busqueda if ch.isdigit())
         if digitos:
             filtro |= Q(doc_nro=int(digitos)) | Q(id_cliente=int(digitos))
+            filtro_local |= Q(doc_nro=int(digitos)) | Q(id_cliente=int(digitos))
         qs = qs.filter(filtro)
-    return [datos_persona(s, s.id_cliente) for s in qs.order_by("apellido", "nombre")[:limite]]
+        locales = locales.filter(filtro_local)
+    salida = [datos_persona_local(p) for p in locales.order_by("apellido", "nombre")[:limite]]
+    salida += [datos_persona(s, s.id_cliente) for s in qs.order_by("apellido", "nombre")[:limite]]
+    return salida[:limite]

@@ -6,6 +6,7 @@ from concesionarios.models import (
     Empresa,
     HorarioAcceso,
     HorarioFranja,
+    PersonaLocal,
     TipoDocumento,
 )
 
@@ -34,6 +35,13 @@ class ConcesionarioAdmin(admin.ModelAdmin):
     list_display = ("id_cliente", "empresa", "cargo", "horario", "activo")
     search_fields = ("id_cliente", "cargo")
     list_filter = ("activo", "empresa")
+
+
+@admin.register(PersonaLocal)
+class PersonaLocalAdmin(admin.ModelAdmin):
+    list_display = ("id_cliente", "apellido", "nombre", "doc_nro", "credencial")
+    search_fields = ("apellido", "nombre", "doc_nro", "credencial")
+    readonly_fields = ("id_cliente", "creado_por", "created_at", "updated_at")
 
 
 @admin.register(TipoDocumento)

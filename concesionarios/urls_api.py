@@ -5,6 +5,9 @@ from concesionarios import api_views as v
 urlpatterns = [
     path("concesionarios/", v.ListadoAPI.as_view(), name="api_conc_listado"),
     path("concesionarios/alta/", v.ConcesionariosAPI.as_view(), name="api_conc_alta"),
+    path("concesionarios/alta-persona/", v.AltaPersonaAPI.as_view(), name="api_conc_alta_persona"),
+    path("concesionarios/persona-local/<int:id_cliente>/", v.PersonaLocalAPI.as_view(),
+         name="api_conc_persona_local"),
     path("concesionarios/candidatos/", v.CandidatosAPI.as_view(), name="api_conc_candidatos"),
     path("concesionarios/ingresos/", v.IngresosAPI.as_view(), name="api_conc_ingresos"),
     path("concesionarios/foto/<int:id_cliente>/", v.FotoAPI.as_view(), name="api_conc_foto"),

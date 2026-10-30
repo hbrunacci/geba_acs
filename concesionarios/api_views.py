@@ -7,7 +7,9 @@ se sirve por una URL estática adivinable sino por una vista que chequea permiso
 
 from __future__ import annotations
 
+from django.db import transaction
 from django.http import FileResponse, Http404
+from rest_framework import serializers as drf_serializers
 from rest_framework import status, views
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -19,13 +21,16 @@ from concesionarios.models import (
     Documento,
     Empresa,
     HorarioAcceso,
+    PersonaLocal,
     TipoDocumento,
 )
 from concesionarios.serializers import (
+    AsignacionSerializer,
     ConcesionarioSerializer,
     DocumentoSerializer,
     EmpresaSerializer,
     HorarioSerializer,
+    PersonaLocalSerializer,
     TipoDocumentoSerializer,
 )
 
@@ -146,13 +151,11 @@ class EnrolarFotoAPI(_Base):
     """Manda la foto cargada al rostro de BioStar."""
 
     def post(self, request, id_cliente):
-        from xsys.models import XsysSocio
-
         from concesionarios import fotos
-        socio = XsysSocio.objects.filter(id_cliente=id_cliente).first()
-        nombre = ""
-        if socio:
-            nombre = f"{socio.apellido} {socio.nombre}".strip() or socio.razon_social
+        persona = services.personas_por_id([id_cliente])[id_cliente]
+        nombre = f"{persona['apellido']} {persona['nombre']}".strip()
+        if not nombre and persona["en_el_espejo"]:
+            nombre = persona["nombre_completo"]
         resultado = fotos.enrolar(id_cliente, nombre=nombre)
         codigo = status.HTTP_200_OK if resultado["ok"] else status.HTTP_502_BAD_GATEWAY
         return Response(resultado, status=codigo)
@@ -175,6 +178,46 @@ class ConcesionariosAPI(_Base):
         return Response(ser.data, status=status.HTTP_201_CREATED)
 
 
+class AltaPersonaAPI(_Base):
+    """Da de alta a una persona que no está en xSys y le asigna la concesión.
+
+    Todo en una transacción: una persona sin concesión no puede entrar a
+    ningún lado, y una concesión sin persona no tiene a quién habilitar. No
+    se escribe nada en xSys.
+    """
+
+    def post(self, request):
+        persona_ser = PersonaLocalSerializer(data=request.data.get("persona") or {})
+        conc_ser = AsignacionSerializer(
+            data={k: v for k, v in request.data.items() if k not in ("persona", "id_cliente")})
+        errores = {}
+        if not persona_ser.is_valid():
+            errores["persona"] = persona_ser.errors
+        if not conc_ser.is_valid():
+            errores.update(conc_ser.errors)
+        if errores:
+            raise drf_serializers.ValidationError(errores)
+        with transaction.atomic():
+            persona = persona_ser.save(creado_por=request.user.get_username())
+            conc = conc_ser.save(id_cliente=persona.id_cliente)
+        return Response({"id": conc.id, "id_cliente": persona.id_cliente,
+                         "persona": services.datos_persona_local(persona)},
+                        status=status.HTTP_201_CREATED)
+
+
+class PersonaLocalAPI(_Base):
+    """Corrige los datos de una persona cargada en la app (no las de xSys)."""
+
+    def put(self, request, id_cliente):
+        persona = PersonaLocal.objects.filter(id_cliente=id_cliente).first()
+        if persona is None:
+            raise Http404
+        ser = PersonaLocalSerializer(persona, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(services.datos_persona_local(persona))
+
+
 class ConcesionarioDetalleAPI(_Base):
     def _obj(self, pk) -> Concesionario:
         try:
@@ -184,13 +227,11 @@ class ConcesionarioDetalleAPI(_Base):
 
     def get(self, request, pk):
         obj = self._obj(pk)
-        from xsys.models import XsysSocio
-        socio = XsysSocio.objects.filter(id_cliente=obj.id_cliente).first()
         docs = Documento.objects.filter(id_cliente=obj.id_cliente).select_related("tipo")
         horario = obj.horario_vigente
         return Response({
             "id": obj.id,
-            "persona": services.datos_persona(socio, obj.id_cliente),
+            "persona": services.personas_por_id([obj.id_cliente])[obj.id_cliente],
             "empresa": EmpresaSerializer(obj.empresa).data,
             "cargo": obj.cargo,
             "activo": obj.activo,

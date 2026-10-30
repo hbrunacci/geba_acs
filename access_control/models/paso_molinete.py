@@ -17,16 +17,19 @@ class PasoMolinete(models.Model):
     * ``modo = libre``: se abrió con cualquier lectura, sin validar (prueba de relé).
 
     ``validador`` dice quién decidió: ``local`` (la réplica Python de la
-    cascada de Clever, ``validador_local``) o ``clever`` (el SP de Clever,
-    ``CP_SCA_RegistrarAcceso``). ``id_motivo`` usa los mismos códigos que
-    ``CD_Motivos`` para que el visor y los informes hablen el mismo idioma.
+    cascada de Clever, ``validador_local``), ``clever`` (el SP de Clever,
+    ``CP_SCA_RegistrarAcceso``) o ``concesion`` (una persona cargada sólo en la
+    app, validada con la base local de concesionarios). ``id_motivo`` usa los
+    mismos códigos que ``CD_Motivos`` para que el visor y los informes hablen
+    el mismo idioma (las de ``concesion`` van con 0: no hay motivo de xSys).
 
     ``antirebote`` marca las lecturas repetidas (mismo tag y controlador en
     pocos segundos) a las que se les contestó lo mismo que a la primera sin
     volver a evaluar; Clever directamente no las graba.
     """
 
-    VALIDADORES = (("local", "geba_acs (réplica local)"), ("clever", "Clever (CP_SCA_RegistrarAcceso)"))
+    VALIDADORES = (("local", "geba_acs (réplica local)"), ("clever", "Clever (CP_SCA_RegistrarAcceso)"),
+                   ("concesion", "Concesionarios cargados en la app"))
     MODOS = (("observar", "Observar (no acciona)"), ("real", "Real (acciona el molinete)"),
              ("libre", "Libre (abre sin validar, prueba de relé)"))
 
